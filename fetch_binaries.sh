@@ -70,12 +70,8 @@ else
     tar -xf "$CABAL_TAR" -C ../ghc-bindist/bin
 fi
 
-tar -xf "$GHC_TAR"
-# Determine the root folder name of the extracted GHC tarball dynamically
-GHC_EXTRACTED_DIR=$(tar -tf "$GHC_TAR" | head -1 | cut -f1 -d"/")
+tar -xf "$GHC_TAR" -C ../ghc-bindist/ --strip-components=1
 
-# Relocate all extracted GHC components (bin, lib, share) into the unified staging directory
-cp -a ${GHC_EXTRACTED_DIR}/* ../ghc-bindist/
 cd ..
 rm -rf build_artifacts
 echo "Binary acquisition and extraction sequence complete."

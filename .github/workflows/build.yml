@@ -57,7 +57,7 @@ jobs:
       - name: Fetch and Cryptographically Verify GHC/Cabal Binaries
         shell: bash
         run: |
-          if [ ! -d "ghc-bindist/bin" ]; then
+          if [ ! -f "ghc-bindist/bin/ghc" ] && [ ! -f "ghc-bindist/bin/ghc.exe" ]; then
             ./fetch_binaries.sh
           else
             echo "Using cached binaries in ghc-bindist/"
@@ -74,19 +74,25 @@ jobs:
           fi
 
       - name: Build PEP 427 Python Wheel Archive
+        shell: bash
         run: |
           python -m build --wheel
           # Rename to a platform specific wheel so auditwheel doesn't reject it
           if [ "$RUNNER_OS" = "Linux" ]; then
             mv dist/ghc_compiler_python-9.4.8-py3-none-any.whl dist/ghc_compiler_python-9.4.8-py3-none-linux_x86_64.whl
           elif [ "$RUNNER_OS" = "macOS" ]; then
-            mv dist/ghc_compiler_python-9.4.8-py3-none-any.whl dist/ghc_compiler_python-9.4.8-py3-none-macosx_10_9_x86_64.whl
+            if [ "${{ runner.arch }}" == "ARM64" ]; then
+                mv dist/ghc_compiler_python-9.4.8-py3-none-any.whl dist/ghc_compiler_python-9.4.8-py3-none-macosx_11_0_arm64.whl
+            else
+                mv dist/ghc_compiler_python-9.4.8-py3-none-any.whl dist/ghc_compiler_python-9.4.8-py3-none-macosx_11_0_x86_64.whl
+            fi
           fi
 
       - name: Vendor Dynamic Libraries via Auditwheel (Linux)
         if: runner.os == 'Linux'
         # Enforce manylinux2014 compatibility by grafting libgmp/libffi into the wheel
         run: |
+          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(pwd)/ghc-bindist/lib/x86_64-linux-ghc-9.4.8
           auditwheel repair dist/*.whl --plat manylinux2014_x86_64 -w wheelhouse/
           rm -rf dist/*
           mv wheelhouse/*.whl dist/
@@ -94,7 +100,11 @@ jobs:
       - name: Vendor Dynamic Libraries via Delocate (macOS)
         if: runner.os == 'macOS'
         run: |
-          delocate-wheel -v dist/*.whl
+          export DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH:$(pwd)/ghc-bindist/lib/x86_64-osx-ghc-9.4.8:$(pwd)/ghc-bindist/lib/aarch64-osx-ghc-9.4.8:$(pwd)/ghc-bindist/lib/aarch64-apple-darwin-ghc-9.4.8:$(pwd)/ghc-bindist/lib/x86_64-apple-darwin-ghc-9.4.8
+          export DYLD_FALLBACK_LIBRARY_PATH=$DYLD_LIBRARY_PATH
+          delocate-wheel -v -w wheelhouse dist/*.whl
+          rm -rf dist/*
+          mv wheelhouse/*.whl dist/
 
       - name: Execute End-to-End Native Compilation Validation
         shell: bash
