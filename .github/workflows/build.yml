@@ -2,205 +2,137 @@ name: Build and Publish Native GHC Wheel
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   build-wheels:
-    name: Build Python Wheels on ${{ matrix.os }}
+    name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # Cross-platform matrix encompassing Linux, macOS, and Windows
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            platform: manylinux2014_x86_64
+            audit_tool: auditwheel
+          - os: macos-latest
+            platform: macosx_arm64
+            audit_tool: delocate
+          - os: macos-13
+            platform: macosx_x86_64
+            audit_tool: delocate
+          - os: windows-latest
+            platform: win_amd64
+            audit_tool: none
       fail-fast: false
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python 3.10 and Enable Caching
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: 'pip'
 
-      - name: Cache GHC and Cabal Binaries
-        uses: actions/cache@v4
-        with:
-          path: ghc-bindist/
-          key: ${{ runner.os }}-ghc-9.4.8-cabal-3.10.3.0
-          restore-keys: |
-            ${{ runner.os }}-ghc-
-
-      - name: Install System C-Linker Dependencies (Linux)
+      - name: Install C-Linker (Linux)
         if: runner.os == 'Linux'
-        # Ensures gcc and binutils are available for the GHC E2E compilation tests
-        run: |
-          sudo apt-get update && sudo apt-get install -y gcc binutils libncurses-dev
-          sudo ln -s /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5 || true
-          sudo ln -s /usr/lib/x86_64-linux-gnu/libncurses.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5 || true
+        run: sudo apt-get update && sudo apt-get install -y gcc binutils patchelf
 
-      - name: Install Python Build Dependencies
+      - name: Install C-Linker (macOS)
+        if: runner.os == 'macOS'
+        run: xcode-select -p || xcode-select --install
+
+      - name: Install C-Linker (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install mingw -y
+          echo "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install build hatchling
 
-      - name: Install Dynamic Library Vendoring Utilities (Linux)
+      - name: Install Vendoring Tools (Linux)
         if: runner.os == 'Linux'
         run: pip install auditwheel
 
-      - name: Install Dynamic Library Vendoring Utilities (macOS)
+      - name: Install Vendoring Tools (macOS)
         if: runner.os == 'macOS'
         run: pip install delocate
 
-      - name: Fetch and Cryptographically Verify GHC/Cabal Binaries
+      - name: Fetch & Verify Binaries
         shell: bash
-        run: |
-          if [ ! -f "ghc-bindist/bin/ghc" ] && [ ! -f "ghc-bindist/bin/ghc.exe" ] && [ ! -f "ghc-bindist/bin/ghc-9.4.8" ] && [ ! -f "ghc-bindist/bin/ghc-9.4.8.exe" ]; then
-            ./fetch_binaries.sh
-          else
-            echo "Using cached binaries in ghc-bindist/"
-          fi
+        run: bash scripts/fetch_binaries.sh
 
-      - name: Execute Binary Volumetric Reduction (Stripping)
+      - name: Optimize Binaries
         shell: bash
-        run: |
-          if [ ! -f "ghc-bindist/.optimized" ]; then
-            ./optimize_binaries.sh
-            touch ghc-bindist/.optimized
-          else
-            echo "Binaries already optimized"
-          fi
+        run: bash scripts/optimize_binaries.sh
 
-      - name: Build PEP 427 Python Wheel Archive
+      - name: Patch GHC Paths
         shell: bash
-        run: |
-          python -m build --wheel
-          # Rename to a platform specific wheel so auditwheel doesn't reject it
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            mv dist/ghc_compiler_python-9.4.8-py3-none-any.whl dist/ghc_compiler_python-9.4.8-py3-none-linux_x86_64.whl
-          elif [ "$RUNNER_OS" = "macOS" ]; then
-            if [ "${{ runner.arch }}" == "ARM64" ]; then
-                mv dist/ghc_compiler_python-9.4.8-py3-none-any.whl dist/ghc_compiler_python-9.4.8-py3-none-macosx_11_0_arm64.whl
-            else
-                mv dist/ghc_compiler_python-9.4.8-py3-none-any.whl dist/ghc_compiler_python-9.4.8-py3-none-macosx_11_0_x86_64.whl
-            fi
-          fi
+        run: python scripts/patch_ghc_paths.py
 
-      - name: Vendor Dynamic Libraries via Auditwheel (Linux)
+      - name: Build Wheel
+        run: python -m build --wheel
+
+      - name: Vendor Libraries (Linux)
         if: runner.os == 'Linux'
-        # Enforce manylinux2014 compatibility by grafting libgmp/libffi into the wheel
         run: |
-          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(pwd)/ghc-bindist/lib/x86_64-linux-ghc-9.4.8:$(pwd)/ghc-bindist/lib/ghc-9.4.8/lib/x86_64-linux-ghc-9.4.8
-          auditwheel repair dist/*.whl --plat manylinux_2_35_x86_64 -w wheelhouse/ || true
-          if [ -d "wheelhouse" ] && [ "$(ls -A wheelhouse)" ]; then
-            rm -rf dist/*
-            mv wheelhouse/*.whl dist/
-          else
-            echo "Auditwheel failed to produce a wheel, using original"
-          fi
+          auditwheel repair dist/*.whl --plat manylinux2014_x86_64 -w wheelhouse/
+          rm -rf dist/*
+          mv wheelhouse/*.whl dist/
 
-      - name: Vendor Dynamic Libraries via Delocate (macOS)
+      - name: Vendor Libraries (macOS)
         if: runner.os == 'macOS'
-        run: |
-          export DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH:$(pwd)/ghc-bindist/lib/x86_64-osx-ghc-9.4.8:$(pwd)/ghc-bindist/lib/aarch64-osx-ghc-9.4.8:$(pwd)/ghc-bindist/lib/aarch64-apple-darwin-ghc-9.4.8:$(pwd)/ghc-bindist/lib/x86_64-apple-darwin-ghc-9.4.8
-          export DYLD_FALLBACK_LIBRARY_PATH=$DYLD_LIBRARY_PATH
-          delocate-wheel -v -w wheelhouse --ignore-missing-dependencies dist/*.whl || true
-          if [ -d "wheelhouse" ] && [ "$(ls -A wheelhouse)" ]; then
-            rm -rf dist/*
-            mv wheelhouse/*.whl dist/
-          else
-            echo "Delocate failed to produce a wheel, using original"
-          fi
+        run: delocate-wheel -v dist/*.whl
 
-          # Find output wheel name for logging
-          ls -la dist/
-
-      - name: Execute End-to-End Native Compilation Validation
+      - name: E2E Validation
         shell: bash
         run: |
-          echo "Setting up pristine, isolated virtual environment..."
           python -m venv test-env
-
-          # Handle cross-platform venv activation pathing
-          if [ "$RUNNER_OS" = "Windows" ]; then
+          if [[ "${OSTYPE}" == "msys" || "${OSTYPE}" == "win32" ]]; then
             source test-env/Scripts/activate
           else
             source test-env/bin/activate
           fi
-
-          echo "Installing newly built wheel..."
           pip install dist/*.whl
 
-          echo "Generating Haskell E2E Payload..."
           cat << 'EOF' > HelloWorld.hs
           module Main where
           main :: IO ()
-          main = putStrLn "E2E Native Compiler Validation Successful."
+          main = putStrLn "E2E Validation Successful."
           EOF
 
-          # Print out where ghc-wrapper is installed for debugging
-          which ghc-wrapper || true
-          whereis ghc-wrapper || true
-          find test-env -name ghc-wrapper || true
-
-          # Find ghc_compiler absolute install path dynamically using Python for exact library targeting
-          export GHC_PKG_PATH=$(python -c "import ghc_compiler; import os; print(os.path.dirname(ghc_compiler.__file__))")
-          export GHC_LIB_DIR=$(python -c "import sys; import os; print(os.path.join(sys.prefix, 'data', 'ghc-bindist', 'lib'))" || echo "")
-          export SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])" || echo "")
-
-          # Handle library loading on MacOS since SIP blocks DYLD variables in subshells
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            export DYLD_FALLBACK_LIBRARY_PATH=$DYLD_FALLBACK_LIBRARY_PATH:$GHC_PKG_PATH/.dylibs:$GHC_LIB_DIR/x86_64-osx-ghc-9.4.8:$GHC_LIB_DIR/aarch64-osx-ghc-9.4.8:$GHC_LIB_DIR/aarch64-apple-darwin-ghc-9.4.8:$GHC_LIB_DIR/x86_64-apple-darwin-ghc-9.4.8:$(pwd)/ghc-bindist/lib/x86_64-osx-ghc-9.4.8:$(pwd)/ghc-bindist/lib/aarch64-osx-ghc-9.4.8:$(pwd)/ghc-bindist/lib/aarch64-apple-darwin-ghc-9.4.8:$(pwd)/ghc-bindist/lib/x86_64-apple-darwin-ghc-9.4.8:$SITE_PACKAGES/ghc_compiler/.dylibs:$SITE_PACKAGES/../ghc_compiler/.dylibs:$(pwd)/test-env/lib/python3.10/site-packages/ghc_compiler/.dylibs:$(pwd)/test-env/lib/python3.11/site-packages/ghc_compiler/.dylibs:$(pwd)/test-env/lib/python3.12/site-packages/ghc_compiler/.dylibs:$(pwd)/test-env/lib/python3.13/site-packages/ghc_compiler/.dylibs:$(pwd)/test-env/lib/python3.9/site-packages/ghc_compiler/.dylibs
-            export DYLD_LIBRARY_PATH=$DYLD_FALLBACK_LIBRARY_PATH
-            export DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH:$(pwd)/test-env/bin/../../ghc_compiler/.dylibs:$(pwd)/test-env/bin/../ghc_compiler/.dylibs
-            export DYLD_FALLBACK_LIBRARY_PATH=$DYLD_FALLBACK_LIBRARY_PATH:$(pwd)/test-env/bin/../../ghc_compiler/.dylibs:$(pwd)/test-env/bin/../ghc_compiler/.dylibs
-          fi
-
-          echo "Invoking ghc-wrapper subprocess proxy..."
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            # SIP clears DYLD_FALLBACK_LIBRARY_PATH for bash subshells but python can propagate them if explicitly executed
-            python -c "import subprocess, os, sys; env = os.environ.copy(); env['DYLD_FALLBACK_LIBRARY_PATH'] = '$DYLD_FALLBACK_LIBRARY_PATH'; env['DYLD_LIBRARY_PATH'] = '$DYLD_LIBRARY_PATH'; subprocess.run([os.path.join(sys.prefix, 'bin', 'ghc-wrapper'), 'HelloWorld.hs'], env=env, check=True)"
-          elif [ "$RUNNER_OS" = "Linux" ]; then
-            export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$GHC_PKG_PATH/ghc-compiler-python.libs:$GHC_LIB_DIR/x86_64-linux-ghc-9.4.8:$GHC_LIB_DIR/ghc-9.4.8/lib/x86_64-linux-ghc-9.4.8:$(pwd)/ghc-bindist/lib/x86_64-linux-ghc-9.4.8:$(pwd)/ghc-bindist/lib/ghc-9.4.8/lib/x86_64-linux-ghc-9.4.8:$SITE_PACKAGES/ghc-compiler-python.libs:$SITE_PACKAGES/../ghc-compiler-python.libs:$(pwd)/test-env/lib/python3.10/site-packages/ghc-compiler-python.libs:$(pwd)/test-env/lib/python3.11/site-packages/ghc-compiler-python.libs:$(pwd)/test-env/lib/python3.12/site-packages/ghc-compiler-python.libs:$(pwd)/test-env/lib/python3.13/site-packages/ghc-compiler-python.libs:$(pwd)/test-env/lib/python3.9/site-packages/ghc-compiler-python.libs
-            export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu
-            python -c "import subprocess, os, sys; env = os.environ.copy(); env['LD_LIBRARY_PATH'] = '$LD_LIBRARY_PATH'; subprocess.run([os.path.join(sys.prefix, 'bin', 'ghc-wrapper'), 'HelloWorld.hs'], env=env, check=True)"
+          ghc-wrapper HelloWorld.hs
+          if [[ "${OSTYPE}" == "msys" || "${OSTYPE}" == "win32" ]]; then
+            ./HelloWorld.exe
           else
-            # Explicitly force PATH refresh for bash just in case venv Scripts bin isn't picked up correctly
-            export PATH=$(pwd)/test-env/Scripts:$PATH
-            ghc-wrapper HelloWorld.hs
+            ./HelloWorld
           fi
 
-          echo "Executing Final Native Binary..."
-          if [ "$RUNNER_OS" = "Windows" ]; then
-           ./HelloWorld.exe
-          elif [ "$RUNNER_OS" = "macOS" ]; then
-            python -c "import subprocess, os; env = os.environ.copy(); env['DYLD_FALLBACK_LIBRARY_PATH'] = '$DYLD_FALLBACK_LIBRARY_PATH'; env['DYLD_LIBRARY_PATH'] = '$DYLD_LIBRARY_PATH'; subprocess.run(['./HelloWorld'], env=env, check=True)"
-          elif [ "$RUNNER_OS" = "Linux" ]; then
-            export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$GHC_PKG_PATH/ghc-compiler-python.libs:$GHC_LIB_DIR/x86_64-linux-ghc-9.4.8:$GHC_LIB_DIR/ghc-9.4.8/lib/x86_64-linux-ghc-9.4.8:$(pwd)/ghc-bindist/lib/x86_64-linux-ghc-9.4.8:$(pwd)/ghc-bindist/lib/ghc-9.4.8/lib/x86_64-linux-ghc-9.4.8:$SITE_PACKAGES/ghc-compiler-python.libs:$SITE_PACKAGES/../ghc-compiler-python.libs:$(pwd)/test-env/lib/python3.10/site-packages/ghc-compiler-python.libs:$(pwd)/test-env/lib/python3.11/site-packages/ghc-compiler-python.libs:$(pwd)/test-env/lib/python3.12/site-packages/ghc-compiler-python.libs:$(pwd)/test-env/lib/python3.13/site-packages/ghc-compiler-python.libs:$(pwd)/test-env/lib/python3.9/site-packages/ghc-compiler-python.libs
-            export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu
-            python -c "import subprocess, os; env = os.environ.copy(); env['LD_LIBRARY_PATH'] = '$LD_LIBRARY_PATH'; subprocess.run(['./HelloWorld'], env=env, check=True)"
-          else
-           ./HelloWorld
-          fi
+          cabal-wrapper --version
+          echo ':quit' | ghci-wrapper -v0
 
           deactivate
 
-      - name: Store Validated Wheel Artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: ghc-wheels-${{ matrix.os }}
+          name: ghc-wheels-${{ matrix.platform }}
           path: dist/*.whl
+          retention-days: 30
 
   publish-to-pypi:
     name: Zero-Trust PyPI Deployment via OIDC
     needs: build-wheels
     runs-on: ubuntu-latest
-    # Restrict execution: Only publish to PyPI if the workflow is triggered by a release tag
     if: startsWith(github.ref, 'refs/tags/v')
 
     environment:
@@ -208,18 +140,15 @@ jobs:
       url: https://pypi.org/p/ghc-compiler-python
 
     permissions:
-      # Absolute requirement to facilitate the OIDC trusted publishing JWT exchange
       id-token: write
       contents: read
 
     steps:
-      - name: Download Accumulated Wheel Artifacts from Build Matrix
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: dist/
           merge-multiple: true
 
-      - name: Execute Secure PyPA Publishing
-        uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
