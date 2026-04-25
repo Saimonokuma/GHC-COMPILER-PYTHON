@@ -63,7 +63,19 @@ def execute_ghc():
     if sys.platform != 'win32':
         settings_dir = None
 
-        for base in [os.path.join(scripts_dir, '..'), os.path.join(sys.prefix, 'data')]:
+        try:
+            import site
+            site_packages = site.getsitepackages()
+        except Exception:
+            site_packages = []
+
+        search_bases = [
+            os.path.join(scripts_dir, '..'),
+            os.path.join(sys.prefix, 'data'),
+            os.path.join(sys.prefix, 'local', 'data'),
+        ] + site_packages
+
+        for base in search_bases:
             lib_path = os.path.join(base, 'lib')
             if os.path.exists(lib_path):
                 for folder in os.listdir(lib_path):
@@ -79,6 +91,21 @@ def execute_ghc():
                             break
                 if settings_dir:
                     break
+            # Add direct wheel fallback mapping for extracted ghc-bindist locations
+            ghc_bindist_lib_path = os.path.join(base, 'ghc-bindist', 'lib')
+            if os.path.exists(ghc_bindist_lib_path):
+                for folder in os.listdir(ghc_bindist_lib_path):
+                    if 'ghc-' in folder:
+                        potential_settings = os.path.join(ghc_bindist_lib_path, folder, 'settings')
+                        if os.path.exists(potential_settings):
+                            settings_dir = os.path.abspath(os.path.dirname(potential_settings))
+                            break
+                        potential_settings_deep = os.path.join(ghc_bindist_lib_path, folder, 'lib', folder, 'settings')
+                        if os.path.exists(potential_settings_deep):
+                            settings_dir = os.path.abspath(os.path.dirname(potential_settings_deep))
+                            break
+                if settings_dir:
+                    break
 
         if settings_dir:
             cmd_args = ['-B' + settings_dir]
@@ -86,6 +113,7 @@ def execute_ghc():
         else:
             cmd_args = []
             sys.stderr.write("WARNING: Could not resolve GHC settings directory.\n")
+            sys.stderr.write(f"Searched in: {search_bases}\n")
 
     if sys.platform == 'win32':
         # On Windows, GHC expects its tools in the same directory or a predictable relative path

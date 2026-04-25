@@ -26,9 +26,9 @@ strict-naming = true
 packages = ["src/ghc_compiler"]
 
 [tool.hatch.build.targets.wheel.shared-data]
-"ghc-bindist/lib" = "lib"
-"ghc-bindist/mingw" = "mingw"
-"ghc-bindist/share" = "share"
+"ghc-bindist/lib" = "ghc-bindist/lib"
+"ghc-bindist/mingw" = "ghc-bindist/mingw"
+"ghc-bindist/share" = "ghc-bindist/share"
 
 [tool.hatch.build.targets.wheel.shared-scripts]
 "ghc-bindist/bin" = "."
