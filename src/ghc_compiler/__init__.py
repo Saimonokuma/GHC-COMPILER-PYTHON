@@ -61,23 +61,24 @@ def execute_ghc():
 
     # Resolve settings file context missing from macOS wheel execution
     if sys.platform != 'win32':
-        lib_folder = next((name for name in os.listdir(os.path.join(scripts_dir, '..', 'lib')) if 'ghc-' in name), None) if os.path.exists(os.path.join(scripts_dir, '..', 'lib')) else None
-
-        settings_path_1 = os.path.join(scripts_dir, '..', 'lib', lib_folder, 'settings') if lib_folder else None
-        settings_path_2 = os.path.join(scripts_dir, '..', 'data', 'lib', lib_folder, 'settings') if lib_folder else None
-
         settings_dir = None
-        if settings_path_1 and os.path.exists(settings_path_1):
-            settings_dir = os.path.dirname(settings_path_1)
-            cmd_args = ['-B' + settings_dir]
-        elif settings_path_2 and os.path.exists(settings_path_2):
-            settings_dir = os.path.dirname(settings_path_2)
-            cmd_args = ['-B' + settings_dir]
-        else:
-            cmd_args = []
+        for base in [os.path.join(scripts_dir, '..'), os.path.join(sys.prefix, 'data')]:
+            lib_path = os.path.join(base, 'lib')
+            if os.path.exists(lib_path):
+                for folder in os.listdir(lib_path):
+                    if 'ghc-' in folder:
+                        potential_settings = os.path.join(lib_path, folder, 'settings')
+                        if os.path.exists(potential_settings):
+                            settings_dir = os.path.abspath(os.path.dirname(potential_settings))
+                            break
+                if settings_dir:
+                    break
 
         if settings_dir:
+            cmd_args = ['-B' + settings_dir]
             env['GHC_LIBDIR'] = settings_dir
+        else:
+            cmd_args = []
 
     if sys.platform == 'win32':
         # On Windows, GHC expects its tools in the same directory or a predictable relative path

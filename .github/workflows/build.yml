@@ -39,7 +39,7 @@ jobs:
       - name: Install System C-Linker Dependencies (Linux)
         if: runner.os == 'Linux'
         # Ensures gcc and binutils are available for the GHC E2E compilation tests
-        run: sudo apt-get update && sudo apt-get install -y gcc binutils libtinfo5
+        run: sudo apt-get update && sudo apt-get install -y gcc binutils libncurses5
 
       - name: Install Python Build Dependencies
         run: |
