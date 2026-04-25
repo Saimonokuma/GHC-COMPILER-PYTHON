@@ -150,6 +150,8 @@ jobs:
             SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
             export DYLD_FALLBACK_LIBRARY_PATH=$DYLD_FALLBACK_LIBRARY_PATH:$(pwd)/test-env/lib/python3.10/site-packages/ghc_compiler/.dylibs:$(pwd)/test-env/lib/python3.11/site-packages/ghc_compiler/.dylibs:$(pwd)/test-env/lib/python3.12/site-packages/ghc_compiler/.dylibs:$(pwd)/test-env/lib/python3.13/site-packages/ghc_compiler/.dylibs:$(pwd)/test-env/lib/python3.9/site-packages/ghc_compiler/.dylibs:$SITE_PACKAGES/ghc_compiler/.dylibs:$SITE_PACKAGES/../ghc_compiler/.dylibs:$(pwd)/ghc-bindist/lib/x86_64-osx-ghc-9.4.8:$(pwd)/ghc-bindist/lib/aarch64-osx-ghc-9.4.8:$(pwd)/ghc-bindist/lib/aarch64-apple-darwin-ghc-9.4.8:$(pwd)/ghc-bindist/lib/x86_64-apple-darwin-ghc-9.4.8
             export DYLD_LIBRARY_PATH=$DYLD_FALLBACK_LIBRARY_PATH
+            export DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH:$(pwd)/test-env/bin/../../ghc_compiler/.dylibs:$(pwd)/test-env/bin/../ghc_compiler/.dylibs
+            export DYLD_FALLBACK_LIBRARY_PATH=$DYLD_FALLBACK_LIBRARY_PATH:$(pwd)/test-env/bin/../../ghc_compiler/.dylibs:$(pwd)/test-env/bin/../ghc_compiler/.dylibs
           fi
 
           echo "Invoking ghc-wrapper subprocess proxy..."
@@ -158,7 +160,7 @@ jobs:
             python -c "import subprocess, os; env = os.environ.copy(); env['DYLD_FALLBACK_LIBRARY_PATH'] = '$DYLD_FALLBACK_LIBRARY_PATH'; env['DYLD_LIBRARY_PATH'] = '$DYLD_LIBRARY_PATH'; subprocess.run(['ghc-wrapper', 'HelloWorld.hs'], env=env, check=True)"
           elif [ "$RUNNER_OS" = "Linux" ]; then
             SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
-            export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(pwd)/test-env/ghc_compiler/.dylibs:$(pwd)/test-env/lib/python3.10/site-packages/ghc_compiler/.dylibs:$(pwd)/ghc-bindist/lib/x86_64-linux-ghc-9.4.8:$(pwd)/ghc-bindist/lib/ghc-9.4.8/lib/x86_64-linux-ghc-9.4.8:$SITE_PACKAGES/ghc_compiler/.dylibs:$SITE_PACKAGES/../ghc_compiler/.dylibs
+            export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(pwd)/test-env/ghc_compiler/.dylibs:$(pwd)/test-env/lib/python3.10/site-packages/ghc_compiler/.dylibs:$(pwd)/ghc-bindist/lib/x86_64-linux-ghc-9.4.8:$(pwd)/ghc-bindist/lib/ghc-9.4.8/lib/x86_64-linux-ghc-9.4.8:$SITE_PACKAGES/ghc_compiler/.dylibs:$SITE_PACKAGES/../ghc_compiler/.dylibs:$(pwd)/test-env/bin/../../ghc_compiler/.dylibs
             python -c "import subprocess, os; env = os.environ.copy(); env['LD_LIBRARY_PATH'] = '$LD_LIBRARY_PATH'; subprocess.run(['ghc-wrapper', 'HelloWorld.hs'], env=env, check=True)"
           else
             # Explicitly force PATH refresh for bash just in case venv Scripts bin isn't picked up correctly
@@ -173,7 +175,7 @@ jobs:
             python -c "import subprocess, os; env = os.environ.copy(); env['DYLD_FALLBACK_LIBRARY_PATH'] = '$DYLD_FALLBACK_LIBRARY_PATH'; env['DYLD_LIBRARY_PATH'] = '$DYLD_LIBRARY_PATH'; subprocess.run(['./HelloWorld'], env=env, check=True)"
           elif [ "$RUNNER_OS" = "Linux" ]; then
             SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
-            export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(pwd)/test-env/ghc_compiler/.dylibs:$(pwd)/test-env/lib/python3.10/site-packages/ghc_compiler/.dylibs:$(pwd)/ghc-bindist/lib/x86_64-linux-ghc-9.4.8:$(pwd)/ghc-bindist/lib/ghc-9.4.8/lib/x86_64-linux-ghc-9.4.8:$SITE_PACKAGES/ghc_compiler/.dylibs:$SITE_PACKAGES/../ghc_compiler/.dylibs
+            export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(pwd)/test-env/ghc_compiler/.dylibs:$(pwd)/test-env/lib/python3.10/site-packages/ghc_compiler/.dylibs:$(pwd)/ghc-bindist/lib/x86_64-linux-ghc-9.4.8:$(pwd)/ghc-bindist/lib/ghc-9.4.8/lib/x86_64-linux-ghc-9.4.8:$SITE_PACKAGES/ghc_compiler/.dylibs:$SITE_PACKAGES/../ghc_compiler/.dylibs:$(pwd)/test-env/bin/../../ghc_compiler/.dylibs
             python -c "import subprocess, os; env = os.environ.copy(); env['LD_LIBRARY_PATH'] = '$LD_LIBRARY_PATH'; subprocess.run(['./HelloWorld'], env=env, check=True)"
           else
            ./HelloWorld
