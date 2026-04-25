@@ -51,9 +51,18 @@ def execute_ghc():
         # If ghc-wrapper is executed directly from a Python path, we might need to manually
         # enforce the libdir or just add the Scripts directory explicitly to the PATH.
         scripts_dir = os.path.dirname(ghc_bin_path)
-        mingw_dir = os.path.join(scripts_dir, '..', 'lib', 'mingw', 'bin')
-        if os.path.exists(mingw_dir):
-            env['PATH'] = f"{mingw_dir};{env.get('PATH', '')}"
+        mingw_dir1 = os.path.join(scripts_dir, '..', 'lib', 'mingw', 'bin')
+        mingw_dir2 = os.path.join(scripts_dir, '..', '..', 'mingw', 'bin')
+        mingw_dir3 = os.path.join(scripts_dir, '..', '..', '..', 'mingw', 'bin')
+        mingw_dir4 = os.path.join(scripts_dir, '..', 'data', 'lib', 'mingw', 'bin')
+
+        path_additions = []
+        for p in [mingw_dir1, mingw_dir2, mingw_dir3, mingw_dir4]:
+            if os.path.exists(p):
+                path_additions.append(os.path.abspath(p))
+
+        if path_additions:
+            env['PATH'] = ";".join(path_additions) + ";" + env.get('PATH', '')
 
     # 4. Proxy subprocess execution
     # Forcing -v0 ensures GHC remains quiet by default during automated pipelines
