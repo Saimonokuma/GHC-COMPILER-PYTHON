@@ -150,7 +150,7 @@ jobs:
 
           # Find ghc_compiler absolute install path dynamically using Python for exact library targeting
           export GHC_PKG_PATH=$(python -c "import ghc_compiler; import os; print(os.path.dirname(ghc_compiler.__file__))")
-          export GHC_LIB_DIR=$(python -c "import sys; import os; print(os.path.join(sys.prefix, 'data', 'lib'))" || echo "")
+          export GHC_LIB_DIR=$(python -c "import sys; import os; print(os.path.join(sys.prefix, 'data', 'ghc-bindist', 'lib'))" || echo "")
           export SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])" || echo "")
 
           # Handle library loading on MacOS since SIP blocks DYLD variables in subshells
