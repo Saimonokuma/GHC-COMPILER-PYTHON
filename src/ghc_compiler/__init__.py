@@ -51,15 +51,22 @@ def execute_ghc():
         # If ghc-wrapper is executed directly from a Python path, we might need to manually
         # enforce the libdir or just add the Scripts directory explicitly to the PATH.
         scripts_dir = os.path.dirname(ghc_bin_path)
-        mingw_dir1 = os.path.join(scripts_dir, '..', 'lib', 'mingw', 'bin')
-        mingw_dir2 = os.path.join(scripts_dir, '..', '..', 'mingw', 'bin')
-        mingw_dir3 = os.path.join(scripts_dir, '..', '..', '..', 'mingw', 'bin')
-        mingw_dir4 = os.path.join(scripts_dir, '..', 'data', 'mingw', 'bin')
 
         path_additions = []
-        for p in [mingw_dir1, mingw_dir2, mingw_dir3, mingw_dir4]:
-            if os.path.exists(p):
-                path_additions.append(os.path.abspath(p))
+
+        # Manually crawl up looking for mingw/bin
+        current = scripts_dir
+        for _ in range(5):
+            potential = os.path.join(current, 'mingw', 'bin')
+            if os.path.exists(potential):
+                path_additions.append(os.path.abspath(potential))
+            potential_lib = os.path.join(current, 'lib', 'mingw', 'bin')
+            if os.path.exists(potential_lib):
+                path_additions.append(os.path.abspath(potential_lib))
+            potential_data = os.path.join(current, 'data', 'mingw', 'bin')
+            if os.path.exists(potential_data):
+                path_additions.append(os.path.abspath(potential_data))
+            current = os.path.dirname(current)
 
         if path_additions:
             env['PATH'] = ";".join(path_additions) + ";" + env.get('PATH', '')
