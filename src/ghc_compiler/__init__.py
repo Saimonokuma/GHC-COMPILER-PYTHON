@@ -46,6 +46,15 @@ def execute_ghc():
                 sys.stderr.write(f"FATAL ERROR: Bundled compiler binary '{binary_target}' could not be located.\n")
                 sys.exit(1)
 
+    if sys.platform == 'win32':
+        # On Windows, GHC expects its tools in the same directory or a predictable relative path
+        # If ghc-wrapper is executed directly from a Python path, we might need to manually
+        # enforce the libdir or just add the Scripts directory explicitly to the PATH.
+        scripts_dir = os.path.dirname(ghc_bin_path)
+        mingw_dir = os.path.join(scripts_dir, '..', 'lib', 'mingw', 'bin')
+        if os.path.exists(mingw_dir):
+            env['PATH'] = f"{mingw_dir};{env.get('PATH', '')}"
+
     # 4. Proxy subprocess execution
     # Forcing -v0 ensures GHC remains quiet by default during automated pipelines
     cmd = [ghc_bin_path, '-v0'] + sys.argv[1:]

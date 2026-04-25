@@ -27,6 +27,7 @@ packages = ["src/ghc_compiler"]
 
 [tool.hatch.build.targets.wheel.shared-data]
 "ghc-bindist/lib" = "lib"
+"ghc-bindist/share" = "share"
 
 [tool.hatch.build.targets.wheel.shared-scripts]
 "ghc-bindist/bin" = "."
