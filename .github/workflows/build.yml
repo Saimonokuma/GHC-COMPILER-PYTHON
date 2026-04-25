@@ -137,19 +137,27 @@ jobs:
           main = putStrLn "E2E Native Compiler Validation Successful."
           EOF
 
+          # Print out where ghc-wrapper is installed for debugging
+          which ghc-wrapper || true
+          whereis ghc-wrapper || true
+          find test-env -name ghc-wrapper || true
+
           # Handle library loading on MacOS since SIP blocks DYLD variables in subshells
           if [ "$RUNNER_OS" = "macOS" ]; then
             SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
             export DYLD_FALLBACK_LIBRARY_PATH=$DYLD_FALLBACK_LIBRARY_PATH:$(pwd)/test-env/lib/python3.10/site-packages/ghc_compiler/.dylibs:$(pwd)/test-env/lib/python3.11/site-packages/ghc_compiler/.dylibs:$(pwd)/test-env/lib/python3.12/site-packages/ghc_compiler/.dylibs:$(pwd)/test-env/lib/python3.13/site-packages/ghc_compiler/.dylibs:$(pwd)/test-env/lib/python3.9/site-packages/ghc_compiler/.dylibs:$SITE_PACKAGES/ghc_compiler/.dylibs:$SITE_PACKAGES/../ghc_compiler/.dylibs
+            export DYLD_LIBRARY_PATH=$DYLD_FALLBACK_LIBRARY_PATH
           fi
 
           echo "Invoking ghc-wrapper subprocess proxy..."
           if [ "$RUNNER_OS" = "macOS" ]; then
             # SIP clears DYLD_FALLBACK_LIBRARY_PATH for bash subshells but python can propagate them if explicitly executed
-            python -c "import subprocess, os; env = os.environ.copy(); env['DYLD_FALLBACK_LIBRARY_PATH'] = '$DYLD_FALLBACK_LIBRARY_PATH'; subprocess.run(['ghc-wrapper', 'HelloWorld.hs'], env=env, check=True)"
+            python -c "import subprocess, os; env = os.environ.copy(); env['DYLD_FALLBACK_LIBRARY_PATH'] = '$DYLD_FALLBACK_LIBRARY_PATH'; env['DYLD_LIBRARY_PATH'] = '$DYLD_LIBRARY_PATH'; subprocess.run(['ghc-wrapper', 'HelloWorld.hs'], env=env, check=True)"
           elif [ "$RUNNER_OS" = "Linux" ]; then
             python -c "import subprocess, os; env = os.environ.copy(); env['LD_LIBRARY_PATH'] = '$LD_LIBRARY_PATH'; subprocess.run(['ghc-wrapper', 'HelloWorld.hs'], env=env, check=True)"
           else
+            # Explicitly force PATH refresh for bash just in case venv Scripts bin isn't picked up correctly
+            export PATH=$(pwd)/test-env/Scripts:$PATH
             ghc-wrapper HelloWorld.hs
           fi
 
@@ -157,7 +165,7 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then
            ./HelloWorld.exe
           elif [ "$RUNNER_OS" = "macOS" ]; then
-            python -c "import subprocess, os; env = os.environ.copy(); env['DYLD_FALLBACK_LIBRARY_PATH'] = '$DYLD_FALLBACK_LIBRARY_PATH'; subprocess.run(['./HelloWorld'], env=env, check=True)"
+            python -c "import subprocess, os; env = os.environ.copy(); env['DYLD_FALLBACK_LIBRARY_PATH'] = '$DYLD_FALLBACK_LIBRARY_PATH'; env['DYLD_LIBRARY_PATH'] = '$DYLD_LIBRARY_PATH'; subprocess.run(['./HelloWorld'], env=env, check=True)"
           elif [ "$RUNNER_OS" = "Linux" ]; then
             python -c "import subprocess, os; env = os.environ.copy(); env['LD_LIBRARY_PATH'] = '$LD_LIBRARY_PATH'; subprocess.run(['./HelloWorld'], env=env, check=True)"
           else

@@ -43,8 +43,19 @@ def execute_ghc():
             if os.path.exists(fallback_path):
                 ghc_bin_path = fallback_path
             else:
-                sys.stderr.write(f"FATAL ERROR: Bundled compiler binary '{binary_target}' could not be located.\n")
-                sys.exit(1)
+                # Add check for Python user base installs (e.g. CI environments)
+                try:
+                    import site
+                    user_base_path = os.path.join(site.getuserbase(), bin_dir, binary_target)
+                    if os.path.exists(user_base_path):
+                        ghc_bin_path = user_base_path
+                except Exception:
+                    pass
+
+                if not ghc_bin_path:
+                    sys.stderr.write(f"FATAL ERROR: Bundled compiler binary '{binary_target}' could not be located.\n")
+                    sys.stderr.write(f"Search attempted in sys.prefix ({sys.prefix}) and user base.\n")
+                    sys.exit(1)
 
     if sys.platform == 'win32':
         # On Windows, GHC expects its tools in the same directory or a predictable relative path
@@ -56,7 +67,7 @@ def execute_ghc():
 
         # Manually crawl up looking for mingw/bin
         current = scripts_dir
-        for _ in range(5):
+        for _ in range(6):
             potential = os.path.join(current, 'mingw', 'bin')
             if os.path.exists(potential):
                 path_additions.append(os.path.abspath(potential))
@@ -66,6 +77,9 @@ def execute_ghc():
             potential_data = os.path.join(current, 'data', 'mingw', 'bin')
             if os.path.exists(potential_data):
                 path_additions.append(os.path.abspath(potential_data))
+            potential_site = os.path.join(current, 'Lib', 'site-packages', 'mingw', 'bin')
+            if os.path.exists(potential_site):
+                path_additions.append(os.path.abspath(potential_site))
             current = os.path.dirname(current)
 
         if path_additions:
