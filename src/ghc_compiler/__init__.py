@@ -62,6 +62,7 @@ def execute_ghc():
     # Resolve settings file context missing from macOS wheel execution
     if sys.platform != 'win32':
         settings_dir = None
+
         for base in [os.path.join(scripts_dir, '..'), os.path.join(sys.prefix, 'data')]:
             lib_path = os.path.join(base, 'lib')
             if os.path.exists(lib_path):
@@ -71,6 +72,11 @@ def execute_ghc():
                         if os.path.exists(potential_settings):
                             settings_dir = os.path.abspath(os.path.dirname(potential_settings))
                             break
+                        # Some installations nest a 'lib' folder twice
+                        potential_settings_deep = os.path.join(lib_path, folder, 'lib', folder, 'settings')
+                        if os.path.exists(potential_settings_deep):
+                            settings_dir = os.path.abspath(os.path.dirname(potential_settings_deep))
+                            break
                 if settings_dir:
                     break
 
@@ -79,6 +85,7 @@ def execute_ghc():
             env['GHC_LIBDIR'] = settings_dir
         else:
             cmd_args = []
+            sys.stderr.write("WARNING: Could not resolve GHC settings directory.\n")
 
     if sys.platform == 'win32':
         # On Windows, GHC expects its tools in the same directory or a predictable relative path
