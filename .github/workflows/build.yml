@@ -24,9 +24,6 @@ jobs:
           - os: macos-latest
             platform: macosx_arm64
             audit_tool: delocate
-          - os: macos-13
-            platform: macosx_x86_64
-            audit_tool: delocate
           - os: windows-latest
             platform: win_amd64
             audit_tool: none
@@ -34,6 +31,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Free disk space (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo apt-get clean
+          df -h
 
       - uses: actions/setup-python@v5
         with:
