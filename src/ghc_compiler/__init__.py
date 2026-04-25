@@ -57,11 +57,32 @@ def execute_ghc():
                     sys.stderr.write(f"Search attempted in sys.prefix ({sys.prefix}) and user base.\n")
                     sys.exit(1)
 
+    scripts_dir = os.path.dirname(ghc_bin_path)
+
+    # Resolve settings file context missing from macOS wheel execution
+    if sys.platform != 'win32':
+        lib_folder = next((name for name in os.listdir(os.path.join(scripts_dir, '..', 'lib')) if 'ghc-' in name), None) if os.path.exists(os.path.join(scripts_dir, '..', 'lib')) else None
+
+        settings_path_1 = os.path.join(scripts_dir, '..', 'lib', lib_folder, 'settings') if lib_folder else None
+        settings_path_2 = os.path.join(scripts_dir, '..', 'data', 'lib', lib_folder, 'settings') if lib_folder else None
+
+        settings_dir = None
+        if settings_path_1 and os.path.exists(settings_path_1):
+            settings_dir = os.path.dirname(settings_path_1)
+            cmd_args = ['-B' + settings_dir]
+        elif settings_path_2 and os.path.exists(settings_path_2):
+            settings_dir = os.path.dirname(settings_path_2)
+            cmd_args = ['-B' + settings_dir]
+        else:
+            cmd_args = []
+
+        if settings_dir:
+            env['GHC_LIBDIR'] = settings_dir
+
     if sys.platform == 'win32':
         # On Windows, GHC expects its tools in the same directory or a predictable relative path
         # If ghc-wrapper is executed directly from a Python path, we might need to manually
         # enforce the libdir or just add the Scripts directory explicitly to the PATH.
-        scripts_dir = os.path.dirname(ghc_bin_path)
 
         path_additions = []
 
@@ -87,7 +108,10 @@ def execute_ghc():
 
     # 4. Proxy subprocess execution
     # Forcing -v0 ensures GHC remains quiet by default during automated pipelines
-    cmd = [ghc_bin_path, '-v0'] + sys.argv[1:]
+    if sys.platform != 'win32':
+        cmd = [ghc_bin_path] + cmd_args + ['-v0'] + sys.argv[1:]
+    else:
+        cmd = [ghc_bin_path, '-v0'] + sys.argv[1:]
 
     try:
         # Execute the compiler in the sanitized subprocess environment
