@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling >= 1.24.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ghc-compiler-python"
+version = "9.4.8"
+description = "Native GHC 9.4.8 compiler and Cabal 3.10.3.0 tooling packaged as an isolated Python Wheel"
+readme = "README.md"
+authors = [{ name = "Socio & Aether_Forge" }]
+license = { text = "MIT" }
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Compilers",
+]
+dependencies = []
+
+[project.scripts]
+ghc-wrapper = "ghc_compiler:execute_ghc"
+
+[tool.hatch.build.targets.wheel]
+strict-naming = true
+packages = ["src/ghc_compiler"]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"ghc-bindist/lib" = "lib"
+"ghc-bindist/share" = "share"
+
+[tool.hatch.build.targets.wheel.shared-scripts]
+"ghc-bindist/bin" = "."

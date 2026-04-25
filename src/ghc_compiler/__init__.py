@@ -1,0 +1,58 @@
+import os
+import sys
+import shutil
+import subprocess
+
+def execute_ghc():
+    """
+    Primary entry point for the ghc-wrapper console script.
+    Provides execution isolation, environment sterilization, and pre-flight
+    validation for the native GHC binary subprocess.
+    """
+    # 1. Isolate and sterilize the execution environment
+    env = os.environ.copy()
+    haskell_pollution_vars = [
+        "GHC_PACKAGE_PATH",
+        "GHC_ENVIRONMENT",
+        "CABAL_DIR",
+        "CABAL_CONFIG"
+    ]
+    for var in haskell_pollution_vars:
+        env.pop(var, None)
+
+    # 2. Execute Pre-flight validation for Host C-Linker dependency
+    # GHC requires a native system linker to finalize binary compilation
+    if not shutil.which('gcc') and not shutil.which('clang'):
+        sys.stderr.write("FATAL ERROR: The GHC compiler requires a host C-linker.\n")
+        sys.stderr.write("Please install 'gcc' or 'clang' and ensure it is available in the system PATH.\n")
+        sys.exit(1)
+
+    # 3. Resolve the path to the bundled native GHC binary
+    # The binary is placed in the active environment's bin/Scripts path via PEP 427.data/scripts
+    binary_target = 'ghc.exe' if sys.platform == 'win32' else 'ghc'
+    ghc_bin_path = shutil.which(binary_target)
+
+    if not ghc_bin_path:
+        # Fallback heuristic: absolute path resolution based on sys.prefix
+        bin_dir = 'Scripts' if sys.platform == 'win32' else 'bin'
+        fallback_path = os.path.join(sys.prefix, bin_dir, binary_target)
+        if os.path.exists(fallback_path):
+            ghc_bin_path = fallback_path
+        else:
+            sys.stderr.write(f"FATAL ERROR: Bundled compiler binary '{binary_target}' could not be located.\n")
+            sys.exit(1)
+
+    # 4. Proxy subprocess execution
+    # Forcing -v0 ensures GHC remains quiet by default during automated pipelines
+    cmd = [ghc_bin_path, '-v0'] + sys.argv[1:]
+
+    try:
+        # Execute the compiler in the sanitized subprocess environment
+        result = subprocess.run(cmd, env=env)
+        sys.exit(result.returncode)
+    except KeyboardInterrupt:
+        # Gracefully handle SIGINT from the user
+        sys.exit(130)
+    except Exception as e:
+        sys.stderr.write(f"FATAL ERROR: Subprocess proxy exception: {str(e)}\n")
+        sys.exit(1)
