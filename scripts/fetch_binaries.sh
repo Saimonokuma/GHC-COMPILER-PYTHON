@@ -52,11 +52,19 @@ curl --fail --silent --show-error --location "${CABAL_BASE_URL}/${CABAL_TAR}" -o
 
 # Validate
 echo "[4/5] Validating cryptographic hashes..."
-if ! grep "${GHC_TAR}" ghc_sha256.txt | sha256sum --check --status; then
+if [[ "${OS}" == "Darwin" ]]; then
+	SHASUM="shasum -a 256"
+else
+	SHASUM="sha256sum"
+fi
+
+grep "${GHC_TAR}" ghc_sha256.txt > ghc_check.txt || true
+if ! ${SHASUM} --check --status ghc_check.txt; then
 	echo "FATAL: GHC SHA-256 validation failed!" >&2
 	exit 3
 fi
-if ! grep "${CABAL_TAR}" cabal_sha256.txt | sha256sum --check --status; then
+grep "${CABAL_TAR}" cabal_sha256.txt > cabal_check.txt || true
+if ! ${SHASUM} --check --status cabal_check.txt; then
 	echo "FATAL: Cabal SHA-256 validation failed!" >&2
 	exit 3
 fi
@@ -75,7 +83,7 @@ else
 fi
 
 tar -xf "${GHC_TAR}"
-GHC_EXTRACTED_DIR=$(tar -tf "${GHC_TAR}" | head -1 | cut -f1 -d"/")
+GHC_EXTRACTED_DIR=$(tar -tf "${GHC_TAR}" | grep -m 1 -o "^[^/]*")
 
 cp -a "${GHC_EXTRACTED_DIR}/bin/"* "../${STAGING_DIR}/bin/" 2>/dev/null || true
 cp -a "${GHC_EXTRACTED_DIR}/lib/"* "../${STAGING_DIR}/lib/" 2>/dev/null || true

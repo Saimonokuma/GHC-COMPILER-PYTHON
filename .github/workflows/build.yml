@@ -24,9 +24,7 @@ jobs:
           - os: macos-latest
             platform: macosx_arm64
             audit_tool: delocate
-          - os: macos-13
-            platform: macosx_x86_64
-            audit_tool: delocate
+
           - os: windows-latest
             platform: win_amd64
             audit_tool: none
