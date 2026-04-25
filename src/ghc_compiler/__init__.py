@@ -54,7 +54,7 @@ def execute_ghc():
         mingw_dir1 = os.path.join(scripts_dir, '..', 'lib', 'mingw', 'bin')
         mingw_dir2 = os.path.join(scripts_dir, '..', '..', 'mingw', 'bin')
         mingw_dir3 = os.path.join(scripts_dir, '..', '..', '..', 'mingw', 'bin')
-        mingw_dir4 = os.path.join(scripts_dir, '..', 'data', 'lib', 'mingw', 'bin')
+        mingw_dir4 = os.path.join(scripts_dir, '..', 'data', 'mingw', 'bin')
 
         path_additions = []
         for p in [mingw_dir1, mingw_dir2, mingw_dir3, mingw_dir4]:
