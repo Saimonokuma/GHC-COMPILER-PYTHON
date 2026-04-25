@@ -39,8 +39,12 @@ def execute_ghc():
         if os.path.exists(fallback_path):
             ghc_bin_path = fallback_path
         else:
-            sys.stderr.write(f"FATAL ERROR: Bundled compiler binary '{binary_target}' could not be located.\n")
-            sys.exit(1)
+            fallback_path = os.path.join(sys.prefix, 'local', bin_dir, binary_target)
+            if os.path.exists(fallback_path):
+                ghc_bin_path = fallback_path
+            else:
+                sys.stderr.write(f"FATAL ERROR: Bundled compiler binary '{binary_target}' could not be located.\n")
+                sys.exit(1)
 
     # 4. Proxy subprocess execution
     # Forcing -v0 ensures GHC remains quiet by default during automated pipelines

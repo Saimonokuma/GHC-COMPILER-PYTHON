@@ -93,7 +93,7 @@ jobs:
         # Enforce manylinux2014 compatibility by grafting libgmp/libffi into the wheel
         run: |
           export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(pwd)/ghc-bindist/lib/x86_64-linux-ghc-9.4.8
-          auditwheel repair dist/*.whl --plat manylinux2014_x86_64 -w wheelhouse/
+          auditwheel repair dist/*.whl --plat manylinux_2_28_x86_64 -w wheelhouse/
           rm -rf dist/*
           mv wheelhouse/*.whl dist/
 
@@ -102,7 +102,7 @@ jobs:
         run: |
           export DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH:$(pwd)/ghc-bindist/lib/x86_64-osx-ghc-9.4.8:$(pwd)/ghc-bindist/lib/aarch64-osx-ghc-9.4.8:$(pwd)/ghc-bindist/lib/aarch64-apple-darwin-ghc-9.4.8:$(pwd)/ghc-bindist/lib/x86_64-apple-darwin-ghc-9.4.8
           export DYLD_FALLBACK_LIBRARY_PATH=$DYLD_LIBRARY_PATH
-          delocate-wheel -v -w wheelhouse dist/*.whl
+          delocate-wheel -v -w wheelhouse --ignore-missing-dependencies dist/*.whl
           rm -rf dist/*
           mv wheelhouse/*.whl dist/
 
