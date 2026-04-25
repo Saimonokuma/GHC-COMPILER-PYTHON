@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling >= 1.24.0"]
+requires = ["hatchling>=1.24.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -7,28 +7,48 @@ name = "ghc-compiler-python"
 version = "9.4.8"
 description = "Native GHC 9.4.8 compiler and Cabal 3.10.3.0 tooling packaged as an isolated Python Wheel"
 readme = "README.md"
-authors = [{ name = "Socio & Aether_Forge" }]
-license = { text = "MIT" }
+license = {text = "MIT"}
 requires-python = ">=3.8"
+authors = [
+	{name = "ghc-compiler-python contributors"},
+]
 classifiers = [
-    "Development Status :: 4 - Beta",
-    "Environment :: Console",
-    "Intended Audience :: Developers",
-    "Topic :: Software Development :: Compilers",
+	"Development Status :: 5 - Production/Stable",
+	"Intended Audience :: Developers",
+	"License :: OSI Approved :: MIT License",
+	"Operating System :: POSIX :: Linux",
+	"Operating System :: MacOS :: MacOS X",
+	"Operating System :: Microsoft :: Windows",
+	"Programming Language :: Haskell",
+	"Programming Language :: Python :: 3",
+	"Programming Language :: Python :: 3.8",
+	"Programming Language :: Python :: 3.9",
+	"Programming Language :: Python :: 3.10",
+	"Programming Language :: Python :: 3.11",
+	"Programming Language :: Python :: 3.12",
+	"Topic :: Software Development :: Compilers",
+	"Topic :: Software Development :: Build Tools",
 ]
 dependencies = []
 
 [project.scripts]
-ghc-wrapper = "ghc_compiler:execute_ghc"
+ghc-wrapper = "ghc_compiler_python.wrapper:execute_ghc"
+ghci-wrapper = "ghc_compiler_python.wrapper:execute_ghci"
+cabal-wrapper = "ghc_compiler_python.wrapper:execute_cabal"
 
 [tool.hatch.build.targets.wheel]
 strict-naming = true
-packages = ["src/ghc_compiler"]
-
-[tool.hatch.build.targets.wheel.shared-data]
-"ghc-bindist/lib" = "ghc-bindist/lib"
-"ghc-bindist/mingw" = "ghc-bindist/mingw"
-"ghc-bindist/share" = "ghc-bindist/share"
 
 [tool.hatch.build.targets.wheel.shared-scripts]
-"ghc-bindist/bin" = "."
+"ghc-bindist/bin" = "/"
+
+[tool.hatch.build.targets.sdist]
+include = [
+	"/scripts/",
+	"/tests/",
+	"/README.md",
+	"/LICENSE",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

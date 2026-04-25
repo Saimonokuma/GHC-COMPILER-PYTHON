@@ -1,0 +1,48 @@
+"""End-to-end tests for ghc-compiler-python wheel functionality."""
+
+import os
+import subprocess
+import sys
+import tempfile
+import pytest
+import shutil
+
+
+@pytest.fixture
+def haskell_source():
+	"""Create a temporary Haskell source file."""
+	with tempfile.NamedTemporaryFile(
+		mode="w", suffix=".hs", delete=False
+	) as f:
+		f.write('module Main where\nmain :: IO ()\nmain = putStrLn "E2E Test Passed"\n')
+		yield f.name
+	os.unlink(f.name)
+
+
+@pytest.mark.skipif(
+	not shutil.which("gcc") and not shutil.which("clang"),
+	reason="No C-linker available"
+)
+class TestGHCWrapper:
+	"""Tests for ghc-wrapper functionality."""
+
+	def test_ghc_version(self):
+		result = subprocess.run(
+			["ghc-wrapper", "--version"],
+			capture_output=True, text=True
+		)
+		assert result.returncode == 0
+
+	def test_ghc_compilation(self, haskell_source):
+		result = subprocess.run(
+			["ghc-wrapper", haskell_source],
+			capture_output=True, text=True
+		)
+		assert result.returncode == 0
+
+	def test_cabal_version(self):
+		result = subprocess.run(
+			["cabal-wrapper", "--version"],
+			capture_output=True, text=True
+		)
+		assert result.returncode == 0
