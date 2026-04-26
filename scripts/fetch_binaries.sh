@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # fetch_binaries.sh — Cryptographic binary acquisition
-set -euo pipefail
+set -eu
+set -o pipefail 2>/dev/null || true
 
 GHC_VERSION="9.4.8"
 CABAL_VERSION="3.10.3.0"
@@ -83,7 +84,7 @@ else
 fi
 
 tar -xf "${GHC_TAR}"
-GHC_EXTRACTED_DIR=$(tar -tf "${GHC_TAR}" | grep -m 1 -o "^[^/]*")
+GHC_EXTRACTED_DIR=$(tar -tf "${GHC_TAR}" > tar_list.txt && head -1 tar_list.txt | cut -f1 -d"/")
 
 cp -a "${GHC_EXTRACTED_DIR}/bin/"* "../${STAGING_DIR}/bin/" 2>/dev/null || true
 cp -a "${GHC_EXTRACTED_DIR}/lib/"* "../${STAGING_DIR}/lib/" 2>/dev/null || true

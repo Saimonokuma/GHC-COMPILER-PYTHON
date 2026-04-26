@@ -1,25 +1,23 @@
 #!/usr/bin/env bash
-# optimize_binaries.sh
-# Aggressive binary size reduction via strip utility
+# optimize_binaries.sh — Aggressive symbol stripping
 set -euo pipefail
 
+STAGING_DIR="ghc-bindist"
 OS=$(uname -s)
 
-echo "Initiating binary size reduction sequence..."
-
-if [[ "${OS}" == "Linux" || "${OS}" == "Darwin" ]]; then
-    # Calculate initial size
-    INITIAL_SIZE=$(du -sh ghc-bindist/ | cut -f1)
-    echo "Initial size: ${INITIAL_SIZE}"
-
-    # Strip all executables and shared objects
-    find ghc-bindist -type f $$ -perm -0100 -o -name "*.so" -o -name "*.so.*" -o -name "*.dylib" $$ \
-        -exec strip --strip-unneeded {} + 2>/dev/null || true
-
-    # Calculate final size
-    FINAL_SIZE=$(du -sh ghc-bindist/ | cut -f1)
-    echo "Final size: ${FINAL_SIZE}"
-    echo "Symbol stripping and binary optimization complete."
-else
-    echo "Optimization skipped for Windows host."
+if [[ "${OS}" == MINGW* || "${OS}" == MSYS* || "${OS}" == CYGWIN* ]]; then
+	echo "Windows detected — optimization skipped."
+	exit 0
 fi
+
+echo "Pre-optimization size:"
+du -sh "${STAGING_DIR}/" 2>/dev/null || true
+
+echo "Stripping debug symbols..."
+find "${STAGING_DIR}" -type f \( \
+	-perm -0100 -o -name "*.so" -o -name "*.dylib" -o -name "*.so.*" \
+\) -exec strip --strip-unneeded {} + 2>/dev/null || true
+
+echo "Post-optimization size:"
+du -sh "${STAGING_DIR}/" 2>/dev/null || true
+echo "Optimization complete."
