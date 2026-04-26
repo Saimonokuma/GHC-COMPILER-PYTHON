@@ -54,9 +54,14 @@ def _resolve_binary(name: str) -> str:
 	if os.path.exists(env_bin):
 		return env_bin
 
+	# Strategy 4: Hatchling shared-data fallback
+	shared_data_bin = os.path.join(sys.prefix, "ghc_compiler_python", "ghc-bindist", "bin", binary_name)
+	if os.path.exists(shared_data_bin):
+		return shared_data_bin
+
 	sys.stderr.write(
 		f"FATAL ERROR: Bundled binary '{binary_name}' not found.\n"
-		f"Searched: PATH, {fallback_path}, {env_bin}\n"
+		f"Searched: PATH, {fallback_path}, {env_bin}, {shared_data_bin}\n"
 	)
 	sys.exit(1)
 
@@ -92,7 +97,10 @@ def _sterilize_environment() -> dict:
 	# Ensure bundled binaries are FIRST on PATH
 	bin_dir = "Scripts" if sys.platform == "win32" else "bin"
 	env_bin = os.path.join(sys.prefix, bin_dir)
-	env["PATH"] = f"{env_bin}{os.pathsep}{env.get('PATH', '')}"
+	shared_data_bin = os.path.join(sys.prefix, "ghc_compiler_python", "ghc-bindist", "bin")
+
+	new_path = f"{shared_data_bin}{os.pathsep}{env_bin}{os.pathsep}{env.get('PATH', '')}"
+	env["PATH"] = new_path
 
 	return env
 
