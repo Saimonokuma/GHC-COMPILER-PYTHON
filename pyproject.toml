@@ -41,7 +41,11 @@ packages = ["ghc_compiler_python"]
 strict-naming = true
 
 [tool.hatch.build.targets.wheel.shared-data]
-"ghc-bindist" = "ghc_compiler_python/ghc-bindist"
+"ghc-bindist/bin" = "bin"
+"ghc-bindist/lib" = "lib"
+"ghc-bindist/settings" = "settings"
+"ghc-bindist/package.conf.d" = "package.conf.d"
+"ghc-bindist/share" = "share"
 
 [tool.hatch.build.targets.sdist]
 include = [
