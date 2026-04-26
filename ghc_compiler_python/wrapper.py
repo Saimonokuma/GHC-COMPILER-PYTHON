@@ -16,7 +16,7 @@ GHC_VERSION = "9.4.8"
 CABAL_VERSION = "3.10.3.0"
 
 # Environment variables that MUST be purged to prevent host contamination
-HASKELL_POLLUTION_VARS: List[str] = [
+HASKELL_POLLUTION_VARS = frozenset({
 	"GHC_PACKAGE_PATH",
 	"GHC_ENVIRONMENT",
 	"CABAL_DIR",
@@ -28,8 +28,7 @@ HASKELL_POLLUTION_VARS: List[str] = [
 	"STACK_YAML",
 	"GHCRTS",
 	"GHCRTS_OPTS",
-	"HEAPSIZE",
-]
+})
 
 _HOME_ORIGINAL: Optional[str] = None
 

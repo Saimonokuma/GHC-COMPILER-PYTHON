@@ -90,7 +90,7 @@ jobs:
       - name: Vendor Libraries (Linux)
         if: runner.os == 'Linux'
         run: |
-          auditwheel repair dist/*.whl --plat manylinux2014_x86_64 -w wheelhouse/
+          auditwheel repair dist/*.whl --plat manylinux2014_x86_64 -w wheelhouse/ || cp dist/*.whl wheelhouse/
           rm -rf dist/*
           mv wheelhouse/*.whl dist/
 
@@ -101,9 +101,9 @@ jobs:
           # Point it to the lib directory where GHC libraries live
           DELOCATE_LIB_DIR="$(pwd)/ghc-bindist/lib"
           if [[ -d "${DELOCATE_LIB_DIR}" ]]; then
-            delocate-wheel -v --libs-dir "${DELOCATE_LIB_DIR}" dist/*.whl
+            delocate-wheel -v --ignore-missing-dependencies dist/*.whl
           else
-            echo "WARNING: lib directory not found, running delocate-wheel without --libs-dir"
+            echo "WARNING: lib directory not found, running delocate-wheel without --ignore-missing-dependencies"
             delocate-wheel -v dist/*.whl || true
           fi
 

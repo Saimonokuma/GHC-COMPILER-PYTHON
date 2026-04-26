@@ -38,14 +38,10 @@ cabal-wrapper = "ghc_compiler_python.wrapper:execute_cabal"
 
 [tool.hatch.build.targets.wheel]
 packages = ["ghc_compiler_python"]
-artifacts = [
-    "ghc-bindist/bin/*",
-    "ghc-bindist/lib/*/*",
-    "ghc-bindist/lib/*/*/*",
-    "ghc-bindist/settings",
-    "ghc-bindist/package.conf.d/*",
-]
 strict-naming = true
+
+[tool.hatch.build.targets.wheel.shared-data]
+"ghc-bindist" = "ghc_compiler_python/ghc-bindist"
 
 [tool.hatch.build.targets.sdist]
 include = [

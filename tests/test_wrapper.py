@@ -87,5 +87,6 @@ class TestPollutionVars:
 		for var in expected:
 			assert var in HASKELL_POLLUTION_VARS
 
-	def test_has_minimum_count(self):
-		assert len(HASKELL_POLLUTION_VARS) >= 10
+	def test_exact_count(self):
+		assert len(HASKELL_POLLUTION_VARS) == 11
+		assert isinstance(HASKELL_POLLUTION_VARS, frozenset)

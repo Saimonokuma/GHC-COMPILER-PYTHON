@@ -62,12 +62,12 @@ sha256_check() {
     local expected_hash="$1"
     local filepath="$2"
 
-    if command -v sha256sum &>/dev/null; then
-        # Linux
-        echo "${expected_hash}  ${filepath}" | sha256sum -c --status
-    elif command -v shasum &>/dev/null; then
+    if [[ "$OS" == "Darwin" ]] && command -v shasum &>/dev/null; then
         # macOS
         echo "${expected_hash}  ${filepath}" | shasum -a 256 -c --status
+    elif command -v sha256sum &>/dev/null; then
+        # Linux
+        echo "${expected_hash}  ${filepath}" | sha256sum -c --status
     elif command -v certutil &>/dev/null; then
         # Windows fallback
         local computed
@@ -128,10 +128,15 @@ else
 fi
 
 # Extract GHC
+echo "Extracting GHC..."
 tar -xf "build_artifacts/${GHC_TAR}" -C build_artifacts/
 
 # Determine extracted directory name
-GHC_EXTRACTED_DIR=$(tar -tf "build_artifacts/${GHC_TAR}" | head -1 | cut -f1 -d"/")
+# Handle potential SIGPIPE on tar -tf (Exit code 141) by turning off pipefail temporarily
+set +o pipefail
+GHC_EXTRACTED_DIR=$(tar -tf "build_artifacts/${GHC_TAR}" 2>/dev/null | head -1 | cut -f1 -d"/")
+set -o pipefail
+
 
 echo "Extracted GHC to: build_artifacts/${GHC_EXTRACTED_DIR}"
 
