@@ -12,12 +12,9 @@ PLACEHOLDER_PREFIX = "@GHC_PREFIX@"
 
 
 def find_settings_file(staging_dir: Path) -> Path | None:
-	candidates = [
-		staging_dir / "settings",
-		staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "settings",
-	]
+	candidates = list(staging_dir.rglob("settings"))
 	for c in candidates:
-		if c.exists():
+		if c.is_file():
 			return c
 	return None
 
@@ -43,32 +40,39 @@ def patch_settings(settings_path: Path) -> None:
 
 
 def patch_package_database(staging_dir: Path) -> None:
-	pkg_db = staging_dir / "package.conf.d"
-	if not pkg_db.exists():
-		pkg_db = staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "package.conf.d"
-	if not pkg_db.exists():
+	candidates = list(staging_dir.rglob("package.conf.d"))
+	pkg_dbs = [c for c in candidates if c.is_dir()]
+
+	if not pkg_dbs:
 		print("	 ⚠ Package database not found")
 		return
 
-	print(f"Patching: {pkg_db}")
-	patched = 0
-	for conf in pkg_db.glob("*.conf"):
-		try:
-			content = conf.read_text(encoding="utf-8", errors="replace")
-			original = content
-			content = re.sub(r'dynamic-library-dirs:\s*/[^\s]+',
-						   f'dynamic-library-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}', content)
-			content = re.sub(r'library-dirs:\s*/[^\s]+',
-						   f'library-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}', content)
-			content = re.sub(r'include-dirs:\s*/[^\s]+',
-						   f'include-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}/include', content)
-			if content != original:
-				conf.write_text(content, encoding="utf-8")
-				patched += 1
-		except Exception as e:
-			print(f"  ⚠ Failed to patch {conf.name}: {e}")
+	for pkg_db in pkg_dbs:
+		print(f"Patching: {pkg_db}")
+		patched = 0
+		for conf in pkg_db.glob("*.conf"):
+			try:
+				content = conf.read_text(encoding="utf-8", errors="replace")
+				original = content
+				content = re.sub(r'dynamic-library-dirs:\s*/[^\s]+',
+							   f'dynamic-library-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}', content)
+				content = re.sub(r'library-dirs:\s*/[^\s]+',
+							   f'library-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}', content)
+				content = re.sub(r'include-dirs:\s*/[^\s]+',
+							   f'include-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}/include', content)
+				if content != original:
+					conf.write_text(content, encoding="utf-8")
+					patched += 1
+			except Exception as e:
+				print(f"  ⚠ Failed to patch {conf.name}: {e}")
 
-	print(f"  ✓ Patched {patched} package config files")
+		print(f"  ✓ Patched {patched} package config files in {pkg_db}")
+
+		# Remove stale cache
+		cache = pkg_db / "package.cache"
+		if cache.exists():
+			cache.unlink()
+			print("	 ✓ Removed stale package.cache")
 
 
 def main() -> int:
@@ -80,14 +84,10 @@ def main() -> int:
 	settings = find_settings_file(STAGING_DIR)
 	if settings:
 		patch_settings(settings)
+	else:
+		print("	 ⚠ settings file not found")
 
 	patch_package_database(STAGING_DIR)
-
-	# Remove stale cache
-	cache = STAGING_DIR / "package.conf.d" / "package.cache"
-	if cache.exists():
-		cache.unlink()
-		print("	 ✓ Removed stale package.cache")
 
 	print("Path patching complete.")
 	return 0

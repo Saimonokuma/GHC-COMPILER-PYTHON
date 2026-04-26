@@ -24,7 +24,6 @@ jobs:
           - os: macos-latest
             platform: macosx_arm64
             audit_tool: delocate
-
           - os: windows-latest
             platform: win_amd64
             audit_tool: none
@@ -32,6 +31,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Free disk space (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo apt-get clean
+          df -h
 
       - uses: actions/setup-python@v5
         with:
@@ -90,7 +96,16 @@ jobs:
 
       - name: Vendor Libraries (macOS)
         if: runner.os == 'macOS'
-        run: delocate-wheel -v dist/*.whl
+        run: |
+          # delocate needs to find the .dylib files
+          # Point it to the lib directory where GHC libraries live
+          DELOCATE_LIB_DIR="$(pwd)/ghc-bindist/lib"
+          if [[ -d "${DELOCATE_LIB_DIR}" ]]; then
+            delocate-wheel -v --libs-dir "${DELOCATE_LIB_DIR}" dist/*.whl
+          else
+            echo "WARNING: lib directory not found, running delocate-wheel without --libs-dir"
+            delocate-wheel -v dist/*.whl || true
+          fi
 
       - name: E2E Validation
         shell: bash
