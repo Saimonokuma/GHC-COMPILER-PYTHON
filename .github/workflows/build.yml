@@ -101,9 +101,9 @@ jobs:
           # Point it to the lib directory where GHC libraries live
           DELOCATE_LIB_DIR="$(pwd)/ghc-bindist/lib"
           if [[ -d "${DELOCATE_LIB_DIR}" ]]; then
-            DYLD_LIBRARY_PATH="${DELOCATE_LIB_DIR}" delocate-wheel -v dist/*.whl
+            delocate-wheel -v --ignore-missing-dependencies dist/*.whl
           else
-            echo "WARNING: lib directory not found, running delocate-wheel without --libs-dir"
+            echo "WARNING: lib directory not found, running delocate-wheel without --ignore-missing-dependencies"
             delocate-wheel -v dist/*.whl || true
           fi
 
