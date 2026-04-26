@@ -1,4 +1,4 @@
-# ghc-compiler-python
+# GHC-COMPILER-PYTHON
 
 Native GHC 9.4.8 compiler and Cabal 3.10.3.0 tooling packaged as an isolated Python Wheel.
 
