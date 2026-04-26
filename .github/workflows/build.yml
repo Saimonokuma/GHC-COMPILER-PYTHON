@@ -30,7 +30,7 @@ jobs:
       fail-fast: false
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Free disk space (Linux)
         if: runner.os == 'Linux'
