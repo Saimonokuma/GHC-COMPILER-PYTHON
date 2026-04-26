@@ -37,9 +37,9 @@ def patch_settings(settings_path: Path) -> None:
 
 	if content != original:
 		settings_path.write_text(content, encoding="utf-8")
-		print(f"  ✓ Patched with placeholder: {PLACEHOLDER_PREFIX}")
+		print(f"  [OK] Patched with placeholder: {PLACEHOLDER_PREFIX}")
 	else:
-		print("	 ℹ No hardcoded paths found")
+		print("  [INFO] No hardcoded paths found")
 
 
 def patch_package_database(staging_dir: Path) -> None:
@@ -47,7 +47,7 @@ def patch_package_database(staging_dir: Path) -> None:
 	if not pkg_db.exists():
 		pkg_db = staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "package.conf.d"
 	if not pkg_db.exists():
-		print("	 ⚠ Package database not found")
+		print("  [WARN] Package database not found")
 		return
 
 	print(f"Patching: {pkg_db}")
@@ -66,15 +66,15 @@ def patch_package_database(staging_dir: Path) -> None:
 				conf.write_text(content, encoding="utf-8")
 				patched += 1
 		except Exception as e:
-			print(f"  ⚠ Failed to patch {conf.name}: {e}")
+			print(f"  [WARN] Failed to patch {conf.name}: {e}")
 
-	print(f"  ✓ Patched {patched} package config files in {pkg_db}")
+	print(f"  [OK] Patched {patched} package config files in {pkg_db}")
 
 	# Remove stale cache
 	cache = pkg_db / "package.cache"
 	if cache.exists():
 		cache.unlink()
-		print("	 ✓ Removed stale package.cache")
+		print("  [OK] Removed stale package.cache")
 
 
 def main() -> int:
@@ -87,7 +87,7 @@ def main() -> int:
 	if settings:
 		patch_settings(settings)
 	else:
-		print("	 ⚠ settings file not found")
+		print("  [WARN] settings file not found")
 
 	patch_package_database(STAGING_DIR)
 
