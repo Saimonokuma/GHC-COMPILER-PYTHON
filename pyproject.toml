@@ -40,10 +40,12 @@ cabal-wrapper = "ghc_compiler_python.wrapper:execute_cabal"
 packages = ["ghc_compiler_python"]
 artifacts = [
     "ghc-bindist/bin/*",
+    "ghc-bindist/lib/*",
     "ghc-bindist/lib/*/*",
     "ghc-bindist/lib/*/*/*",
     "ghc-bindist/settings",
     "ghc-bindist/package.conf.d/*",
+    "ghc-bindist/share/*",
 ]
 strict-naming = true
 

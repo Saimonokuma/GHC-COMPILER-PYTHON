@@ -128,10 +128,15 @@ else
 fi
 
 # Extract GHC
+echo "Extracting GHC..."
 tar -xf "build_artifacts/${GHC_TAR}" -C build_artifacts/
 
 # Determine extracted directory name
-GHC_EXTRACTED_DIR=$(tar -tf "build_artifacts/${GHC_TAR}" | head -1 | cut -f1 -d"/")
+# Handle potential SIGPIPE on tar -tf (Exit code 141) by turning off pipefail temporarily
+set +o pipefail
+GHC_EXTRACTED_DIR=$(tar -tf "build_artifacts/${GHC_TAR}" 2>/dev/null | head -1 | cut -f1 -d"/")
+set -o pipefail
+
 
 echo "Extracted GHC to: build_artifacts/${GHC_EXTRACTED_DIR}"
 

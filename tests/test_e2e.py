@@ -23,6 +23,11 @@ def haskell_source():
 	not shutil.which("gcc") and not shutil.which("clang"),
 	reason="No C-linker available"
 )
+@pytest.mark.skipif(
+    not os.path.exists(os.path.join(sys.prefix, "bin", "ghc-wrapper")) and
+    not shutil.which("ghc-wrapper"),
+    reason="ghc-wrapper not installed in path"
+)
 class TestGHCWrapper:
 	"""Tests for ghc-wrapper functionality."""
 
