@@ -45,7 +45,10 @@ jobs:
 
       - name: Install System C-Linker (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y gcc binutils patchelf libncurses5
+        run: |
+          sudo apt-get update && sudo apt-get install -y gcc binutils patchelf
+          wget http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb
+          sudo apt-get install -y ./libtinfo5_6.3-2ubuntu0.1_amd64.deb
 
       - name: Install System C-Linker (macOS)
         if: runner.os == 'macOS'
@@ -99,45 +102,13 @@ jobs:
           rm -rf dist/*
           mv wheelhouse/*.whl dist/
 
-      # FIX v2: Use delocate-wheel with --libs-dir to find GHC dylibs
-      - name: Vendor Dynamic Libraries (macOS)
+            - name: Vendor Dynamic Libraries (macOS)
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          # Extract the wheel to find the library directory structure
-          WHL=$(ls dist/*.whl)
-          echo "Processing wheel: ${WHL}"
-
-          # Find the GHC lib directory in the extracted wheel structure
-          # delocate-wheel needs to know where the dylibs are
-          LIB_SEARCH_DIR=$(python -c "
-          import zipfile, os
-          with zipfile.ZipFile('${WHL}') as z:
-              for name in z.namelist():
-                  if 'ghc-${{ matrix.platform == 'macosx_arm64' && '9.4.8' || '9.4.8' }}/libHS' in name and name.endswith('.dylib'):
-                      dirname = os.path.dirname(name)
-                      print(dirname)
-                      break
-          " 2>/dev/null || echo "")
-
-          if [ -n "${LIB_SEARCH_DIR}" ]; then
-              echo "Found GHC dylibs directory in wheel: ${LIB_SEARCH_DIR}"
-              # delocate-wheel with explicit library search path
-              delocate-wheel -v --libs-dir="${LIB_SEARCH_DIR}" dist/*.whl || {
-                  echo "delocate-wheel failed, attempting fallback..."
-                  # Fallback: try without explicit libs-dir
-                  delocate-wheel -v dist/*.whl || {
-                      echo "WARNING: delocate-wheel failed. Wheel may have runtime library resolution issues on macOS."
-                      echo "The DYLD_LIBRARY_PATH fallback in wrapper.py should handle this."
-                  }
-              }
-          else
-              echo "WARNING: Could not find GHC dylibs directory in wheel."
-              echo "Attempting delocate-wheel without explicit library path..."
-              delocate-wheel -v dist/*.whl || {
-                  echo "WARNING: delocate-wheel failed. Relying on DYLD_LIBRARY_PATH fallback."
-              }
-          fi
+          echo "Running delocate-wheel to verify and bundle dependencies"
+          # Our rpaths are already correctly pointing to the internal libs
+          delocate-wheel -v dist/*.whl
 
       - name: End-to-End Compilation Validation
         shell: bash
