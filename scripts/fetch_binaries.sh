@@ -53,12 +53,30 @@ echo "[3/5] Downloading Cabal ${CABAL_VERSION}..."
 curl --fail --silent --show-error --location "${CABAL_URL}" -o "${CABAL_TAR}"
 
 echo "[4/5] Validating cryptographic hashes..."
-if ! grep "${GHC_TAR}" ghc_sha256.txt | sha256sum --check --status; then
+
+sha256_check() {
+	local expected_hash=$1
+	local filepath=$2
+
+	if [[ "$OS" == "Darwin" ]] && command -v shasum >/dev/null 2>&1; then
+		echo "${expected_hash}  ${filepath}" | shasum -a 256 -c
+	elif command -v sha256sum >/dev/null 2>&1; then
+		echo "${expected_hash}  ${filepath}" | sha256sum --check --status
+	else
+		echo "FATAL: No SHA-256 tool found (sha256sum, shasum)" >&2
+		exit 3
+	fi
+}
+
+GHC_EXPECTED=$(grep "${GHC_TAR}" ghc_sha256.txt | awk '{print $1}')
+CABAL_EXPECTED=$(grep "${CABAL_TAR}" cabal_sha256.txt | awk '{print $1}')
+
+if ! sha256_check "${GHC_EXPECTED}" "${GHC_TAR}"; then
 	echo "FATAL: GHC SHA-256 validation failed!" >&2
 	exit 3
 fi
 
-if ! grep "${CABAL_TAR}" cabal_sha256.txt | sha256sum --check --status; then
+if ! sha256_check "${CABAL_EXPECTED}" "${CABAL_TAR}"; then
 	echo "FATAL: Cabal SHA-256 validation failed!" >&2
 	exit 3
 fi
@@ -69,7 +87,10 @@ mkdir -p "../${STAGING_DIR}/lib"
 mkdir -p "../${STAGING_DIR}/share"
 
 tar -xf "${GHC_TAR}"
-GHC_EXTRACTED_DIR=$(tar -tf "${GHC_TAR}" | head -1 | cut -f1 -d"/")
+# Disable pipefail temporarily to avoid SIGPIPE (exit 141) from head -1 terminating early
+set +o pipefail
+GHC_EXTRACTED_DIR=$(tar -tf "${GHC_TAR}" 2>/dev/null | head -1 | cut -f1 -d"/")
+set -o pipefail
 
 # FIX v2: Unix requires ./configure && make install for proper library layout
 if [[ "${OS}" == "Linux" || "${OS}" == "Darwin" ]]; then
