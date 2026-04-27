@@ -39,7 +39,7 @@ strict-naming = true
 
 # Mappa gli eseguibili nel PATH del Venv (bin)
 [tool.hatch.build.targets.wheel.shared-scripts]
-"ghc-bindist/bin" = ""
+"ghc-bindist/bin" = "bin"
 
 # FIX UNIX v2: Mappa lib e share nel Venv.
 # Hatchling shared-data maps to <venv>/<key> on install.
