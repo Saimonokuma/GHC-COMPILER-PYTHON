@@ -129,6 +129,14 @@ def _resolve_runtime_paths() -> None:
 			if f.endswith(".conf")
 		)
 
+	# Also patch shell scripts in the bin directory
+	bin_dir_path = os.path.join(sys.prefix, "bin")
+	if os.path.exists(bin_dir_path):
+		for filename in os.listdir(bin_dir_path):
+			filepath = os.path.join(bin_dir_path, filename)
+			if os.path.isfile(filepath) and not filepath.endswith(".exe"):
+				targets.append(filepath)
+
 	for target in targets:
 		try:
 			with open(target, "r", encoding="utf-8") as f:

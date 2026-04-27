@@ -101,6 +101,33 @@ def patch_package_database(pkg_db: Path):
 		cache_file.unlink()
 
 
+def patch_bin_wrappers(staging_dir: Path):
+	"""Replace hardcoded GHC paths in the bin/* wrapper scripts."""
+	# Also patch lib/ghc-9.4.8/bin where internal wrappers like `ghc-iserv-dyn` are present
+	bin_dirs = [
+		staging_dir / "bin",
+		staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "bin"
+	]
+
+	for bin_dir in bin_dirs:
+		if not bin_dir.exists():
+			continue
+
+		patched = 0
+		for script in bin_dir.iterdir():
+			if script.is_file() and not script.name.endswith(".exe"):
+				try:
+					content = script.read_text(encoding="utf-8", errors="replace")
+					original = content
+					content = re.sub(r'/usr/local/lib/ghc-' + re.escape(GHC_VERSION), f'{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}', content)
+					content = re.sub(r'/ghc-prefix', PLACEHOLDER_PREFIX, content)
+					if content != original:
+						script.write_text(content, encoding="utf-8")
+						patched += 1
+				except Exception:
+					pass
+		print(f"Patched {patched} wrapper scripts in {bin_dir}")
+
 def main():
 	if not STAGING_DIR.exists():
 		print("Staging directory not found, skipping path patching.")
@@ -127,6 +154,9 @@ def main():
 			STAGING_DIR / "package.conf.d",
 		]:
 			print(f"  - {candidate}")
+
+	# Patch wrapper scripts in bin/
+	patch_bin_wrappers(STAGING_DIR)
 
 	return 0
 

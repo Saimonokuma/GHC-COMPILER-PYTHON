@@ -128,6 +128,11 @@ else
 	cp -a "${GHC_EXTRACTED_DIR}/settings" "../${STAGING_DIR}/" 2>/dev/null || true
 	cp -a "${GHC_EXTRACTED_DIR}/package.conf.d" "../${STAGING_DIR}/" 2>/dev/null || true
 
+	# Fix Windows mingw toolchain location
+	if [ -d "${GHC_EXTRACTED_DIR}/mingw" ]; then
+		cp -a "${GHC_EXTRACTED_DIR}/mingw" "../${STAGING_DIR}/" 2>/dev/null || true
+	fi
+
 	# Extract Cabal for Windows
 	unzip -q "${CABAL_TAR}" -d "../${STAGING_DIR}/bin/"
 fi
