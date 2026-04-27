@@ -12,6 +12,7 @@ on:
   workflow_dispatch:
 
 env:
+  # Force Node.js 24 to avoid deprecation warnings
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -100,15 +101,8 @@ jobs:
       - name: Vendor Libraries (macOS)
         if: runner.os == 'macOS'
         run: |
-          # delocate needs to find the .dylib files
-          # Point it to the lib directory where GHC libraries live
-          DELOCATE_LIB_DIR="$(pwd)/ghc-bindist/lib"
-          if [[ -d "${DELOCATE_LIB_DIR}" ]]; then
-            delocate-wheel -v --ignore-missing-dependencies dist/*.whl
-          else
-            echo "WARNING: lib directory not found, running delocate-wheel without --ignore-missing-dependencies"
-            delocate-wheel -v dist/*.whl || true
-          fi
+          DELOCATE_LIBS_DIR=$(find dist -path '*/ghc-bindist/lib/*/libHS*.dylib' -print -quit | xargs dirname)
+          delocate-wheel -v --libs-dir "${DELOCATE_LIBS_DIR}" dist/*.whl
 
       - name: E2E Validation
         shell: bash

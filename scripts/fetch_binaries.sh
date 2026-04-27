@@ -140,6 +140,15 @@ set -o pipefail
 
 echo "Extracted GHC to: build_artifacts/${GHC_EXTRACTED_DIR}"
 
+# Configure GHC (generates settings file on Linux/macOS)
+if [[ "${OS}" != MINGW* && "${OS}" != MSYS* && "${OS}" != CYGWIN* ]]; then
+    echo "Configuring GHC..."
+    ORIGINAL_DIR="$(pwd)"
+    cd "build_artifacts/${GHC_EXTRACTED_DIR}"
+    ./configure --prefix="$(pwd)/install" 2>&1 | tail -5
+    cd "${ORIGINAL_DIR}"
+fi
+
 # ── 8. Copy ALL GHC components to staging ──
 # This is CRITICAL for macOS delocate - we need bin/ AND lib/ AND settings/
 echo "Copying GHC components to staging..."
