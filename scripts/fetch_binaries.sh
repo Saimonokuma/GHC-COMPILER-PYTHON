@@ -145,7 +145,20 @@ if [[ "${OS}" != MINGW* && "${OS}" != MSYS* && "${OS}" != CYGWIN* ]]; then
     echo "Configuring GHC..."
     ORIGINAL_DIR="$(pwd)"
     cd "build_artifacts/${GHC_EXTRACTED_DIR}"
-    ./configure --prefix="$(pwd)/install" 2>&1 | tail -5
+    ./configure --prefix="$(pwd)" 2>&1 | tail -5
+
+    # Verify settings file was created
+    if [[ -f "lib/settings" ]]; then
+        echo "✓ Settings file generated successfully"
+    elif [[ -f "settings" ]]; then
+        echo "✓ Settings file found in root, moving to lib/"
+        mkdir -p lib
+        mv settings lib/settings
+    else
+        echo "⚠ Settings file not found, checking alternative locations..."
+        find . -name "settings" -type f 2>/dev/null
+    fi
+
     cd "${ORIGINAL_DIR}"
 fi
 

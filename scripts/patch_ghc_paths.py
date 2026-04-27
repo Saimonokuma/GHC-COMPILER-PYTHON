@@ -29,6 +29,7 @@ def patch_settings(settings_path: Path) -> None:
 		(r'/usr/local/lib/ghc-' + re.escape(GHC_VERSION), f'{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}'),
 		(r'/usr/lib/ghc-' + re.escape(GHC_VERSION), f'{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}'),
 		(r'/opt/ghc/' + re.escape(GHC_VERSION), f'{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}'),
+		(r'/[^\s"]+/lib/ghc-' + re.escape(GHC_VERSION), f'{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}'),
 	]
 	for pattern, replacement in patterns:
 		content = re.sub(pattern, replacement, content)
