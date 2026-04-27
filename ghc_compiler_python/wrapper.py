@@ -19,7 +19,7 @@ from typing import List, NoReturn, Optional
 GHC_VERSION = "9.4.8"
 CABAL_VERSION = "3.10.3.0"
 
-HASKELL_POLLUTION_VARS: List[str] = [
+HASKELL_POLLUTION_VARS = frozenset({
 	"GHC_PACKAGE_PATH",
 	"GHC_ENVIRONMENT",
 	"CABAL_DIR",
@@ -33,7 +33,7 @@ HASKELL_POLLUTION_VARS: List[str] = [
 	"GHCRTS_OPTS",
 	"HEAPSIZE",
 	"HOME",
-]
+})
 
 _HOME_ORIGINAL: Optional[str] = None
 

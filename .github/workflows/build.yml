@@ -47,7 +47,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update && sudo apt-get install -y gcc binutils patchelf
-          wget http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb
+          wget https://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb
           sudo apt-get install -y ./libtinfo5_6.3-2ubuntu0.1_amd64.deb
 
       - name: Install System C-Linker (macOS)
@@ -102,7 +102,7 @@ jobs:
           rm -rf dist/*
           mv wheelhouse/*.whl dist/
 
-            - name: Vendor Dynamic Libraries (macOS)
+      - name: Vendor Dynamic Libraries (macOS)
         if: runner.os == 'macOS'
         shell: bash
         run: |
