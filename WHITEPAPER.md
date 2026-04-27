@@ -791,8 +791,6 @@ jobs:
 			platform: manylinux2014_x86_64
 		  - os: macos-latest
 			platform: macosx_arm64
-		  - os: macos-13
-			platform: macosx_x86_64
 		  - os: windows-latest
 			platform: win_amd64
 	  fail-fast: false
