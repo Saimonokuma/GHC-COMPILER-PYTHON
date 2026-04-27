@@ -158,12 +158,18 @@ fi
 # Copy settings
 if [[ -f "build_artifacts/${GHC_EXTRACTED_DIR}/settings" ]]; then
     cp -a "build_artifacts/${GHC_EXTRACTED_DIR}/settings" ghc-bindist/
+    if [[ -d "ghc-bindist/lib" ]]; then
+        cp -a "build_artifacts/${GHC_EXTRACTED_DIR}/settings" ghc-bindist/lib/
+    fi
     echo "	Copied settings"
 fi
 
 # Copy package.conf.d
 if [[ -d "build_artifacts/${GHC_EXTRACTED_DIR}/package.conf.d" ]]; then
     cp -a "build_artifacts/${GHC_EXTRACTED_DIR}/package.conf.d" ghc-bindist/
+    if [[ -d "ghc-bindist/lib" ]]; then
+        cp -a "build_artifacts/${GHC_EXTRACTED_DIR}/package.conf.d" ghc-bindist/lib/
+    fi
     echo "	Copied package.conf.d"
 fi
 

@@ -11,15 +11,13 @@ GHC_VERSION = "9.4.8"
 PLACEHOLDER_PREFIX = "@GHC_PREFIX@"
 
 
-def find_settings_file(staging_dir: Path) -> Path | None:
+def find_settings_files(staging_dir: Path) -> list[Path]:
 	candidates = [
 		staging_dir / "settings",
+		staging_dir / "lib" / "settings",
 		staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "settings",
 	]
-	for c in candidates:
-		if c.exists():
-			return c
-	return None
+	return [c for c in candidates if c.exists()]
 
 
 def patch_settings(settings_path: Path) -> None:
@@ -83,11 +81,12 @@ def main() -> int:
 		print(f"FATAL: {STAGING_DIR} not found")
 		return 1
 
-	settings = find_settings_file(STAGING_DIR)
-	if settings:
-		patch_settings(settings)
+	settings_files = find_settings_files(STAGING_DIR)
+	if settings_files:
+		for settings in settings_files:
+			patch_settings(settings)
 	else:
-		print("  [WARN] settings file not found")
+		print("  [WARN] settings files not found")
 
 	patch_package_database(STAGING_DIR)
 
