@@ -102,7 +102,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           DELOCATE_LIBS_DIR=$(find dist -path '*/ghc-bindist/lib/*/libHS*.dylib' -print -quit | xargs dirname)
-          delocate-wheel -v --libs-dir "${DELOCATE_LIBS_DIR}" dist/*.whl
+          DYLD_LIBRARY_PATH="${DELOCATE_LIBS_DIR}" delocate-wheel -v dist/*.whl
 
       - name: E2E Validation
         shell: bash
