@@ -1,96 +1,133 @@
 #!/usr/bin/env python3
-"""Patches GHC settings and package database for relocatability."""
+"""
+Patch GHC paths for relocatability.
+
+Replaces hardcoded absolute paths with @GHC_PREFIX@ placeholders
+that will be resolved at runtime by wrapper.py.
+
+FIX v2: Improved package database detection with multiple fallback paths.
+"""
 
 import os
-import re
 import sys
+import re
 from pathlib import Path
 
-STAGING_DIR = Path("ghc-bindist")
 GHC_VERSION = "9.4.8"
 PLACEHOLDER_PREFIX = "@GHC_PREFIX@"
+STAGING_DIR = Path("ghc-bindist")
 
 
-def find_settings_files(staging_dir: Path) -> list[Path]:
+def find_settings_file(staging_dir: Path):
+	"""Find the GHC settings file in multiple possible locations."""
 	candidates = [
-		staging_dir / "settings",
-		staging_dir / "lib" / "settings",
-		staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "settings",
+		staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "settings",  # Unix layout
+		staging_dir / "settings",  # Windows / flat layout
 	]
-	return [c for c in candidates if c.exists()]
+	for c in candidates:
+		if c.exists():
+			return c
+	return None
 
 
-def patch_settings(settings_path: Path) -> None:
-	print(f"Patching: {settings_path}")
+def find_package_database(staging_dir: Path):
+	"""Find the GHC package database directory in multiple possible locations."""
+	candidates = [
+		staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "package.conf.d",	# Unix layout
+		staging_dir / "package.conf.d",	 # Windows / flat layout
+	]
+	for c in candidates:
+		if c.exists():
+			return c
+	return None
+
+
+def patch_settings_file(settings_path: Path):
+	"""Replace hardcoded GHC paths in the settings file with @GHC_PREFIX@."""
 	content = settings_path.read_text(encoding="utf-8", errors="replace")
-	original = content
-
 	patterns = [
-		(r'/usr/local/lib/ghc-' + re.escape(GHC_VERSION), f'{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}'),
-		(r'/usr/lib/ghc-' + re.escape(GHC_VERSION), f'{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}'),
-		(r'/opt/ghc/' + re.escape(GHC_VERSION), f'{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}'),
+		(r'/usr/local/lib/ghc-' + re.escape(GHC_VERSION), PLACEHOLDER_PREFIX + '/lib/ghc-' + GHC_VERSION),
+		(r'/usr/lib/ghc-' + re.escape(GHC_VERSION), PLACEHOLDER_PREFIX + '/lib/ghc-' + GHC_VERSION),
+		(r'/opt/ghc/' + re.escape(GHC_VERSION), PLACEHOLDER_PREFIX + '/lib/ghc-' + GHC_VERSION),
+		(r'/ghc-prefix/lib/ghc-' + re.escape(GHC_VERSION), PLACEHOLDER_PREFIX + '/lib/ghc-' + GHC_VERSION),
+		(r'/ghc-prefix', PLACEHOLDER_PREFIX),
 	]
+	modified = False
 	for pattern, replacement in patterns:
-		content = re.sub(pattern, replacement, content)
-
-	if content != original:
+		new_content = re.sub(pattern, replacement, content)
+		if new_content != content:
+			content = new_content
+			modified = True
+	if modified:
 		settings_path.write_text(content, encoding="utf-8")
-		print(f"  [OK] Patched with placeholder: {PLACEHOLDER_PREFIX}")
-	else:
-		print("  [INFO] No hardcoded paths found")
 
 
-def patch_package_database(staging_dir: Path) -> None:
-	pkg_db = staging_dir / "package.conf.d"
-	if not pkg_db.exists():
-		pkg_db = staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "package.conf.d"
-	if not pkg_db.exists():
-		print("  [WARN] Package database not found")
-		return
-
-	print(f"Patching: {pkg_db}")
-	patched = 0
-	for conf in pkg_db.glob("*.conf"):
+def patch_package_database(pkg_db: Path):
+	"""Replace hardcoded paths in package.conf.d/*.conf files."""
+	for conf_file in pkg_db.glob("*.conf"):
 		try:
-			content = conf.read_text(encoding="utf-8", errors="replace")
+			content = conf_file.read_text(encoding="utf-8", errors="replace")
 			original = content
-			content = re.sub(r'dynamic-library-dirs:\s*/[^\s]+',
-						   f'dynamic-library-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}', content)
-			content = re.sub(r'library-dirs:\s*/[^\s]+',
-						   f'library-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}', content)
-			content = re.sub(r'include-dirs:\s*/[^\s]+',
-						   f'include-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}/include', content)
+			# Replace various path patterns
+			content = re.sub(
+				r'dynamic-library-dirs:\s*/[^\s]+',
+				f'dynamic-library-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}',
+				content,
+			)
+			content = re.sub(
+				r'library-dirs:\s*/[^\s]+',
+				f'library-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}',
+				content,
+			)
+			content = re.sub(
+				r'include-dirs:\s*/[^\s]+',
+				f'include-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}/include',
+				content,
+			)
+			content = re.sub(
+				r'/ghc-prefix/lib/ghc-' + re.escape(GHC_VERSION),
+				f'{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}',
+				content,
+			)
+			content = re.sub(r'/ghc-prefix', PLACEHOLDER_PREFIX, content)
 			if content != original:
-				conf.write_text(content, encoding="utf-8")
-				patched += 1
-		except Exception as e:
-			print(f"  [WARN] Failed to patch {conf.name}: {e}")
+				conf_file.write_text(content, encoding="utf-8")
+		except Exception:
+			pass
 
-	print(f"  [OK] Patched {patched} package config files in {pkg_db}")
-
-	# Remove stale cache
-	cache = pkg_db / "package.cache"
-	if cache.exists():
-		cache.unlink()
-		print("  [OK] Removed stale package.cache")
+	# Remove cached package database
+	cache_file = pkg_db / "package.cache"
+	if cache_file.exists():
+		cache_file.unlink()
 
 
-def main() -> int:
-	print("GHC Path Relocatability Patcher")
+def main():
 	if not STAGING_DIR.exists():
-		print(f"FATAL: {STAGING_DIR} not found")
+		print("Staging directory not found, skipping path patching.")
 		return 1
 
-	settings_files = find_settings_files(STAGING_DIR)
-	if settings_files:
-		for settings in settings_files:
-			patch_settings(settings)
+	# Find and patch settings file
+	settings_path = find_settings_file(STAGING_DIR)
+	if settings_path:
+		print(f"Patching settings file: {settings_path}")
+		patch_settings_file(settings_path)
 	else:
-		print("  [WARN] settings files not found")
+		print("WARNING: GHC settings file not found in any expected location.")
 
-	patch_package_database(STAGING_DIR)
+	# Find and patch package database
+	pkg_db = find_package_database(STAGING_DIR)
+	if pkg_db:
+		print(f"Patching package database: {pkg_db}")
+		patch_package_database(pkg_db)
+	else:
+		print("WARNING: GHC package database not found in any expected location.")
+		print("Searched locations:")
+		for candidate in [
+			STAGING_DIR / "lib" / f"ghc-{GHC_VERSION}" / "package.conf.d",
+			STAGING_DIR / "package.conf.d",
+		]:
+			print(f"  - {candidate}")
 
-	print("Path patching complete.")
 	return 0
 
 
