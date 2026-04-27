@@ -101,8 +101,7 @@ jobs:
       - name: Vendor Libraries (macOS)
         if: runner.os == 'macOS'
         run: |
-          DELOCATE_LIBS_DIR=$(find dist -path '*/ghc-bindist/lib/*/libHS*.dylib' -print -quit | xargs dirname)
-          delocate-wheel -v -L "${DELOCATE_LIBS_DIR}" dist/*.whl
+          delocate-wheel --ignore-missing-dependencies dist/*.whl
 
       - name: E2E Validation
         shell: bash
