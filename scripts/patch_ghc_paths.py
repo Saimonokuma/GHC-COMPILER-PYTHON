@@ -8,7 +8,8 @@ that will be resolved at runtime by wrapper.py.
 FIX v4: Dynamic path discovery across all platforms.
 - Linux/macOS: settings and package.conf.d live inside lib/ghc-{ver}/lib/
 - Windows: settings and package.conf.d live directly inside lib/
-- Wrapper scripts in bin/ are found and patched correctly
+- Windows: wrapper scripts live in lib/bin/ (not bin/)
+- Recursive fallback for all path discovery
 """
 
 import os
@@ -26,7 +27,7 @@ def find_settings_file(staging_dir: Path):
 
     On Linux/macOS: ghc-bindist/lib/ghc-{ver}/lib/settings
     On Windows:     ghc-bindist/lib/settings
-    Also searches for any file named 'settings' containing GHC config keys.
+    Also searches recursively for any file named 'settings' containing GHC config keys.
     """
     # Explicit platform-specific paths
     candidates = [
@@ -34,7 +35,6 @@ def find_settings_file(staging_dir: Path):
         staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "settings",
         # Windows: settings lives directly in lib/
         staging_dir / "lib" / "settings",
-        # Fallback: search recursively for any file named 'settings'
     ]
 
     for c in candidates:
@@ -44,7 +44,6 @@ def find_settings_file(staging_dir: Path):
     # Dynamic fallback: find any file named 'settings' that looks like a GHC config
     for candidate in staging_dir.rglob("settings"):
         if candidate.is_file():
-            # Verify it's a GHC settings file by checking for known keys
             try:
                 content = candidate.read_text(encoding="utf-8", errors="replace")
                 if '"C compiler command"' in content or '"C preprocessor command"' in content:
@@ -60,7 +59,7 @@ def find_package_database(staging_dir: Path):
 
     On Linux/macOS: ghc-bindist/lib/ghc-{ver}/lib/package.conf.d/
     On Windows:     ghc-bindist/lib/package.conf.d/
-    Also searches for any directory named 'package.conf.d' containing .conf files.
+    Also searches recursively for any directory named 'package.conf.d' containing .conf files.
     """
     # Explicit platform-specific paths
     candidates = [
@@ -68,7 +67,6 @@ def find_package_database(staging_dir: Path):
         staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "package.conf.d",
         # Windows: package.conf.d lives directly in lib/
         staging_dir / "lib" / "package.conf.d",
-        # Fallback: search recursively
     ]
 
     for c in candidates:
@@ -150,8 +148,9 @@ def patch_package_database(pkg_db: Path):
 def patch_bin_wrappers(staging_dir: Path):
     """Replace hardcoded GHC paths in the bin/* wrapper scripts."""
     bin_dirs = [
-        staging_dir / "bin",
-        staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "bin"
+        staging_dir / "bin",                                      # Linux/macOS top-level wrappers
+        staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "bin",      # Linux/macOS internal binaries
+        staging_dir / "lib" / "bin",                              # Windows layout
     ]
 
     total_patched = 0
@@ -186,7 +185,7 @@ def patch_bin_wrappers(staging_dir: Path):
                     content = content.replace(abs_staging, PLACEHOLDER_PREFIX)
 
                 # Also handle Windows backslash paths
-                abs_staging_win = str(staging_dir.absolute()).replace("/", "\\")
+                abs_staging_win = str(staging_dir.absolute()).replace("/", "\\\\")
                 if abs_staging_win in content:
                     content = content.replace(abs_staging_win, PLACEHOLDER_PREFIX)
 

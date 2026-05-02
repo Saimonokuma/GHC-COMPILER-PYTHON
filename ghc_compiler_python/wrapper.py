@@ -5,6 +5,8 @@ Subprocess proxy wrappers for GHC and Cabal binaries.
 Provides hermetic execution isolation, environment sterilization,
 pre-flight C-linker validation, runtime path resolution, and process proxying.
 
+FIX v3: Fixed platform-specific path detection for settings and package.conf.d.
+FIX v4: Added ghc-pkg recache after @GHC_PREFIX@ replacement to regenerate package.cache.
 FIX v2: Added DYLD_LIBRARY_PATH for macOS runtime library resolution.
 """
 
@@ -12,6 +14,7 @@ import os
 import sys
 import shutil
 import subprocess
+import platform
 import signal
 from typing import List, NoReturn, Optional
 
@@ -107,6 +110,11 @@ def _sterilize_environment() -> dict:
 		if os.path.isdir(base_lib_dir):
 			lib_dirs.append(base_lib_dir)
 
+		# Also add the nested lib directory (Linux/macOS layout)
+		nested_lib_dir = os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}", "lib")
+		if os.path.isdir(nested_lib_dir):
+			lib_dirs.append(nested_lib_dir)
+
 		# Auditwheel dependencies are mapped inside the package's .libs folder
 		package_dir = os.path.dirname(os.path.abspath(__file__))
 		auditwheel_libs = os.path.join(os.path.dirname(package_dir), "ghc_compiler_python.libs")
@@ -124,29 +132,73 @@ def _sterilize_environment() -> dict:
 	return env
 
 
+def _find_ghc_settings() -> Optional[str]:
+	"""Find the GHC settings file in platform-specific locations."""
+	candidates = [
+		# Linux/macOS: settings lives inside the nested lib dir
+		os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}", "lib", "settings"),
+		# Windows: settings lives directly in lib/
+		os.path.join(sys.prefix, "lib", "settings"),
+	]
+	for candidate in candidates:
+		if os.path.exists(candidate):
+			return candidate
+
+	# Dynamic fallback: search recursively
+	for root, dirs, files in os.walk(os.path.join(sys.prefix, "lib")):
+		if "settings" in files:
+			full_path = os.path.join(root, "settings")
+			try:
+				with open(full_path, "r", encoding="utf-8", errors="replace") as f:
+					content = f.read()
+				if '"C compiler command"' in content or '"C preprocessor command"' in content:
+					return full_path
+			except Exception:
+				continue
+	return None
+
+
+def _find_package_databases() -> List[str]:
+	"""Find all GHC package database directories in platform-specific locations."""
+	candidates = [
+		# Linux/macOS: package.conf.d lives inside the nested lib dir
+		os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}", "lib", "package.conf.d"),
+		# Windows: package.conf.d lives directly in lib/
+		os.path.join(sys.prefix, "lib", "package.conf.d"),
+	]
+	found = []
+	for candidate in candidates:
+		if os.path.exists(candidate) and os.path.isdir(candidate):
+			found.append(candidate)
+
+	# Dynamic fallback: search recursively
+	if not found:
+		for root, dirs, files in os.walk(os.path.join(sys.prefix, "lib")):
+			if "package.conf.d" in dirs:
+				full_path = os.path.join(root, "package.conf.d")
+				if any(f.endswith(".conf") for f in os.listdir(full_path)):
+					found.append(full_path)
+
+	return found
+
+
 def _resolve_runtime_paths() -> None:
-	"""Dynamically replace @GHC_PREFIX@ with the active sys.prefix at runtime."""
-	lib_dir = os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}")
+	"""Dynamically replace @GHC_PREFIX@ with the active sys.prefix at runtime,
+	then regenerate package.cache if missing."""
+	prefix_clean = sys.prefix.replace("\\", "/")
 
 	targets = []
-	settings_file = os.path.join(lib_dir, "settings")
-	if os.path.exists(settings_file):
+
+	# Find and patch settings file
+	settings_file = _find_ghc_settings()
+	if settings_file:
 		targets.append(settings_file)
 
-	pkg_db = os.path.join(lib_dir, "package.conf.d")
-	if os.path.exists(pkg_db):
+	# Find and patch package database .conf files
+	for pkg_db in _find_package_databases():
 		targets.extend(
 			os.path.join(pkg_db, f)
 			for f in os.listdir(pkg_db)
-			if f.endswith(".conf")
-		)
-
-	# FIX v2: Also check root-level package.conf.d (Windows layout)
-	root_pkg_db = os.path.join(sys.prefix, "package.conf.d")
-	if os.path.exists(root_pkg_db):
-		targets.extend(
-			os.path.join(root_pkg_db, f)
-			for f in os.listdir(root_pkg_db)
 			if f.endswith(".conf")
 		)
 
@@ -159,7 +211,7 @@ def _resolve_runtime_paths() -> None:
 			if os.path.isfile(filepath) and not filepath.endswith(".exe"):
 				targets.append(filepath)
 
-	# Also patch internal wrapper scripts in lib/ghc-9.4.8/bin
+	# Also patch internal wrapper scripts in lib/ghc-9.4.8/bin (Linux/macOS)
 	internal_bin_dir = os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}", "bin")
 	if os.path.exists(internal_bin_dir):
 		for filename in os.listdir(internal_bin_dir):
@@ -167,17 +219,64 @@ def _resolve_runtime_paths() -> None:
 			if os.path.isfile(filepath) and not filepath.endswith(".exe"):
 				targets.append(filepath)
 
+	# Also patch scripts in lib/bin (Windows layout)
+	windows_bin_dir = os.path.join(sys.prefix, "lib", "bin")
+	if os.path.exists(windows_bin_dir):
+		for filename in os.listdir(windows_bin_dir):
+			filepath = os.path.join(windows_bin_dir, filename)
+			if os.path.isfile(filepath) and not filepath.endswith(".exe"):
+				targets.append(filepath)
+
+	# Replace @GHC_PREFIX@ in all target files
 	for target in targets:
 		try:
-			with open(target, "r", encoding="utf-8") as f:
+			with open(target, "r", encoding="utf-8", errors="replace") as f:
 				content = f.read()
 			if "@GHC_PREFIX@" in content:
-				prefix_clean = sys.prefix.replace("\\", "/")
 				content = content.replace("@GHC_PREFIX@", prefix_clean)
 				with open(target, "w", encoding="utf-8") as f:
 					f.write(content)
 		except Exception:
 			pass  # Ignore read-only files if already patched
+
+	# FIX v4: Regenerate package.cache if missing after patching .conf files
+	_rebuild_package_cache()
+
+
+def _rebuild_package_cache() -> None:
+	"""Run ghc-pkg recache to regenerate package.cache if it's missing.
+
+	GHC requires package.cache to function properly. The build process
+	deletes it after patching .conf files, so we must regenerate it
+	at runtime after @GHC_PREFIX@ replacement.
+	"""
+	for pkg_db in _find_package_databases():
+		# Always recache after patching .conf files, not just when missing.
+		# This ensures the cache is consistent with the patched .conf files.
+		_ghc_pkg_recache(pkg_db)
+
+
+def _ghc_pkg_recache(pkg_db_dir: str) -> None:
+	"""Run ghc-pkg recache for the given package database directory."""
+	ghc_pkg = _resolve_binary("ghc-pkg")
+	if not ghc_pkg:
+		return  # Can't recache without ghc-pkg
+
+	try:
+		env = os.environ.copy()
+		# Set GHC_PACKAGE_PATH to point to the correct package database
+		env["GHC_PACKAGE_PATH"] = pkg_db_dir
+		# Suppress output - run silently
+		subprocess.run(
+			[ghc_pkg, "recache", "--package-db", pkg_db_dir],
+			env=env,
+			stdout=subprocess.DEVNULL,
+			stderr=subprocess.DEVNULL,
+			timeout=30,
+		)
+		# Silently ignore errors - GHC will fall back to reading .conf files directly
+	except Exception:
+		pass  # Non-fatal: if recache fails, GHC can still work without cache
 
 
 def _handle_sigterm(signum: int, frame) -> None:
