@@ -17,8 +17,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-20.04
-            platform: manylinux_2_31_x86_64
+          - os: ubuntu-22.04
+            platform: manylinux_2_35_x86_64
             audit_tool: auditwheel
           - os: macos-latest
             platform: macosx_arm64
@@ -95,7 +95,7 @@ jobs:
       - name: Vendor Dynamic Libraries (Linux)
         if: runner.os == 'Linux'
         run: |
-          auditwheel repair dist/*.whl --plat manylinux_2_31_x86_64 -w wheelhouse/
+          auditwheel repair dist/*.whl --plat manylinux_2_35_x86_64 -w wheelhouse/
           rm -rf dist/*
           mv wheelhouse/*.whl dist/
 
