@@ -1,6 +1,3 @@
-# pyproject.toml — ghc-compiler-python v9.4.8
-# PEP 621 compliant, PEP 427 wheel packaging, Hatchling build backend
-
 [build-system]
 requires = ["hatchling>=1.24.0"]
 build-backend = "hatchling.build"
@@ -24,6 +21,11 @@ classifiers = [
 	"Operating System :: Microsoft :: Windows",
 	"Programming Language :: Haskell",
 	"Programming Language :: Python :: 3",
+	"Programming Language :: Python :: 3.8",
+	"Programming Language :: Python :: 3.9",
+	"Programming Language :: Python :: 3.10",
+	"Programming Language :: Python :: 3.11",
+	"Programming Language :: Python :: 3.12",
 	"Topic :: Software Development :: Compilers",
 	"Topic :: Software Development :: Build Tools",
 ]
@@ -35,20 +37,11 @@ ghci-wrapper = "ghc_compiler_python.wrapper:execute_ghci"
 cabal-wrapper = "ghc_compiler_python.wrapper:execute_cabal"
 
 [tool.hatch.build.targets.wheel]
+packages = ["ghc_compiler_python"]
 strict-naming = true
 
-# Map executables to the Venv PATH (bin)
-[tool.hatch.build.targets.wheel.shared-scripts]
-"ghc-bindist/bin" = "/"
-
-# FIX UNIX v2: Map lib and share to the Venv.
-# Hatchling shared-data maps to <venv>/<key> on install.
 [tool.hatch.build.targets.wheel.shared-data]
-"ghc-bindist/lib" = "lib"
-"ghc-bindist/share" = "share"
-"ghc-bindist/mingw" = "mingw"
-"ghc-bindist/settings" = "settings"
-"ghc-bindist/package.conf.d" = "package.conf.d"
+"ghc-bindist" = "ghc_compiler_python/ghc-bindist"
 
 [tool.hatch.build.targets.sdist]
 include = [

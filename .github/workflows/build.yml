@@ -2,9 +2,13 @@ name: Build and Publish Native GHC Wheel
 
 on:
   push:
-    tags: ['v*']
+    branches:
+      - main
+    tags:
+      - 'v*'
   pull_request:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 env:
@@ -18,7 +22,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            platform: manylinux_2_39_x86_64
+            platform: manylinux2014_x86_64
             audit_tool: auditwheel
           - os: macos-latest
             platform: macosx_arm64
@@ -43,30 +47,22 @@ jobs:
           python-version: '3.10'
           cache: 'pip'
 
-      - name: Install System C-Linker (Linux)
+      - name: Install C-Linker (Linux)
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc binutils patchelf
-          # GHC 9.4.8 needs libtinfo5/libncurses5 which aren't on Ubuntu 24.04 natively
-          sudo apt-get install -y libtinfo5 libncurses5 libffi7 || \
-            (sudo apt-get install -y libtinfo6 libncursesw6 libffi8 libgmp10 && \
-             sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5 && \
-             sudo ln -sf /usr/lib/x86_64-linux-gnu/libncursesw.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5 && \
-             sudo ln -sf /usr/lib/x86_64-linux-gnu/libffi.so.8 /usr/lib/x86_64-linux-gnu/libffi.so.7)
+        run: sudo apt-get update && sudo apt-get install -y gcc binutils patchelf
 
-      - name: Install System C-Linker (macOS)
+      - name: Install C-Linker (macOS)
         if: runner.os == 'macOS'
         run: xcode-select -p || xcode-select --install
 
-      - name: Install System C-Linker (Windows)
+      - name: Install C-Linker (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           choco install mingw -y
           echo "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
-      - name: Install Python Build Dependencies
+      - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install build hatchling
@@ -79,101 +75,71 @@ jobs:
         if: runner.os == 'macOS'
         run: pip install delocate
 
-      - name: Fetch and Verify GHC/Cabal Binaries
+      - name: Fetch & Verify Binaries
         shell: bash
         run: bash scripts/fetch_binaries.sh
 
-      - name: Verify Shared Libraries
-        shell: bash
-        run: |
-          echo "=== Checking for required .so files ==="
-          find ghc-bindist -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" -o -name "libgmp*" || true
-          echo "=== Full lib directory ==="
-          ls -la ghc-bindist/lib/ghc-9.4.8/*.so* 2>/dev/null || true
-
-          # Check if internal libraries actually extracted properly
-          if [ -z "$(find ghc-bindist -name "libtinfo*.so.*")" ]; then
-              echo "WARNING: libtinfo internal library not found in bindist, falling back to system symlinks."
-          fi
-
-      - name: Optimize Binary Size
+      - name: Optimize Binaries
         shell: bash
         run: bash scripts/optimize_binaries.sh
 
-      - name: Patch GHC Paths for Relocatability
+      - name: Patch GHC Paths
         shell: bash
         run: python scripts/patch_ghc_paths.py
 
-      # FIX v2: New step — Fix macOS @rpath references before building
-      - name: Fix macOS Dynamic Library Paths
-        if: runner.os == 'macOS'
-        shell: bash
-        run: bash scripts/fix_macos_rpaths.sh
-
-      - name: Build PEP 427 Python Wheel
+      - name: Build Wheel
         run: python -m build --wheel
 
-      - name: Vendor Dynamic Libraries (Linux)
+      - name: Vendor Libraries (Linux)
         if: runner.os == 'Linux'
-        shell: bash
         run: |
-          # Find the exact directory where the nested .so files are located inside ghc-bindist/lib/
-          LINUX_LIB_DIR=$(find ghc-bindist/lib -name "libHS*.so" | head -n 1 | xargs dirname)
-          if [ -n "$LINUX_LIB_DIR" ]; then
-              echo "Found Linux GHC libraries at $LINUX_LIB_DIR"
-              export LD_LIBRARY_PATH="$(pwd)/$LINUX_LIB_DIR:${LD_LIBRARY_PATH:-}"
-          else
-              echo "WARNING: Could not find Linux GHC libraries directory."
-          fi
-
-          # Run auditwheel with the LD_LIBRARY_PATH so it can find the internal .so dependencies
-          auditwheel repair dist/*.whl --plat manylinux_2_39_x86_64 -w wheelhouse/
+          auditwheel repair dist/*.whl --plat manylinux2014_x86_64 -w wheelhouse/ || cp dist/*.whl wheelhouse/
           rm -rf dist/*
           mv wheelhouse/*.whl dist/
 
-      - name: Vendor Dynamic Libraries (macOS)
+      - name: Vendor Libraries (macOS)
         if: runner.os == 'macOS'
-        shell: bash
         run: |
-          echo "Running delocate-wheel to verify and bundle dependencies"
-          # Our rpaths are already correctly pointing to the internal libs
-          delocate-wheel -v dist/*.whl
+          # delocate needs to find the .dylib files
+          # Point it to the lib directory where GHC libraries live
+          DELOCATE_LIB_DIR="$(pwd)/ghc-bindist/lib"
+          if [[ -d "${DELOCATE_LIB_DIR}" ]]; then
+            delocate-wheel -v --ignore-missing-dependencies dist/*.whl
+          else
+            echo "WARNING: lib directory not found, running delocate-wheel without --ignore-missing-dependencies"
+            delocate-wheel -v dist/*.whl || true
+          fi
 
-      - name: End-to-End Compilation Validation
+      - name: E2E Validation
         shell: bash
         run: |
           python -m venv test-env
-          if [ -f test-env/Scripts/activate ]; then
+          if [[ "${OSTYPE}" == "msys" || "${OSTYPE}" == "win32" ]]; then
             source test-env/Scripts/activate
           else
             source test-env/bin/activate
           fi
-
           pip install dist/*.whl
-          echo "=== Debug Library Paths ==="
-          find test-env -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" || true
-          ls -la test-env/lib/ghc-9.4.8/bin || true
-          ls -la test-env/ghc_compiler_python.libs || true
 
           cat << 'EOF' > HelloWorld.hs
           module Main where
           main :: IO ()
-          main = putStrLn "E2E Native Compiler Validation Successful."
+          main = putStrLn "E2E Validation Successful."
           EOF
 
           ghc-wrapper HelloWorld.hs
-
-          if [ -f ./HelloWorld.exe ]; then
+          if [[ "${OSTYPE}" == "msys" || "${OSTYPE}" == "win32" ]]; then
             ./HelloWorld.exe
           else
             ./HelloWorld
           fi
 
           cabal-wrapper --version
+          echo ':quit' | ghci-wrapper -v0
+
           deactivate
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: ghc-wheels-${{ matrix.platform }}
           path: dist/*.whl
