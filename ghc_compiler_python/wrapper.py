@@ -137,6 +137,14 @@ def _resolve_runtime_paths() -> None:
 			if os.path.isfile(filepath) and not filepath.endswith(".exe"):
 				targets.append(filepath)
 
+	# Also patch internal wrapper scripts in lib/ghc-9.4.8/bin
+	internal_bin_dir = os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}", "bin")
+	if os.path.exists(internal_bin_dir):
+		for filename in os.listdir(internal_bin_dir):
+			filepath = os.path.join(internal_bin_dir, filename)
+			if os.path.isfile(filepath) and not filepath.endswith(".exe"):
+				targets.append(filepath)
+
 	for target in targets:
 		try:
 			with open(target, "r", encoding="utf-8") as f:
