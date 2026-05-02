@@ -46,9 +46,11 @@ jobs:
       - name: Install System C-Linker (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update && sudo apt-get install -y gcc binutils patchelf
-          wget https://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb
-          sudo apt-get install -y ./libtinfo5_6.3-2ubuntu0.1_amd64.deb
+          sudo apt-get update && sudo apt-get install -y gcc binutils patchelf libtinfo6 libncursesw6 libffi8 libgmp10
+          # Create symlinks for older ABIs expected by GHC 9.4.8 CentOS 7 binary
+          sudo ln -s /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5 || true
+          sudo ln -s /usr/lib/x86_64-linux-gnu/libncursesw.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5 || true
+          sudo ln -s /usr/lib/x86_64-linux-gnu/libffi.so.8 /usr/lib/x86_64-linux-gnu/libffi.so.7 || true
 
       - name: Install System C-Linker (macOS)
         if: runner.os == 'macOS'

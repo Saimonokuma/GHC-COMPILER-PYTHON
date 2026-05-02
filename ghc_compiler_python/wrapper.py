@@ -100,6 +100,17 @@ def _sterilize_environment() -> dict:
 			else:
 				env["DYLD_LIBRARY_PATH"] = lib_dir
 
+	# FIX v3: Set LD_LIBRARY_PATH on Linux to ensure bundled `.so` files are found at runtime
+	# (Auditwheel places them relative to the package, but providing the base lib dir ensures the internal GHC rts libs are also picked up securely)
+	if sys.platform == "linux":
+		lib_dir = os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}")
+		if os.path.isdir(lib_dir):
+			existing_ld = env.get("LD_LIBRARY_PATH", "")
+			if existing_ld:
+				env["LD_LIBRARY_PATH"] = f"{lib_dir}{os.pathsep}{existing_ld}"
+			else:
+				env["LD_LIBRARY_PATH"] = lib_dir
+
 	return env
 
 
