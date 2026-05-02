@@ -17,8 +17,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
-            platform: manylinux_2_35_x86_64
+          - os: ubuntu-20.04
+            platform: manylinux_2_31_x86_64
             audit_tool: auditwheel
           - os: macos-latest
             platform: macosx_arm64
@@ -45,10 +45,7 @@ jobs:
 
       - name: Install System C-Linker (Linux)
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update && sudo apt-get install -y gcc binutils patchelf
-          wget https://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb
-          sudo apt-get install -y ./libtinfo5_6.3-2ubuntu0.1_amd64.deb
+        run: sudo apt-get update && sudo apt-get install -y gcc binutils patchelf libtinfo5
 
       - name: Install System C-Linker (macOS)
         if: runner.os == 'macOS'
@@ -98,7 +95,7 @@ jobs:
       - name: Vendor Dynamic Libraries (Linux)
         if: runner.os == 'Linux'
         run: |
-          auditwheel repair dist/*.whl --plat manylinux_2_35_x86_64 -w wheelhouse/
+          auditwheel repair dist/*.whl --plat manylinux_2_31_x86_64 -w wheelhouse/
           rm -rf dist/*
           mv wheelhouse/*.whl dist/
 
@@ -114,7 +111,7 @@ jobs:
         shell: bash
         run: |
           python -m venv test-env
-          if [[ "${OSTYPE}" == "msys" || "${OSTYPE}" == "win32" ]]; then
+          if [ -f test-env/Scripts/activate ]; then
             source test-env/Scripts/activate
           else
             source test-env/bin/activate
@@ -130,7 +127,7 @@ jobs:
 
           ghc-wrapper HelloWorld.hs
 
-          if [[ "${OSTYPE}" == "msys" || "${OSTYPE}" == "win32" ]]; then
+          if [ -f ./HelloWorld.exe ]; then
             ./HelloWorld.exe
           else
             ./HelloWorld
