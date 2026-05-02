@@ -46,11 +46,14 @@ jobs:
       - name: Install System C-Linker (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update && sudo apt-get install -y gcc binutils patchelf libtinfo6 libncursesw6 libffi8 libgmp10
-          # Create symlinks for older ABIs expected by GHC 9.4.8 CentOS 7 binary
-          sudo ln -s /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5 || true
-          sudo ln -s /usr/lib/x86_64-linux-gnu/libncursesw.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5 || true
-          sudo ln -s /usr/lib/x86_64-linux-gnu/libffi.so.8 /usr/lib/x86_64-linux-gnu/libffi.so.7 || true
+          sudo apt-get update
+          sudo apt-get install -y gcc binutils patchelf
+          # GHC 9.4.8 needs libtinfo5/libncurses5 which aren't on Ubuntu 24.04 natively
+          sudo apt-get install -y libtinfo5 libncurses5 libffi7 || \
+            (sudo apt-get install -y libtinfo6 libncursesw6 libffi8 libgmp10 && \
+             sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5 && \
+             sudo ln -sf /usr/lib/x86_64-linux-gnu/libncursesw.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5 && \
+             sudo ln -sf /usr/lib/x86_64-linux-gnu/libffi.so.8 /usr/lib/x86_64-linux-gnu/libffi.so.7)
 
       - name: Install System C-Linker (macOS)
         if: runner.os == 'macOS'
@@ -79,6 +82,19 @@ jobs:
       - name: Fetch and Verify GHC/Cabal Binaries
         shell: bash
         run: bash scripts/fetch_binaries.sh
+
+      - name: Verify Shared Libraries
+        shell: bash
+        run: |
+          echo "=== Checking for required .so files ==="
+          find ghc-bindist -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" -o -name "libgmp*" || true
+          echo "=== Full lib directory ==="
+          ls -la ghc-bindist/lib/ghc-9.4.8/*.so* 2>/dev/null || true
+
+          # Check if internal libraries actually extracted properly
+          if [ -z "$(find ghc-bindist -name "libtinfo*.so.*")" ]; then
+              echo "WARNING: libtinfo internal library not found in bindist, falling back to system symlinks."
+          fi
 
       - name: Optimize Binary Size
         shell: bash
@@ -134,6 +150,10 @@ jobs:
           fi
 
           pip install dist/*.whl
+          echo "=== Debug Library Paths ==="
+          find test-env -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" || true
+          ls -la test-env/lib/ghc-9.4.8/bin || true
+          ls -la test-env/ghc_compiler_python.libs || true
 
           cat << 'EOF' > HelloWorld.hs
           module Main where
