@@ -18,6 +18,7 @@ import sys
 import shutil
 import subprocess
 import platform
+import signal
 import glob
 from typing import List, NoReturn, Optional
 
