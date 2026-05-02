@@ -21,8 +21,9 @@ STAGING_DIR = Path("ghc-bindist")
 def find_settings_file(staging_dir: Path):
 	"""Find the GHC settings file in multiple possible locations."""
 	candidates = [
-		staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "settings",  # Unix layout
-		staging_dir / "settings",  # Windows / flat layout
+		staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "settings",
+		staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "settings",
+		staging_dir / "settings",
 	]
 	for c in candidates:
 		if c.exists():
@@ -33,8 +34,9 @@ def find_settings_file(staging_dir: Path):
 def find_package_database(staging_dir: Path):
 	"""Find the GHC package database directory in multiple possible locations."""
 	candidates = [
-		staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "package.conf.d",	# Unix layout
-		staging_dir / "package.conf.d",	 # Windows / flat layout
+		staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "package.conf.d",
+		staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "package.conf.d",
+		staging_dir / "package.conf.d",
 	]
 	for c in candidates:
 		if c.exists():
@@ -115,12 +117,25 @@ def patch_bin_wrappers(staging_dir: Path):
 
 		patched = 0
 		for script in bin_dir.iterdir():
-			if script.is_file() and not script.name.endswith(".exe"):
+			if script.is_file() and (not script.name.endswith(".exe") or script.name.endswith(".cmd")):
 				try:
 					content = script.read_text(encoding="utf-8", errors="replace")
 					original = content
+
+					# Standard Unix prefixes
 					content = re.sub(r'/usr/local/lib/ghc-' + re.escape(GHC_VERSION), f'{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}', content)
 					content = re.sub(r'/ghc-prefix', PLACEHOLDER_PREFIX, content)
+
+					# Windows specific prefixes (or absolute staging paths)
+					abs_staging = staging_dir.absolute().as_posix()
+					if abs_staging in content:
+						content = content.replace(abs_staging, PLACEHOLDER_PREFIX)
+
+					# Also handle Windows backslash paths
+					abs_staging_win = str(staging_dir.absolute()).replace("/", "\\")
+					if abs_staging_win in content:
+						content = content.replace(abs_staging_win, PLACEHOLDER_PREFIX)
+
 					if content != original:
 						script.write_text(content, encoding="utf-8")
 						patched += 1
