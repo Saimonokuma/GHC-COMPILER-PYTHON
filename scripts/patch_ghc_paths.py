@@ -22,7 +22,6 @@ def find_settings_file(staging_dir: Path):
 	"""Find the GHC settings file in multiple possible locations."""
 	candidates = [
 		staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "settings",
-		staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "settings",
 		staging_dir / "settings",
 	]
 	for c in candidates:
@@ -35,7 +34,6 @@ def find_package_database(staging_dir: Path):
 	"""Find the GHC package database directory in multiple possible locations."""
 	candidates = [
 		staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "package.conf.d",
-		staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "package.conf.d",
 		staging_dir / "package.conf.d",
 	]
 	for c in candidates:
@@ -115,9 +113,11 @@ def patch_bin_wrappers(staging_dir: Path):
 		if not bin_dir.exists():
 			continue
 
-		patched = 0
+		patched_unix = 0
+		patched_cmd = 0
+
 		for script in bin_dir.iterdir():
-			if script.is_file() and (not script.name.endswith(".exe") or script.name.endswith(".cmd")):
+			if script.is_file() and not script.name.endswith(".exe"):
 				try:
 					content = script.read_text(encoding="utf-8", errors="replace")
 					original = content
@@ -138,10 +138,17 @@ def patch_bin_wrappers(staging_dir: Path):
 
 					if content != original:
 						script.write_text(content, encoding="utf-8")
-						patched += 1
+						if script.name.endswith(".cmd"):
+							patched_cmd += 1
+						else:
+							patched_unix += 1
 				except Exception:
 					pass
-		print(f"Patched {patched} wrapper scripts in {bin_dir}")
+
+		if patched_cmd > 0:
+			print(f"Patched {patched_unix} wrapper scripts and {patched_cmd} .cmd files in {bin_dir}")
+		else:
+			print(f"Patched {patched_unix} wrapper scripts in {bin_dir}")
 
 def main():
 	if not STAGING_DIR.exists():

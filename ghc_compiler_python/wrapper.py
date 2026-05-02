@@ -151,7 +151,8 @@ def _resolve_runtime_paths() -> None:
 		)
 
 	# Also patch shell scripts in the bin directory
-	bin_dir_path = os.path.join(sys.prefix, "bin")
+	bin_dir_name = "Scripts" if sys.platform == "win32" else "bin"
+	bin_dir_path = os.path.join(sys.prefix, bin_dir_name)
 	if os.path.exists(bin_dir_path):
 		for filename in os.listdir(bin_dir_path):
 			filepath = os.path.join(bin_dir_path, filename)
