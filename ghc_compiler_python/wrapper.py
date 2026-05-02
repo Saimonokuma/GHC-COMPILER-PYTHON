@@ -5,8 +5,11 @@ Subprocess proxy wrappers for GHC and Cabal binaries.
 Provides hermetic execution isolation, environment sterilization,
 pre-flight C-linker validation, runtime path resolution, and process proxying.
 
-FIX v3: Fixed platform-specific path detection for settings and package.conf.d.
+FIX v5: Fixed LD_LIBRARY_PATH propagation to ghc-pkg recache.
+       Added platform-specific lib subdir to LD_LIBRARY_PATH on Linux.
+       Thread sterilized environment through _resolve_runtime_paths → _rebuild_package_cache → _ghc_pkg_recache.
 FIX v4: Added ghc-pkg recache after @GHC_PREFIX@ replacement to regenerate package.cache.
+FIX v3: Fixed platform-specific path detection for settings and package.conf.d.
 FIX v2: Added DYLD_LIBRARY_PATH for macOS runtime library resolution.
 """
 
@@ -15,7 +18,7 @@ import sys
 import shutil
 import subprocess
 import platform
-import signal
+import glob
 from typing import List, NoReturn, Optional
 
 
@@ -75,8 +78,28 @@ def _validate_c_linker() -> None:
 		sys.exit(1)
 
 
+def _find_platform_lib_subdir() -> str:
+	"""Find the platform-specific library subdirectory inside the GHC lib directory.
+
+	On Linux:   lib/ghc-9.4.8/lib/x86_64-linux-ghc-9.4.8/
+	On macOS:   lib/ghc-9.4.8/lib/aarch64-osx-ghc-9.4.8/ (or similar)
+	On Windows: Does not exist (DLLs are in mingw/bin/)
+	"""
+	ghc_lib_dir = os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}", "lib")
+	if not os.path.isdir(ghc_lib_dir):
+		return ""
+
+	# Look for the platform-specific subdirectory (e.g., x86_64-linux-ghc-9.4.8)
+	for entry in os.listdir(ghc_lib_dir):
+		candidate = os.path.join(ghc_lib_dir, entry)
+		if os.path.isdir(candidate) and entry.endswith(f"-ghc-{GHC_VERSION}"):
+			return candidate
+
+	return ""
+
+
 def _sterilize_environment() -> dict:
-	"""Create a sterilized subprocess environment."""
+	"""Create a sterilized subprocess environment with proper library paths."""
 	global _HOME_ORIGINAL
 	env = os.environ.copy()
 
@@ -93,41 +116,56 @@ def _sterilize_environment() -> dict:
 	current_path = env.get("PATH", "")
 	env["PATH"] = f"{env_bin}{os.pathsep}{current_path}"
 
-	# FIX v2: Set DYLD_LIBRARY_PATH on macOS for runtime library resolution
+	# Collect all library directories for LD_LIBRARY_PATH / DYLD_LIBRARY_PATH
+	lib_dirs = []
+
 	if sys.platform == "darwin":
-		lib_dir = os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}")
-		if os.path.isdir(lib_dir):
-			existing_dyld = env.get("DYLD_LIBRARY_PATH", "")
-			if existing_dyld:
-				env["DYLD_LIBRARY_PATH"] = f"{lib_dir}{os.pathsep}{existing_dyld}"
-			else:
-				env["DYLD_LIBRARY_PATH"] = lib_dir
+		# macOS: GHC libraries are in lib/ghc-9.4.8/lib/
+		ghc_lib_dir = os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}", "lib")
+		if os.path.isdir(ghc_lib_dir):
+			lib_dirs.append(ghc_lib_dir)
+		# Also add the top-level lib dir for delocate-processed dylibs
+		top_lib_dir = os.path.join(sys.prefix, "lib")
+		if os.path.isdir(top_lib_dir):
+			lib_dirs.append(top_lib_dir)
 
-	# FIX v3: Set LD_LIBRARY_PATH on Linux to ensure bundled `.so` files are found at runtime
-	if sys.platform == "linux":
-		lib_dirs = []
-		base_lib_dir = os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}")
-		if os.path.isdir(base_lib_dir):
-			lib_dirs.append(base_lib_dir)
+	elif sys.platform == "linux":
+		# Linux: Multiple library locations needed
+		# 1. Top-level GHC lib dir (contains settings, package.conf.d)
+		ghc_lib_dir = os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}")
+		if os.path.isdir(ghc_lib_dir):
+			lib_dirs.append(ghc_lib_dir)
 
-		# Also add the nested lib directory (Linux/macOS layout)
+		# 2. Nested lib dir (contains settings, package.conf.d on Linux/macOS)
 		nested_lib_dir = os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}", "lib")
 		if os.path.isdir(nested_lib_dir):
 			lib_dirs.append(nested_lib_dir)
 
-		# Auditwheel dependencies are mapped inside the package's .libs folder
+		# 3. Platform-specific subdir (contains .so files like libffi.so, libHS*.so)
+		platform_subdir = _find_platform_lib_subdir()
+		if platform_subdir and os.path.isdir(platform_subdir):
+			lib_dirs.append(platform_subdir)
+
+		# 4. Auditwheel dependencies (.libs directory)
 		package_dir = os.path.dirname(os.path.abspath(__file__))
 		auditwheel_libs = os.path.join(os.path.dirname(package_dir), "ghc_compiler_python.libs")
 		if os.path.isdir(auditwheel_libs):
 			lib_dirs.append(auditwheel_libs)
 
-		if lib_dirs:
+	# Set library path environment variables
+	if lib_dirs:
+		lib_dirs_str = os.pathsep.join(lib_dirs)
+
+		if sys.platform == "darwin":
+			existing = env.get("DYLD_LIBRARY_PATH", "")
+			env["DYLD_LIBRARY_PATH"] = f"{lib_dirs_str}{os.pathsep}{existing}" if existing else lib_dirs_str
+			# Also set LD_LIBRARY_PATH for consistency
 			existing_ld = env.get("LD_LIBRARY_PATH", "")
-			lib_dirs_str = os.pathsep.join(lib_dirs)
-			if existing_ld:
-				env["LD_LIBRARY_PATH"] = f"{lib_dirs_str}{os.pathsep}{existing_ld}"
-			else:
-				env["LD_LIBRARY_PATH"] = lib_dirs_str
+			env["LD_LIBRARY_PATH"] = f"{lib_dirs_str}{os.pathsep}{existing_ld}" if existing_ld else lib_dirs_str
+
+		elif sys.platform == "linux":
+			existing = env.get("LD_LIBRARY_PATH", "")
+			env["LD_LIBRARY_PATH"] = f"{lib_dirs_str}{os.pathsep}{existing}" if existing else lib_dirs_str
 
 	return env
 
@@ -182,9 +220,13 @@ def _find_package_databases() -> List[str]:
 	return found
 
 
-def _resolve_runtime_paths() -> None:
+def _resolve_runtime_paths(env: dict) -> None:
 	"""Dynamically replace @GHC_PREFIX@ with the active sys.prefix at runtime,
-	then regenerate package.cache if missing."""
+	then regenerate package.cache.
+
+	Args:
+		env: The sterilized environment dict with proper LD_LIBRARY_PATH set.
+	"""
 	prefix_clean = sys.prefix.replace("\\", "/")
 
 	targets = []
@@ -239,37 +281,43 @@ def _resolve_runtime_paths() -> None:
 		except Exception:
 			pass  # Ignore read-only files if already patched
 
-	# FIX v4: Regenerate package.cache if missing after patching .conf files
-	_rebuild_package_cache()
+	# Regenerate package.cache after patching .conf files
+	_rebuild_package_cache(env)
 
 
-def _rebuild_package_cache() -> None:
-	"""Run ghc-pkg recache to regenerate package.cache if it's missing.
+def _rebuild_package_cache(env: dict) -> None:
+	"""Run ghc-pkg recache to regenerate package.cache.
 
 	GHC requires package.cache to function properly. The build process
 	deletes it after patching .conf files, so we must regenerate it
 	at runtime after @GHC_PREFIX@ replacement.
+
+	Args:
+		env: The sterilized environment dict with proper LD_LIBRARY_PATH set.
 	"""
 	for pkg_db in _find_package_databases():
-		# Always recache after patching .conf files, not just when missing.
-		# This ensures the cache is consistent with the patched .conf files.
-		_ghc_pkg_recache(pkg_db)
+		_ghc_pkg_recache(pkg_db, env)
 
 
-def _ghc_pkg_recache(pkg_db_dir: str) -> None:
-	"""Run ghc-pkg recache for the given package database directory."""
+def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
+	"""Run ghc-pkg recache for the given package database directory.
+
+	Args:
+		pkg_db_dir: Path to the package.conf.d directory.
+		env: The sterilized environment dict with proper LD_LIBRARY_PATH set.
+	"""
 	ghc_pkg = _resolve_binary("ghc-pkg")
 	if not ghc_pkg:
 		return  # Can't recache without ghc-pkg
 
 	try:
-		env = os.environ.copy()
-		# Set GHC_PACKAGE_PATH to point to the correct package database
-		env["GHC_PACKAGE_PATH"] = pkg_db_dir
-		# Suppress output - run silently
+		# Use the sterilized environment which has LD_LIBRARY_PATH properly set
+		recache_env = env.copy()
+		recache_env["GHC_PACKAGE_PATH"] = pkg_db_dir
+
 		subprocess.run(
 			[ghc_pkg, "recache", "--package-db", pkg_db_dir],
-			env=env,
+			env=recache_env,
 			stdout=subprocess.DEVNULL,
 			stderr=subprocess.DEVNULL,
 			timeout=30,
@@ -294,7 +342,7 @@ def _execute_tool(tool_name: str, extra_args: List[str] = None) -> NoReturn:
 
 	_validate_c_linker()
 	env = _sterilize_environment()
-	_resolve_runtime_paths()
+	_resolve_runtime_paths(env)
 	binary_path = _resolve_binary(tool_name)
 
 	cmd = [binary_path]
