@@ -1,0 +1,3 @@
+## 2024-05-04 - Reading binaries with `errors='replace'` is slow
+**Learning:** In `_resolve_runtime_paths`, reading all target files (which might include small binaries or just scripts, but fallback logic scans quite a bit of files) using `encoding="utf-8", errors="replace"` is a significant performance anti-pattern. If a large binary accidentally gets picked up or if there are many files, replacing decoding errors for every byte in a binary file takes multiple seconds per MB.
+**Action:** Always do a quick binary check `b"@GHC_PREFIX@" in f.read()` before reading as text to replace, or better yet, read as bytes, replace as bytes, and write as bytes if needed. Or skip files that are likely binary.

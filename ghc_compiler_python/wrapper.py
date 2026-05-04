@@ -269,13 +269,17 @@ def _resolve_runtime_paths(env: dict) -> None:
             )
 
     # Replace @GHC_PREFIX@ in all target files
+    prefix_clean_bytes = prefix_clean.encode("utf-8")
     for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
         try:
-            with open(target, "r", encoding="utf-8", errors="replace") as f:
-                # 🧪 Alchemist: Walrus operator removes redundant content assignment
-                if "@GHC_PREFIX@" in (content := f.read()):
-                    with open(target, "w", encoding="utf-8") as out:
-                        out.write(content.replace("@GHC_PREFIX@", prefix_clean))
+            # ⚡ Bolt: Read in binary mode first to avoid severe performance degradation
+            # when encountering binary files. UTF-8 decoding with errors="replace"
+            # on large binaries can take seconds.
+            with open(target, "rb") as f:
+                content = f.read()
+            if b"@GHC_PREFIX@" in content:
+                with open(target, "wb") as out:
+                    out.write(content.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
         except Exception:
             pass  # Ignore read-only files if already patched
 
