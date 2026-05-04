@@ -245,59 +245,37 @@ def _resolve_runtime_paths(env: dict) -> None:
 
     targets = []
 
-    # Find and patch settings file
-    settings_file = _find_ghc_settings()
-    if settings_file:
+    # 🧪 Alchemist: Walrus operator replaces verbose assignments
+    if settings_file := _find_ghc_settings():
         targets.append(settings_file)
 
-    # Find and patch package database .conf files
     for pkg_db in _find_package_databases():
         targets.extend(
             os.path.join(pkg_db, f) for f in os.listdir(pkg_db) if f.endswith(".conf")
         )
 
-    # Also patch shell scripts in the bin directory
-    bin_dir_name = "Scripts" if sys.platform == "win32" else "bin"
-    bin_dir_path = os.path.join(sys.prefix, bin_dir_name)
-    if os.path.exists(bin_dir_path):
-        for filename in os.listdir(bin_dir_path):
-            filepath = os.path.join(bin_dir_path, filename)
-            if os.path.isfile(filepath) and not filepath.endswith(".exe"):
-                targets.append(filepath)
-
-    # Also patch internal wrapper scripts in lib/ghc-9.4.8/bin (Linux/macOS)
-    internal_bin_dir = os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}", "bin")
-    if os.path.exists(internal_bin_dir):
-        for filename in os.listdir(internal_bin_dir):
-            filepath = os.path.join(internal_bin_dir, filename)
-            if os.path.isfile(filepath) and not filepath.endswith(".exe"):
-                targets.append(filepath)
-
-    # Also patch scripts in the wrapper scripts installation dir (sys.prefix/bin)
-    install_bin_dir = os.path.join(sys.prefix, "bin")
-    if os.path.exists(install_bin_dir):
-        for filename in os.listdir(install_bin_dir):
-            filepath = os.path.join(install_bin_dir, filename)
-            if os.path.isfile(filepath) and not filepath.endswith(".exe"):
-                targets.append(filepath)
-
-    # Also patch scripts in lib/bin (Windows layout)
-    windows_bin_dir = os.path.join(sys.prefix, "lib", "bin")
-    if os.path.exists(windows_bin_dir):
-        for filename in os.listdir(windows_bin_dir):
-            filepath = os.path.join(windows_bin_dir, filename)
-            if os.path.isfile(filepath) and not filepath.endswith(".exe"):
-                targets.append(filepath)
+    # 🧪 Alchemist: Consolidate repetitive directory scanning into a compact tuple traversal
+    for bin_dir in (
+        os.path.join(sys.prefix, "Scripts" if sys.platform == "win32" else "bin"),
+        os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}", "bin"),
+        os.path.join(sys.prefix, "bin"),
+        os.path.join(sys.prefix, "lib", "bin"),
+    ):
+        if os.path.exists(bin_dir):
+            targets.extend(
+                os.path.join(bin_dir, f)
+                for f in os.listdir(bin_dir)
+                if os.path.isfile(os.path.join(bin_dir, f)) and not f.endswith(".exe")
+            )
 
     # Replace @GHC_PREFIX@ in all target files
-    for target in targets:
+    for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
         try:
             with open(target, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read()
-            if "@GHC_PREFIX@" in content:
-                content = content.replace("@GHC_PREFIX@", prefix_clean)
-                with open(target, "w", encoding="utf-8") as f:
-                    f.write(content)
+                # 🧪 Alchemist: Walrus operator removes redundant content assignment
+                if "@GHC_PREFIX@" in (content := f.read()):
+                    with open(target, "w", encoding="utf-8") as out:
+                        out.write(content.replace("@GHC_PREFIX@", prefix_clean))
         except Exception:
             pass  # Ignore read-only files if already patched
 
