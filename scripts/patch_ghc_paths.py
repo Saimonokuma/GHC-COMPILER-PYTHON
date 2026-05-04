@@ -12,7 +12,6 @@ FIX v4: Dynamic path discovery across all platforms.
 - Recursive fallback for all path discovery
 """
 
-import os
 import sys
 import re
 from pathlib import Path
@@ -46,7 +45,10 @@ def find_settings_file(staging_dir: Path):
         if candidate.is_file():
             try:
                 content = candidate.read_text(encoding="utf-8", errors="replace")
-                if '"C compiler command"' in content or '"C preprocessor command"' in content:
+                if (
+                    '"C compiler command"' in content
+                    or '"C preprocessor command"' in content
+                ):
                     return candidate
             except Exception:
                 continue
@@ -85,11 +87,23 @@ def patch_settings_file(settings_path: Path):
     """Replace hardcoded GHC paths in the settings file with @GHC_PREFIX@."""
     content = settings_path.read_text(encoding="utf-8", errors="replace")
     patterns = [
-        (r'/usr/local/lib/ghc-' + re.escape(GHC_VERSION), f'{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}'),
-        (r'/usr/lib/ghc-' + re.escape(GHC_VERSION), f'{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}'),
-        (r'/opt/ghc/' + re.escape(GHC_VERSION), f'{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}'),
-        (r'/ghc-prefix/lib/ghc-' + re.escape(GHC_VERSION), f'{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}'),
-        (r'/ghc-prefix', PLACEHOLDER_PREFIX),
+        (
+            r"/usr/local/lib/ghc-" + re.escape(GHC_VERSION),
+            f"{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}",
+        ),
+        (
+            r"/usr/lib/ghc-" + re.escape(GHC_VERSION),
+            f"{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}",
+        ),
+        (
+            r"/opt/ghc/" + re.escape(GHC_VERSION),
+            f"{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}",
+        ),
+        (
+            r"/ghc-prefix/lib/ghc-" + re.escape(GHC_VERSION),
+            f"{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}",
+        ),
+        (r"/ghc-prefix", PLACEHOLDER_PREFIX),
     ]
     modified = False
     for pattern, replacement in patterns:
@@ -111,26 +125,26 @@ def patch_package_database(pkg_db: Path):
             original = content
             # Replace various path patterns
             content = re.sub(
-                r'dynamic-library-dirs:\s*/[^\s]+',
-                f'dynamic-library-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}',
+                r"dynamic-library-dirs:\s*/[^\s]+",
+                f"dynamic-library-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}",
                 content,
             )
             content = re.sub(
-                r'library-dirs:\s*/[^\s]+',
-                f'library-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}',
+                r"library-dirs:\s*/[^\s]+",
+                f"library-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}",
                 content,
             )
             content = re.sub(
-                r'include-dirs:\s*/[^\s]+',
-                f'include-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}/include',
+                r"include-dirs:\s*/[^\s]+",
+                f"include-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}/include",
                 content,
             )
             content = re.sub(
-                r'/ghc-prefix/lib/ghc-' + re.escape(GHC_VERSION),
-                f'{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}',
+                r"/ghc-prefix/lib/ghc-" + re.escape(GHC_VERSION),
+                f"{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}",
                 content,
             )
-            content = re.sub(r'/ghc-prefix', PLACEHOLDER_PREFIX, content)
+            content = re.sub(r"/ghc-prefix", PLACEHOLDER_PREFIX, content)
             if content != original:
                 conf_file.write_text(content, encoding="utf-8")
                 patched_count += 1
@@ -148,9 +162,12 @@ def patch_package_database(pkg_db: Path):
 def patch_bin_wrappers(staging_dir: Path):
     """Replace hardcoded GHC paths in the bin/* wrapper scripts."""
     bin_dirs = [
-        staging_dir / "bin",                                      # Linux/macOS top-level wrappers
-        staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "bin",      # Linux/macOS internal binaries
-        staging_dir / "lib" / "bin",                              # Windows layout
+        staging_dir / "bin",  # Linux/macOS top-level wrappers
+        staging_dir
+        / "lib"
+        / f"ghc-{GHC_VERSION}"
+        / "bin",  # Linux/macOS internal binaries
+        staging_dir / "lib" / "bin",  # Windows layout
     ]
 
     total_patched = 0
@@ -176,8 +193,12 @@ def patch_bin_wrappers(staging_dir: Path):
                 original = content
 
                 # Standard Unix prefixes
-                content = re.sub(r'/usr/local/lib/ghc-' + re.escape(GHC_VERSION), f'{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}', content)
-                content = re.sub(r'/ghc-prefix', PLACEHOLDER_PREFIX, content)
+                content = re.sub(
+                    r"/usr/local/lib/ghc-" + re.escape(GHC_VERSION),
+                    f"{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}",
+                    content,
+                )
+                content = re.sub(r"/ghc-prefix", PLACEHOLDER_PREFIX, content)
 
                 # Windows specific prefixes (or absolute staging paths)
                 abs_staging = staging_dir.absolute().as_posix()
@@ -199,7 +220,9 @@ def patch_bin_wrappers(staging_dir: Path):
                 pass
 
         if patched_cmd > 0:
-            print(f"Patched {patched_unix} wrapper scripts and {patched_cmd} .cmd files in {bin_dir}")
+            print(
+                f"Patched {patched_unix} wrapper scripts and {patched_cmd} .cmd files in {bin_dir}"
+            )
         else:
             print(f"Patched {patched_unix} wrapper scripts in {bin_dir}")
 
@@ -227,7 +250,7 @@ def main():
         print("Searched locations:")
         print(f"  - {STAGING_DIR / 'lib' / f'ghc-{GHC_VERSION}' / 'lib' / 'settings'}")
         print(f"  - {STAGING_DIR / 'lib' / 'settings'}")
-        print(f"  - (recursive search for 'settings' files)")
+        print("  - (recursive search for 'settings' files)")
 
     # Find and patch package database
     pkg_db = find_package_database(STAGING_DIR)
@@ -238,9 +261,11 @@ def main():
     else:
         print("WARNING: GHC package database not found in any expected location.")
         print("Searched locations:")
-        print(f"  - {STAGING_DIR / 'lib' / f'ghc-{GHC_VERSION}' / 'lib' / 'package.conf.d'}")
+        print(
+            f"  - {STAGING_DIR / 'lib' / f'ghc-{GHC_VERSION}' / 'lib' / 'package.conf.d'}"
+        )
         print(f"  - {STAGING_DIR / 'lib' / 'package.conf.d'}")
-        print(f"  - (recursive search for 'package.conf.d' directories)")
+        print("  - (recursive search for 'package.conf.d' directories)")
 
     # Patch wrapper scripts in bin/
     total_wrappers = patch_bin_wrappers(STAGING_DIR)

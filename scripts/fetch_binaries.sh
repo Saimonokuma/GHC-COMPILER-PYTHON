@@ -108,7 +108,7 @@ if [[ "${OS}" == "Linux" || "${OS}" == "Darwin" ]]; then
 
 	# Flatten the DESTDIR structure into staging
 	if [ -d "${DESTDIR_ABS}/ghc-prefix" ]; then
-		cp -a "${DESTDIR_ABS}/ghc-prefix/"* "../${STAGING_DIR}/"
+		cp -a "${DESTDIR_ABS}/ghc-prefix/." "../${STAGING_DIR}/"
 	else
 		echo "WARNING: Expected DESTDIR structure not found, attempting alternative layout..."
 		# Try to find the installed files regardless of structure

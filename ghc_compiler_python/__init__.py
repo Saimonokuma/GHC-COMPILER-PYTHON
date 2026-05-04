@@ -7,7 +7,7 @@ __author__ = "ghc-compiler-python contributors"
 __license__ = "MIT"
 
 __all__ = [
-	"__version__",
-	"__ghc_version__",
-	"__cabal_version__",
+    "__version__",
+    "__ghc_version__",
+    "__cabal_version__",
 ]
