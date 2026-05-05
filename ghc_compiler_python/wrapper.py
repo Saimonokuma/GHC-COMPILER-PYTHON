@@ -286,7 +286,15 @@ def _resolve_runtime_paths(env: dict) -> None:
             pass  # Ignore read-only files if already patched
 
     # Regenerate package.cache after patching .conf files
-    if patched_any_conf:
+    # Also regenerate if package.cache is missing (e.g., deleted during wheel build)
+    needs_recache = patched_any_conf
+    if not needs_recache:
+        for pkg_db in _find_package_databases():
+            if not (Path(pkg_db) / "package.cache").exists():
+                needs_recache = True
+                break
+
+    if needs_recache:
         _rebuild_package_cache(env)
 
 

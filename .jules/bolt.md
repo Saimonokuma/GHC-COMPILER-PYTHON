@@ -1,3 +1,6 @@
 ## 2024-05-06 - Avoid unconditional sub-process invocation in wrappers
 **Learning:** In the `ghc_compiler_python` wrapper, `_resolve_runtime_paths` originally rebuilt the GHC package cache via `ghc-pkg recache` on *every* invocation. Since wrappers are called frequently (for `ghc`, `ghci`, `cabal`), this ~200ms overhead adds up.
 **Action:** When performing initial setup/patching (like replacing `@GHC_PREFIX@`), track if any actual modifications occurred to `.conf` files and conditionally rebuild the cache only if changes were made.
+## 2024-05-06 - Fixing CI Failure related to caching
+**Learning:** During the build process, `scripts/patch_ghc_paths.py` deletes `package.cache`. Because of my earlier optimization, if no `.conf` files contained `@GHC_PREFIX@` needing replacement (e.g., if there were no `.conf` files dynamically matched or they were untouched somehow), the conditional `patched_any_conf` logic would incorrectly skip recreating `package.cache`, resulting in "there is no package.cache in ... even though package database is not empty" error from GHC on Windows.
+**Action:** When conditionally deciding whether to invoke `ghc-pkg recache`, also check if `package.cache` is missing. If it is, force the cache rebuild.
