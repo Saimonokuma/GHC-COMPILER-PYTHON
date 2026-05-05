@@ -2,6 +2,19 @@
 # fix_macos_rpaths.sh — Fix @rpath references in GHC binaries for macOS wheel packaging
 set -euo pipefail
 
+cleanup() {
+	local exit_code=$?
+	# Cleanup logic here
+	exit "$exit_code"
+}
+trap cleanup EXIT
+
+# Handle SIGPIPE gracefully (e.g., piped to head)
+trap '' PIPE
+
+# Handle SIGINT (Ctrl+C)
+trap 'echo "Interrupted"; exit 130' INT
+
 GHC_VERSION="9.4.8"
 STAGING_DIR="ghc-bindist"
 OS=$(uname -s)
@@ -32,7 +45,7 @@ fi
 echo "Found dylibs in: ${DEEP_LIB_DIR}"
 
 # Calculate relative path from bin/ to the deep lib dir
-REL_LIB_DIR=$(echo "${DEEP_LIB_DIR}" | sed "s|${STAGING_DIR}/||")
+REL_LIB_DIR="${DEEP_LIB_DIR//${STAGING_DIR}\//}"
 REL_LIB_DIR=${REL_LIB_DIR#/}
 RPATH_STRING="@loader_path/../${REL_LIB_DIR}"
 
@@ -71,7 +84,7 @@ done
 if [ -d "${LIB_DIR}/bin" ]; then
     for binary in "${LIB_DIR}/bin"/*; do
         if [ -f "$binary" ] && file "$binary" | grep -q "Mach-O"; then
-            DEEP_REL=$(echo "${DEEP_LIB_DIR}" | sed "s|${LIB_DIR}/||")
+            DEEP_REL="${DEEP_LIB_DIR//${LIB_DIR}\//}"
             DEEP_REL=${DEEP_REL#/}
             install_name_tool -delete_rpath "${OLD_RPATH}" "$binary" >/dev/null 2>&1 || true
             install_name_tool -delete_rpath "${OLD_RPATH2}" "$binary" >/dev/null 2>&1 || true

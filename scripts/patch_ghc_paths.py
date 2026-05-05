@@ -50,7 +50,7 @@ def find_settings_file(staging_dir: Path):
                     or '"C preprocessor command"' in content
                 ):
                     return candidate
-            except Exception:
+            except OSError:
                 continue
 
     return None
@@ -148,7 +148,7 @@ def patch_package_database(pkg_db: Path):
             if content != original:
                 conf_file.write_text(content, encoding="utf-8")
                 patched_count += 1
-        except Exception:
+        except OSError:
             pass
 
     # Remove cached package database
@@ -216,7 +216,7 @@ def patch_bin_wrappers(staging_dir: Path):
                         patched_cmd += 1
                     else:
                         patched_unix += 1
-            except Exception:
+            except OSError:
                 pass
 
         if patched_cmd > 0:

@@ -18,6 +18,7 @@ import sys
 import shutil
 import subprocess
 import signal
+from pathlib import Path
 from typing import List, NoReturn, Optional
 
 
@@ -54,15 +55,15 @@ def _resolve_binary(name: str) -> str:
         return resolved
 
     bin_dir = "Scripts" if sys.platform == "win32" else "bin"
-    fallback_path = os.path.join(sys.prefix, bin_dir, binary_name)
+    fallback_path = Path(sys.prefix) / bin_dir / binary_name
 
-    if os.path.exists(fallback_path):
-        return fallback_path
+    if fallback_path.exists():
+        return str(fallback_path)
 
-    package_dir = os.path.dirname(os.path.abspath(__file__))
-    env_bin = os.path.join(os.path.dirname(package_dir), bin_dir, binary_name)
-    if os.path.exists(env_bin):
-        return env_bin
+    package_dir = Path(__file__).resolve().parent
+    env_bin = package_dir.parent / bin_dir / binary_name
+    if env_bin.exists():
+        return str(env_bin)
 
     sys.stderr.write(
         f"FATAL ERROR: Bundled compiler binary '{binary_name}' could not be located.\n"
@@ -86,15 +87,14 @@ def _find_platform_lib_subdir() -> str:
     On macOS:   lib/ghc-9.4.8/lib/aarch64-osx-ghc-9.4.8/ (or similar)
     On Windows: Does not exist (DLLs are in mingw/bin/)
     """
-    ghc_lib_dir = os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}", "lib")
-    if not os.path.isdir(ghc_lib_dir):
+    ghc_lib_dir = Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib"
+    if not ghc_lib_dir.is_dir():
         return ""
 
     # Look for the platform-specific subdirectory (e.g., x86_64-linux-ghc-9.4.8)
-    for entry in os.listdir(ghc_lib_dir):
-        candidate = os.path.join(ghc_lib_dir, entry)
-        if os.path.isdir(candidate) and entry.endswith(f"-ghc-{GHC_VERSION}"):
-            return candidate
+    for candidate in ghc_lib_dir.iterdir():
+        if candidate.is_dir() and candidate.name.endswith(f"-ghc-{GHC_VERSION}"):
+            return str(candidate)
 
     return ""
 
@@ -108,12 +108,12 @@ def _sterilize_environment() -> dict:
         env.pop(var, None)
 
     _HOME_ORIGINAL = env.get("HOME", env.get("USERPROFILE", ""))
-    safe_home = os.path.join(sys.prefix, ".ghc-compiler-python-home")
-    os.makedirs(safe_home, exist_ok=True)
-    env["HOME"] = safe_home
+    safe_home = Path(sys.prefix) / ".ghc-compiler-python-home"
+    safe_home.mkdir(parents=True, exist_ok=True)
+    env["HOME"] = str(safe_home)
 
     bin_dir = "Scripts" if sys.platform == "win32" else "bin"
-    env_bin = os.path.join(sys.prefix, bin_dir)
+    env_bin = Path(sys.prefix) / bin_dir
     current_path = env.get("PATH", "")
     env["PATH"] = f"{env_bin}{os.pathsep}{current_path}"
 
@@ -122,38 +122,36 @@ def _sterilize_environment() -> dict:
 
     if sys.platform == "darwin":
         # macOS: GHC libraries are in lib/ghc-9.4.8/lib/
-        ghc_lib_dir = os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}", "lib")
-        if os.path.isdir(ghc_lib_dir):
-            lib_dirs.append(ghc_lib_dir)
+        ghc_lib_dir = Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib"
+        if ghc_lib_dir.is_dir():
+            lib_dirs.append(str(ghc_lib_dir))
         # Also add the top-level lib dir for delocate-processed dylibs
-        top_lib_dir = os.path.join(sys.prefix, "lib")
-        if os.path.isdir(top_lib_dir):
-            lib_dirs.append(top_lib_dir)
+        top_lib_dir = Path(sys.prefix) / "lib"
+        if top_lib_dir.is_dir():
+            lib_dirs.append(str(top_lib_dir))
 
     elif sys.platform == "linux":
         # Linux: Multiple library locations needed
         # 1. Top-level GHC lib dir (contains settings, package.conf.d)
-        ghc_lib_dir = os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}")
-        if os.path.isdir(ghc_lib_dir):
-            lib_dirs.append(ghc_lib_dir)
+        ghc_lib_dir = Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}"
+        if ghc_lib_dir.is_dir():
+            lib_dirs.append(str(ghc_lib_dir))
 
         # 2. Nested lib dir (contains settings, package.conf.d on Linux/macOS)
-        nested_lib_dir = os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}", "lib")
-        if os.path.isdir(nested_lib_dir):
-            lib_dirs.append(nested_lib_dir)
+        nested_lib_dir = Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib"
+        if nested_lib_dir.is_dir():
+            lib_dirs.append(str(nested_lib_dir))
 
         # 3. Platform-specific subdir (contains .so files like libffi.so, libHS*.so)
         platform_subdir = _find_platform_lib_subdir()
-        if platform_subdir and os.path.isdir(platform_subdir):
+        if platform_subdir and Path(platform_subdir).is_dir():
             lib_dirs.append(platform_subdir)
 
         # 4. Auditwheel dependencies (.libs directory)
-        package_dir = os.path.dirname(os.path.abspath(__file__))
-        auditwheel_libs = os.path.join(
-            os.path.dirname(package_dir), "ghc_compiler_python.libs"
-        )
-        if os.path.isdir(auditwheel_libs):
-            lib_dirs.append(auditwheel_libs)
+        package_dir = Path(__file__).resolve().parent
+        auditwheel_libs = package_dir.parent / "ghc_compiler_python.libs"
+        if auditwheel_libs.is_dir():
+            lib_dirs.append(str(auditwheel_libs))
 
     # Set library path environment variables
     if lib_dirs:
@@ -185,28 +183,28 @@ def _find_ghc_settings() -> Optional[str]:
     """Find the GHC settings file in platform-specific locations."""
     candidates = [
         # Linux/macOS: settings lives inside the nested lib dir
-        os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}", "lib", "settings"),
+        Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "settings",
         # Windows: settings lives directly in lib/
-        os.path.join(sys.prefix, "lib", "settings"),
+        Path(sys.prefix) / "lib" / "settings",
     ]
     for candidate in candidates:
-        if os.path.exists(candidate):
-            return candidate
+        if candidate.exists():
+            return str(candidate)
 
     # Dynamic fallback: search recursively
-    for root, dirs, files in os.walk(os.path.join(sys.prefix, "lib")):
-        if "settings" in files:
-            full_path = os.path.join(root, "settings")
-            try:
-                with open(full_path, "r", encoding="utf-8", errors="replace") as f:
-                    content = f.read()
-                if (
-                    '"C compiler command"' in content
-                    or '"C preprocessor command"' in content
-                ):
-                    return full_path
-            except Exception:
-                continue
+    lib_dir = Path(sys.prefix) / "lib"
+    if lib_dir.exists():
+        for candidate in lib_dir.rglob("settings"):
+            if candidate.is_file():
+                try:
+                    content = candidate.read_text(encoding="utf-8", errors="replace")
+                    if (
+                        '"C compiler command"' in content
+                        or '"C preprocessor command"' in content
+                    ):
+                        return str(candidate)
+                except OSError:
+                    continue
     return None
 
 
@@ -214,22 +212,22 @@ def _find_package_databases() -> List[str]:
     """Find all GHC package database directories in platform-specific locations."""
     candidates = [
         # Linux/macOS: package.conf.d lives inside the nested lib dir
-        os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}", "lib", "package.conf.d"),
+        Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "package.conf.d",
         # Windows: package.conf.d lives directly in lib/
-        os.path.join(sys.prefix, "lib", "package.conf.d"),
+        Path(sys.prefix) / "lib" / "package.conf.d",
     ]
     found = []
     for candidate in candidates:
-        if os.path.exists(candidate) and os.path.isdir(candidate):
-            found.append(candidate)
+        if candidate.is_dir():
+            found.append(str(candidate))
 
     # Dynamic fallback: search recursively
     if not found:
-        for root, dirs, files in os.walk(os.path.join(sys.prefix, "lib")):
-            if "package.conf.d" in dirs:
-                full_path = os.path.join(root, "package.conf.d")
-                if any(f.endswith(".conf") for f in os.listdir(full_path)):
-                    found.append(full_path)
+        lib_dir = Path(sys.prefix) / "lib"
+        if lib_dir.exists():
+            for candidate in lib_dir.rglob("package.conf.d"):
+                if candidate.is_dir() and any(f.name.endswith(".conf") for f in candidate.iterdir()):
+                    found.append(str(candidate))
 
     return found
 
@@ -250,22 +248,23 @@ def _resolve_runtime_paths(env: dict) -> None:
         targets.append(settings_file)
 
     for pkg_db in _find_package_databases():
+        db_path = Path(pkg_db)
         targets.extend(
-            os.path.join(pkg_db, f) for f in os.listdir(pkg_db) if f.endswith(".conf")
+            str(f) for f in db_path.iterdir() if f.name.endswith(".conf")
         )
 
     # 🧪 Alchemist: Consolidate repetitive directory scanning into a compact tuple traversal
-    for bin_dir in (
-        os.path.join(sys.prefix, "Scripts" if sys.platform == "win32" else "bin"),
-        os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}", "bin"),
-        os.path.join(sys.prefix, "bin"),
-        os.path.join(sys.prefix, "lib", "bin"),
+    for bin_dir_path in (
+        Path(sys.prefix) / ("Scripts" if sys.platform == "win32" else "bin"),
+        Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "bin",
+        Path(sys.prefix) / "bin",
+        Path(sys.prefix) / "lib" / "bin",
     ):
-        if os.path.exists(bin_dir):
+        if bin_dir_path.exists():
             targets.extend(
-                os.path.join(bin_dir, f)
-                for f in os.listdir(bin_dir)
-                if os.path.isfile(os.path.join(bin_dir, f)) and not f.endswith(".exe")
+                str(f)
+                for f in bin_dir_path.iterdir()
+                if f.is_file() and not f.name.endswith(".exe")
             )
 
     # Replace @GHC_PREFIX@ in all target files
@@ -280,7 +279,7 @@ def _resolve_runtime_paths(env: dict) -> None:
             if b"@GHC_PREFIX@" in content:
                 with open(target, "wb") as out:
                     out.write(content.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
-        except Exception:
+        except OSError:
             pass  # Ignore read-only files if already patched
 
     # Regenerate package.cache after patching .conf files
@@ -325,7 +324,7 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
             timeout=30,
         )
         # Silently ignore errors - GHC will fall back to reading .conf files directly
-    except Exception:
+    except (subprocess.SubprocessError, OSError):
         pass  # Non-fatal: if recache fails, GHC can still work without cache
 
 
@@ -360,7 +359,7 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
         sys.exit(1)
     except KeyboardInterrupt:
         sys.exit(130)
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError) as e:
         sys.stderr.write(f"FATAL ERROR: Subprocess proxy exception: {e}\n")
         sys.exit(1)
 

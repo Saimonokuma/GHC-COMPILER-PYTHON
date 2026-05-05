@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+cleanup() {
+	local exit_code=$?
+	# Cleanup logic here
+	exit "$exit_code"
+}
+trap cleanup EXIT
+
+# Handle SIGPIPE gracefully (e.g., piped to head)
+trap '' PIPE
+
+# Handle SIGINT (Ctrl+C)
+trap 'echo "Interrupted"; exit 130' INT
+
 STAGING_DIR="ghc-bindist"
 OS=$(uname -s)
 
