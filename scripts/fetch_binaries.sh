@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+cleanup() {
+	local exit_code=$?
+	# Cleanup logic here
+	exit "$exit_code"
+}
+trap cleanup EXIT
+
+# Handle SIGPIPE gracefully (e.g., piped to head)
+trap '' PIPE
+
+# Handle SIGINT (Ctrl+C)
+trap 'echo "Interrupted"; exit 130' INT
+
 GHC_VERSION="9.4.8"
 CABAL_VERSION="3.10.3.0"
 STAGING_DIR="ghc-bindist"
