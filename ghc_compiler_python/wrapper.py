@@ -271,14 +271,15 @@ def _resolve_runtime_paths(env: dict) -> None:
     prefix_clean_bytes = prefix_clean.encode("utf-8")
     patched_any_conf = False
     for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
+        target_path = Path(target)
         try:
             # ⚡ Bolt: Read in binary mode first to avoid severe performance degradation
             # when encountering binary files. UTF-8 decoding with errors="replace"
             # on large binaries can take seconds.
-            with open(target, "rb") as f:
+            with target_path.open("rb") as f:
                 content = f.read()
             if b"@GHC_PREFIX@" in content:
-                with open(target, "wb") as out:
+                with target_path.open("wb") as out:
                     out.write(content.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
                 if target.endswith(".conf"):
                     patched_any_conf = True
