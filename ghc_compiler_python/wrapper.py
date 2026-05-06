@@ -269,6 +269,7 @@ def _resolve_runtime_paths(env: dict) -> None:
 
     # Replace @GHC_PREFIX@ in all target files
     prefix_clean_bytes = prefix_clean.encode("utf-8")
+    patched_any_conf = False
     for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
         try:
             # ⚡ Bolt: Read in binary mode first to avoid severe performance degradation
@@ -279,11 +280,22 @@ def _resolve_runtime_paths(env: dict) -> None:
             if b"@GHC_PREFIX@" in content:
                 with open(target, "wb") as out:
                     out.write(content.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
+                if target.endswith(".conf"):
+                    patched_any_conf = True
         except OSError:
             pass  # Ignore read-only files if already patched
 
     # Regenerate package.cache after patching .conf files
-    _rebuild_package_cache(env)
+    # Also regenerate if package.cache is missing (e.g., deleted during wheel build)
+    needs_recache = patched_any_conf
+    if not needs_recache:
+        for pkg_db in _find_package_databases():
+            if not (Path(pkg_db) / "package.cache").exists():
+                needs_recache = True
+                break
+
+    if needs_recache:
+        _rebuild_package_cache(env)
 
 
 def _rebuild_package_cache(env: dict) -> None:
