@@ -1,0 +1,4 @@
+## 2024-05-18 - The Entry Point Attribute Resolution
+**The Glitch:** Three statically written subprocess proxy entry points (`execute_ghc`, `execute_ghci`, `execute_cabal`) were implemented manually. If we added `runhaskell`, `haddock`, or `ghc-pkg`, we would have had to keep extending this list in `wrapper.py` and `pyproject.toml`.
+**The Bend:** Python 3.7's PEP 562 allows defining `__getattr__` and `__dir__` on the module level. Furthermore, Python's `importlib.metadata` and console scripts perfectly invoke `__getattr__` when looking for the target function defined in `pyproject.toml` (e.g. `ghc-wrapper = "ghc_compiler_python.wrapper:execute_ghc"`).
+**The Loop:** By intercepting `name.startswith("execute_")`, we generate closures dynamically using the tool name. Any newly mapped console script in `pyproject.toml` requiring `execute_XYZ` instantly gains a closure at runtime without writing any additional manual proxy code.

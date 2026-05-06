@@ -20,7 +20,7 @@ import subprocess
 import tempfile
 import signal
 from pathlib import Path
-from typing import List, NoReturn, Optional
+from typing import Any, List, NoReturn, Optional
 
 
 GHC_VERSION = "9.4.8"
@@ -384,13 +384,27 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
         sys.exit(1)
 
 
-def execute_ghc() -> NoReturn:
-    _execute_tool("ghc", extra_args=["-v0"])
+def __getattr__(name: str) -> Any:
+    """Dynamic console script entry point generator.
+
+    Generates execution closures dynamically for any binary requested via entry points
+    (e.g., execute_ghc, execute_cabal, execute_haddock).
+    """
+    if name.startswith("execute_"):
+        tool_name = name[8:].replace("_", "-")
+        extra_args = ["-v0"] if tool_name == "ghc" else None
+
+        def executor() -> NoReturn:
+            _execute_tool(tool_name, extra_args=extra_args)
+
+        executor.__name__ = name
+        return executor
+
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def execute_ghci() -> NoReturn:
-    _execute_tool("ghci")
-
-
-def execute_cabal() -> NoReturn:
-    _execute_tool("cabal")
+def __dir__() -> List[str]:
+    """Provide explicit autocompletion for common dynamically generated entry points."""
+    base_dir = list(globals().keys())
+    dynamic_tools = ["execute_ghc", "execute_ghci", "execute_cabal"]
+    return base_dir + dynamic_tools
