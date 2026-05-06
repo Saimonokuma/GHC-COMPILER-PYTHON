@@ -210,26 +210,22 @@ def _find_ghc_settings() -> Optional[str]:
 
 def _find_package_databases() -> List[str]:
     """Find all GHC package database directories in platform-specific locations."""
-    candidates = [
-        # Linux/macOS: package.conf.d lives inside the nested lib dir
+    # 🧪 Alchemist: List comprehension + walrus operator replaces verbose accumulation
+    candidates = (
         Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "package.conf.d",
-        # Windows: package.conf.d lives directly in lib/
         Path(sys.prefix) / "lib" / "package.conf.d",
-    ]
-    found = []
-    for candidate in candidates:
-        if candidate.is_dir():
-            found.append(str(candidate))
+    )
+    if found := [str(c) for c in candidates if c.is_dir()]:
+        return found
 
     # Dynamic fallback: search recursively
-    if not found:
-        lib_dir = Path(sys.prefix) / "lib"
-        if lib_dir.exists():
-            for candidate in lib_dir.rglob("package.conf.d"):
-                if candidate.is_dir() and any(f.name.endswith(".conf") for f in candidate.iterdir()):
-                    found.append(str(candidate))
-
-    return found
+    if (lib_dir := Path(sys.prefix) / "lib").exists():
+        return [
+            str(c)
+            for c in lib_dir.rglob("package.conf.d")
+            if c.is_dir() and any(f.name.endswith(".conf") for f in c.iterdir())
+        ]
+    return []
 
 
 def _resolve_runtime_paths(env: dict) -> None:
@@ -239,37 +235,42 @@ def _resolve_runtime_paths(env: dict) -> None:
     Args:
             env: The sterilized environment dict with proper LD_LIBRARY_PATH set.
     """
-    prefix_clean = sys.prefix.replace("\\", "/")
+    import itertools
 
-    targets = []
+    prefix_clean_bytes = sys.prefix.replace("\\", "/").encode("utf-8")
 
-    # 🧪 Alchemist: Walrus operator replaces verbose assignments
-    if settings_file := _find_ghc_settings():
-        targets.append(settings_file)
-
-    for pkg_db in _find_package_databases():
-        db_path = Path(pkg_db)
-        targets.extend(
-            str(f) for f in db_path.iterdir() if f.name.endswith(".conf")
-        )
-
-    # 🧪 Alchemist: Consolidate repetitive directory scanning into a compact tuple traversal
-    for bin_dir_path in (
+    # 🧪 Alchemist: Consolidate target gathering into a single iterator chain
+    bin_dirs = (
         Path(sys.prefix) / ("Scripts" if sys.platform == "win32" else "bin"),
         Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "bin",
         Path(sys.prefix) / "bin",
         Path(sys.prefix) / "lib" / "bin",
-    ):
-        if bin_dir_path.exists():
-            targets.extend(
-                str(f)
-                for f in bin_dir_path.iterdir()
-                if f.is_file() and not f.name.endswith(".exe")
-            )
+    )
+
+    targets = set(
+        filter(
+            None,
+            itertools.chain(
+                [_find_ghc_settings()],
+                (
+                    str(f)
+                    for db in _find_package_databases()
+                    for f in Path(db).iterdir()
+                    if f.name.endswith(".conf")
+                ),
+                (
+                    str(f)
+                    for d in bin_dirs
+                    if d.exists()
+                    for f in d.iterdir()
+                    if f.is_file() and not f.name.endswith(".exe")
+                ),
+            ),
+        )
+    )
 
     # Replace @GHC_PREFIX@ in all target files
-    prefix_clean_bytes = prefix_clean.encode("utf-8")
-    for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
+    for target in targets:
         try:
             # ⚡ Bolt: Read in binary mode first to avoid severe performance degradation
             # when encountering binary files. UTF-8 decoding with errors="replace"
