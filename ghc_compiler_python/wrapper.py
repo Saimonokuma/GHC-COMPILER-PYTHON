@@ -17,6 +17,7 @@ import os
 import sys
 import shutil
 import subprocess
+import tempfile
 import signal
 from pathlib import Path
 from typing import List, NoReturn, Optional
@@ -104,12 +105,18 @@ def _sterilize_environment() -> dict:
     global _HOME_ORIGINAL
     env = os.environ.copy()
 
+    _HOME_ORIGINAL = env.get("HOME", env.get("USERPROFILE", ""))
+
     for var in HASKELL_POLLUTION_VARS:
         env.pop(var, None)
 
-    _HOME_ORIGINAL = env.get("HOME", env.get("USERPROFILE", ""))
     safe_home = Path(sys.prefix) / ".ghc-compiler-python-home"
-    safe_home.mkdir(parents=True, exist_ok=True)
+    try:
+        safe_home.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        safe_home = Path(tempfile.gettempdir()) / ".ghc-compiler-python-home"
+        safe_home.mkdir(parents=True, exist_ok=True)
+
     env["HOME"] = str(safe_home)
 
     bin_dir = "Scripts" if sys.platform == "win32" else "bin"
