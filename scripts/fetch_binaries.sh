@@ -3,7 +3,7 @@ set -euo pipefail
 
 cleanup() {
 	local exit_code=$?
-	# Cleanup logic here
+	rm -rf "${BUILD_DIR:-}"
 	exit "$exit_code"
 }
 trap cleanup EXIT
@@ -151,7 +151,6 @@ else
 fi
 
 cd ..
-rm -rf "${BUILD_DIR}"
 
 # FIX v2: Verify critical directories exist after extraction
 echo "Verifying staging directory structure..."

@@ -4,7 +4,6 @@ set -euo pipefail
 
 cleanup() {
 	local exit_code=$?
-	# Cleanup logic here
 	exit "$exit_code"
 }
 trap cleanup EXIT
