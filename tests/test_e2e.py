@@ -1,6 +1,5 @@
 """End-to-end tests for ghc-compiler-python wheel functionality."""
 
-import os
 import subprocess
 import sys
 import tempfile
