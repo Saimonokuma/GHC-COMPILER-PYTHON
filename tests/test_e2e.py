@@ -6,6 +6,7 @@ import sys
 import tempfile
 import pytest
 import shutil
+from pathlib import Path
 
 
 @pytest.fixture
@@ -16,7 +17,7 @@ def haskell_source():
         f.flush()
         f.close()
         yield f.name
-    os.unlink(f.name)
+    Path(f.name).unlink()
 
 
 @pytest.mark.skipif(
@@ -24,7 +25,7 @@ def haskell_source():
     reason="No C-linker available",
 )
 @pytest.mark.skipif(
-    not os.path.exists(os.path.join(sys.prefix, "bin", "ghc-wrapper"))
+    not (Path(sys.prefix) / "bin" / "ghc-wrapper").exists()
     and not shutil.which("ghc-wrapper"),
     reason="ghc-wrapper not installed in path",
 )
