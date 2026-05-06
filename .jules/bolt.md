@@ -4,3 +4,6 @@
 ## 2024-05-06 - Fixing CI Failure related to caching
 **Learning:** During the build process, `scripts/patch_ghc_paths.py` deletes `package.cache`. Because of my earlier optimization, if no `.conf` files contained `@GHC_PREFIX@` needing replacement (e.g., if there were no `.conf` files dynamically matched or they were untouched somehow), the conditional `patched_any_conf` logic would incorrectly skip recreating `package.cache`, resulting in "there is no package.cache in ... even though package database is not empty" error from GHC on Windows.
 **Action:** When conditionally deciding whether to invoke `ghc-pkg recache`, also check if `package.cache` is missing. If it is, force the cache rebuild.
+## 2024-05-06 - Avoid redundant path discovery in wrapper.py
+**Learning:** During the wrapper execution (`ghc`, `ghci`, `cabal`), functions `_find_ghc_settings` and `_find_package_databases` perform slow filesystem traversals (especially the fallback `rglob` over `sys.prefix / "lib"`). Because these are called multiple times per invocation, they contribute to a significant startup delay.
+**Action:** Memoize these functions using `@functools.lru_cache(maxsize=None)` since the environment layout does not change mid-execution, preventing redundant traversal.

@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import tempfile
 import signal
+import functools
 from pathlib import Path
 from typing import Any, List, NoReturn, Optional
 
@@ -186,6 +187,7 @@ def _sterilize_environment() -> dict:
     return env
 
 
+@functools.lru_cache(maxsize=None)
 def _find_ghc_settings() -> Optional[str]:
     """Find the GHC settings file in platform-specific locations."""
     candidates = [
@@ -215,6 +217,7 @@ def _find_ghc_settings() -> Optional[str]:
     return None
 
 
+@functools.lru_cache(maxsize=None)
 def _find_package_databases() -> List[str]:
     """Find all GHC package database directories in platform-specific locations."""
     candidates = [
