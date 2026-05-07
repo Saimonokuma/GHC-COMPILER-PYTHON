@@ -124,64 +124,28 @@ def _sterilize_environment() -> dict:
     current_path = env.get("PATH", "")
     env["PATH"] = f"{env_bin}{os.pathsep}{current_path}"
 
-    # Collect all library directories for LD_LIBRARY_PATH / DYLD_LIBRARY_PATH
-    lib_dirs = []
+    # 🧪 Alchemist: Dictionary mapping with lambdas and generators replace verbose if-chains and manual append loops
+    # Lambdas are used for lazy evaluation so that platform-specific code doesn't evaluate eagerly.
+    platform_config = {
+        "darwin": lambda: (
+            [Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib", Path(sys.prefix) / "lib"],
+            ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"]
+        ),
+        "linux": lambda: (
+            [
+                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}",
+                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
+                Path(_find_platform_lib_subdir() or "."),
+                Path(__file__).resolve().parent.parent / "ghc_compiler_python.libs",
+            ],
+            ["LD_LIBRARY_PATH"]
+        )
+    }
+    candidates, vars_to_update = platform_config.get(sys.platform, lambda: ([], []))()
 
-    if sys.platform == "darwin":
-        # macOS: GHC libraries are in lib/ghc-9.4.8/lib/
-        ghc_lib_dir = Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib"
-        if ghc_lib_dir.is_dir():
-            lib_dirs.append(str(ghc_lib_dir))
-        # Also add the top-level lib dir for delocate-processed dylibs
-        top_lib_dir = Path(sys.prefix) / "lib"
-        if top_lib_dir.is_dir():
-            lib_dirs.append(str(top_lib_dir))
-
-    elif sys.platform == "linux":
-        # Linux: Multiple library locations needed
-        # 1. Top-level GHC lib dir (contains settings, package.conf.d)
-        ghc_lib_dir = Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}"
-        if ghc_lib_dir.is_dir():
-            lib_dirs.append(str(ghc_lib_dir))
-
-        # 2. Nested lib dir (contains settings, package.conf.d on Linux/macOS)
-        nested_lib_dir = Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib"
-        if nested_lib_dir.is_dir():
-            lib_dirs.append(str(nested_lib_dir))
-
-        # 3. Platform-specific subdir (contains .so files like libffi.so, libHS*.so)
-        platform_subdir = _find_platform_lib_subdir()
-        if platform_subdir and Path(platform_subdir).is_dir():
-            lib_dirs.append(platform_subdir)
-
-        # 4. Auditwheel dependencies (.libs directory)
-        package_dir = Path(__file__).resolve().parent
-        auditwheel_libs = package_dir.parent / "ghc_compiler_python.libs"
-        if auditwheel_libs.is_dir():
-            lib_dirs.append(str(auditwheel_libs))
-
-    # Set library path environment variables
-    if lib_dirs:
-        lib_dirs_str = os.pathsep.join(lib_dirs)
-
-        if sys.platform == "darwin":
-            existing = env.get("DYLD_LIBRARY_PATH", "")
-            env["DYLD_LIBRARY_PATH"] = (
-                f"{lib_dirs_str}{os.pathsep}{existing}" if existing else lib_dirs_str
-            )
-            # Also set LD_LIBRARY_PATH for consistency
-            existing_ld = env.get("LD_LIBRARY_PATH", "")
-            env["LD_LIBRARY_PATH"] = (
-                f"{lib_dirs_str}{os.pathsep}{existing_ld}"
-                if existing_ld
-                else lib_dirs_str
-            )
-
-        elif sys.platform == "linux":
-            existing = env.get("LD_LIBRARY_PATH", "")
-            env["LD_LIBRARY_PATH"] = (
-                f"{lib_dirs_str}{os.pathsep}{existing}" if existing else lib_dirs_str
-            )
+    if lib_dirs_str := os.pathsep.join(str(p) for p in candidates if p.is_dir() and str(p) != "."):
+        for var in vars_to_update:
+            env[var] = f"{lib_dirs_str}{os.pathsep}{env[var]}" if env.get(var) else lib_dirs_str
 
     return env
 
@@ -293,16 +257,8 @@ def _resolve_runtime_paths(env: dict) -> None:
         except OSError:
             pass  # Ignore read-only files if already patched
 
-    # Regenerate package.cache after patching .conf files
-    # Also regenerate if package.cache is missing (e.g., deleted during wheel build)
-    needs_recache = patched_any_conf
-    if not needs_recache:
-        for pkg_db in _find_package_databases():
-            if not (Path(pkg_db) / "package.cache").exists():
-                needs_recache = True
-                break
-
-    if needs_recache:
+    # 🧪 Alchemist: any() replaces manual flag variables and loops for succinct boolean reduction
+    if patched_any_conf or any(not (Path(pkg_db) / "package.cache").exists() for pkg_db in _find_package_databases()):
         _rebuild_package_cache(env)
 
 
