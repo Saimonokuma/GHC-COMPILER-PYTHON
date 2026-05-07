@@ -1,0 +1,22 @@
+[tools]
+python = "3.12"
+ruff = "0.8.4"
+pytest = "8.3.4"
+haskell = "9.8.2"
+hlint = "3.8"
+ghc = "9.8.2"
+rust = "1.86.0"
+clippy = "1.86"
+cargo = "1.86"
+shellcheck = "0.10.0"
+bats = "1.11.0"
+
+[platforms]
+linux = "ubuntu-22.04"
+macos = "macos-14"
+windows = "server-2022"
+
+[ci]
+fail_fast = true
+cache = true
+parallel = true

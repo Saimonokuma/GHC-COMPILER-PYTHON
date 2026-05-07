@@ -17,3 +17,25 @@ title: "Cross-Language Defect: Python os.path vulnerabilities across platform bo
 **Axes Affected:** IV (Operational)
 
 **Level:** L4
+
+---
+entry_id: "CRUCIBLE-2026-05-07-002"
+schema_version: "2.0"
+timestamp: "2026-05-07T15:43:48Z"
+title: "Missing crucible.lock manifest for tool version pinning"
+---
+## 2026-05-07 - Missing crucible.lock manifest for tool version pinning
+
+**Learning:** Missing `crucible.lock` manifest for tool version pinning leaves the CI and verification environments vulnerable to temporal defects, where upstream updates may subtly break functionality or produce inconsistent behavior across systems.
+
+**Action:** Explicitly define and maintain `crucible.lock` in the repository root to guarantee exact versions of dependencies across all five axes of verification.
+
+**Defect Pattern ID:** PATTERN-012
+
+**Related Entries:** []
+
+**Axes Affected:** V (Temporal)
+
+**Level:** L5
+
+---
