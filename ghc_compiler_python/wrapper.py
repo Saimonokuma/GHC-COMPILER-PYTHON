@@ -331,15 +331,22 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
     cmd.extend(sys.argv[1:])
 
     try:
-        # 🧪 Alchemist: os.execve replaces the Python interpreter entirely.
-        # This eliminates the need for subprocess.run(), manual exit code
-        # forwarding, and signal handlers, while freeing the memory of
-        # the wrapper script completely.
-        os.execve(binary_path, cmd, env)
+        # 🧪 Alchemist: On POSIX systems, os.execve replaces the Python interpreter entirely.
+        # This eliminates the need for subprocess.run(), manual exit code forwarding,
+        # and signal handlers, freeing the memory of the wrapper script completely.
+        # However, Windows lacks native exec() and implements it by creating a new process
+        # and terminating the current one, which breaks shell wait() expectations.
+        if sys.platform != "win32":
+            os.execve(binary_path, cmd, env)
+        else:
+            result = subprocess.run(cmd, env=env)
+            sys.exit(result.returncode)
     except FileNotFoundError:
         sys.stderr.write(f"FATAL ERROR: Binary not found at '{binary_path}'.\n")
         sys.exit(1)
-    except OSError as e:
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except (subprocess.SubprocessError, OSError) as e:
         sys.stderr.write(f"FATAL ERROR: Execution failed: {e}\n")
         sys.exit(1)
 

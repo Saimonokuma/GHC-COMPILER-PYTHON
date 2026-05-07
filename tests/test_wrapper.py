@@ -115,7 +115,17 @@ class TestExceptionHandling:
         mock_sterilize.return_value = {}
 
         # Test OSError
-        mock_execve.side_effect = OSError("test error")
-        with pytest.raises(SystemExit) as exc:
-            _execute_tool("ghc")
-        assert exc.value.code == 1
+        import sys
+
+        # Test depending on platform
+        if sys.platform != "win32":
+            mock_execve.side_effect = OSError("test error")
+            with pytest.raises(SystemExit) as exc:
+                _execute_tool("ghc")
+            assert exc.value.code == 1
+        else:
+            with patch("ghc_compiler_python.wrapper.subprocess.run") as mock_run:
+                mock_run.side_effect = OSError("test error")
+                with pytest.raises(SystemExit) as exc:
+                    _execute_tool("ghc")
+                assert exc.value.code == 1
