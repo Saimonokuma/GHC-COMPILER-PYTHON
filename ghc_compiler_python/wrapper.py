@@ -172,6 +172,8 @@ def _find_ghc_settings() -> Optional[str]:
         Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "settings",
         # Windows: settings lives directly in lib/
         Path(sys.prefix) / "lib" / "settings",
+        # In hatch shared-data it could be directly in sys.prefix
+        Path(sys.prefix) / "settings",
     ]
     for candidate in candidates:
         if candidate.exists():
@@ -180,8 +182,13 @@ def _find_ghc_settings() -> Optional[str]:
     # Dynamic fallback: search recursively
     lib_dir = Path(sys.prefix) / "lib"
     if lib_dir.exists():
-        for candidate in lib_dir.rglob("settings"):
-            if candidate.is_file():
+        for root, dirs, files in os.walk(lib_dir):
+            if "site-packages" in dirs:
+                dirs.remove("site-packages")
+            if "dist-packages" in dirs:
+                dirs.remove("dist-packages")
+            if "settings" in files:
+                candidate = Path(root) / "settings"
                 try:
                     content = candidate.read_text(encoding="utf-8", errors="replace")
                     if (
@@ -202,6 +209,8 @@ def _find_package_databases() -> List[str]:
         Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "package.conf.d",
         # Windows: package.conf.d lives directly in lib/
         Path(sys.prefix) / "lib" / "package.conf.d",
+        # In hatch shared-data it could be directly in sys.prefix
+        Path(sys.prefix) / "package.conf.d",
     ]
     found = []
     for candidate in candidates:
@@ -212,11 +221,15 @@ def _find_package_databases() -> List[str]:
     if not found:
         lib_dir = Path(sys.prefix) / "lib"
         if lib_dir.exists():
-            for candidate in lib_dir.rglob("package.conf.d"):
-                if candidate.is_dir() and any(
-                    f.name.endswith(".conf") for f in candidate.iterdir()
-                ):
-                    found.append(str(candidate))
+            for root, dirs, files in os.walk(lib_dir):
+                if "site-packages" in dirs:
+                    dirs.remove("site-packages")
+                if "dist-packages" in dirs:
+                    dirs.remove("dist-packages")
+                if "package.conf.d" in dirs:
+                    candidate = Path(root) / "package.conf.d"
+                    if any(f.name.endswith(".conf") for f in candidate.iterdir()):
+                        found.append(str(candidate))
 
     return found
 
