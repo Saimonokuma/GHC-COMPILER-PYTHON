@@ -18,7 +18,6 @@ import sys
 import shutil
 import subprocess
 import tempfile
-import signal
 import functools
 import mmap
 from pathlib import Path
@@ -130,8 +129,11 @@ def _sterilize_environment() -> dict:
     # Lambdas are used for lazy evaluation so that platform-specific code doesn't evaluate eagerly.
     platform_config = {
         "darwin": lambda: (
-            [Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib", Path(sys.prefix) / "lib"],
-            ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"]
+            [
+                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
+                Path(sys.prefix) / "lib",
+            ],
+            ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"],
         ),
         "linux": lambda: (
             [
@@ -140,14 +142,20 @@ def _sterilize_environment() -> dict:
                 Path(_find_platform_lib_subdir() or "."),
                 Path(__file__).resolve().parent.parent / "ghc_compiler_python.libs",
             ],
-            ["LD_LIBRARY_PATH"]
-        )
+            ["LD_LIBRARY_PATH"],
+        ),
     }
     candidates, vars_to_update = platform_config.get(sys.platform, lambda: ([], []))()
 
-    if lib_dirs_str := os.pathsep.join(str(p) for p in candidates if p.is_dir() and str(p) != "."):
+    if lib_dirs_str := os.pathsep.join(
+        str(p) for p in candidates if p.is_dir() and str(p) != "."
+    ):
         for var in vars_to_update:
-            env[var] = f"{lib_dirs_str}{os.pathsep}{env[var]}" if env.get(var) else lib_dirs_str
+            env[var] = (
+                f"{lib_dirs_str}{os.pathsep}{env[var]}"
+                if env.get(var)
+                else lib_dirs_str
+            )
 
     return env
 
@@ -201,7 +209,9 @@ def _find_package_databases() -> List[str]:
         lib_dir = Path(sys.prefix) / "lib"
         if lib_dir.exists():
             for candidate in lib_dir.rglob("package.conf.d"):
-                if candidate.is_dir() and any(f.name.endswith(".conf") for f in candidate.iterdir()):
+                if candidate.is_dir() and any(
+                    f.name.endswith(".conf") for f in candidate.iterdir()
+                ):
                     found.append(str(candidate))
 
     return found
@@ -224,9 +234,7 @@ def _resolve_runtime_paths(env: dict) -> None:
 
     for pkg_db in _find_package_databases():
         db_path = Path(pkg_db)
-        targets.extend(
-            str(f) for f in db_path.iterdir() if f.name.endswith(".conf")
-        )
+        targets.extend(str(f) for f in db_path.iterdir() if f.name.endswith(".conf"))
 
     # 🧪 Alchemist: Consolidate repetitive directory scanning into a compact tuple traversal
     for bin_dir_path in (
@@ -270,7 +278,10 @@ def _resolve_runtime_paths(env: dict) -> None:
             pass  # Ignore read-only files if already patched
 
     # 🧪 Alchemist: any() replaces manual flag variables and loops for succinct boolean reduction
-    if patched_any_conf or any(not (Path(pkg_db) / "package.cache").exists() for pkg_db in _find_package_databases()):
+    if patched_any_conf or any(
+        not (Path(pkg_db) / "package.cache").exists()
+        for pkg_db in _find_package_databases()
+    ):
         _rebuild_package_cache(env)
 
 
@@ -316,19 +327,8 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
         pass  # Non-fatal: if recache fails, GHC can still work without cache
 
 
-def _handle_sigterm(signum: int, frame) -> None:
-    sys.exit(128 + signum)
-
-
-def _handle_sigint(signum: int, frame) -> None:
-    sys.exit(130)
-
-
 def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoReturn:
     """Generic subprocess proxy for bundled Haskell tooling."""
-    signal.signal(signal.SIGTERM, _handle_sigterm)
-    signal.signal(signal.SIGINT, _handle_sigint)
-
     _validate_c_linker()
     env = _sterilize_environment()
     _resolve_runtime_paths(env)
@@ -340,15 +340,23 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
     cmd.extend(sys.argv[1:])
 
     try:
-        result = subprocess.run(cmd, env=env)
-        sys.exit(result.returncode)
+        # 🧪 Alchemist: On POSIX systems, os.execve replaces the Python interpreter entirely.
+        # This eliminates the need for subprocess.run(), manual exit code forwarding,
+        # and signal handlers, freeing the memory of the wrapper script completely.
+        # However, Windows lacks native exec() and implements it by creating a new process
+        # and terminating the current one, which breaks shell wait() expectations.
+        if sys.platform != "win32":
+            os.execve(binary_path, cmd, env)
+        else:
+            result = subprocess.run(cmd, env=env)
+            sys.exit(result.returncode)
     except FileNotFoundError:
         sys.stderr.write(f"FATAL ERROR: Binary not found at '{binary_path}'.\n")
         sys.exit(1)
     except KeyboardInterrupt:
         sys.exit(130)
     except (subprocess.SubprocessError, OSError) as e:
-        sys.stderr.write(f"FATAL ERROR: Subprocess proxy exception: {e}\n")
+        sys.stderr.write(f"FATAL ERROR: Execution failed: {e}\n")
         sys.exit(1)
 
 

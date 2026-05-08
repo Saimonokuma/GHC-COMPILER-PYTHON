@@ -91,32 +91,41 @@ class TestPollutionVars:
         assert len(HASKELL_POLLUTION_VARS) == 13
         assert isinstance(HASKELL_POLLUTION_VARS, frozenset)
 
+
 class TestExceptionHandling:
     """Tests for proper specific exception handling."""
 
-    @patch("ghc_compiler_python.wrapper.subprocess.run")
+    @patch("ghc_compiler_python.wrapper.os.execve")
     @patch("ghc_compiler_python.wrapper._resolve_binary")
     @patch("ghc_compiler_python.wrapper._resolve_runtime_paths")
     @patch("ghc_compiler_python.wrapper._sterilize_environment")
     @patch("ghc_compiler_python.wrapper._validate_c_linker")
     @patch("ghc_compiler_python.wrapper.sys.argv", ["ghc"])
     def test_subprocess_error_handling(
-        self, mock_validate, mock_sterilize, mock_resolve_paths, mock_resolve_binary, mock_run
+        self,
+        mock_validate,
+        mock_sterilize,
+        mock_resolve_paths,
+        mock_resolve_binary,
+        mock_execve,
     ):
         from ghc_compiler_python.wrapper import _execute_tool
-        import subprocess
 
         mock_resolve_binary.return_value = "/bin/true"
         mock_sterilize.return_value = {}
 
-        # Test SubprocessError
-        mock_run.side_effect = subprocess.SubprocessError("test error")
-        with pytest.raises(SystemExit) as exc:
-            _execute_tool("ghc")
-        assert exc.value.code == 1
-
         # Test OSError
-        mock_run.side_effect = OSError("test error")
-        with pytest.raises(SystemExit) as exc:
-            _execute_tool("ghc")
-        assert exc.value.code == 1
+        import sys
+
+        # Test depending on platform
+        if sys.platform != "win32":
+            mock_execve.side_effect = OSError("test error")
+            with pytest.raises(SystemExit) as exc:
+                _execute_tool("ghc")
+            assert exc.value.code == 1
+        else:
+            with patch("ghc_compiler_python.wrapper.subprocess.run") as mock_run:
+                mock_run.side_effect = OSError("test error")
+                with pytest.raises(SystemExit) as exc:
+                    _execute_tool("ghc")
+                assert exc.value.code == 1
