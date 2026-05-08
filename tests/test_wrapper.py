@@ -54,7 +54,8 @@ class TestValidateCLinker:
 
     @patch("ghc_compiler_python.wrapper.shutil.which", return_value=None)
     def test_exits_without_linker(self, mock_which):
-        with pytest.raises(SystemExit):
+        from ghc_compiler_python.wrapper import WrapperError
+        with pytest.raises(WrapperError):
             _validate_c_linker()
 
 
@@ -69,7 +70,8 @@ class TestResolveBinary:
 
     @patch("ghc_compiler_python.wrapper.shutil.which", return_value=None)
     def test_exits_when_binary_not_found(self, mock_which):
-        with pytest.raises(SystemExit):
+        from ghc_compiler_python.wrapper import WrapperError
+        with pytest.raises(WrapperError):
             _resolve_binary("nonexistent_binary")
 
 
