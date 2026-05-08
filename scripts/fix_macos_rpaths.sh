@@ -51,8 +51,8 @@ RPATH_STRING="@loader_path/../${REL_LIB_DIR}"
 echo "New @rpath for binaries will be: ${RPATH_STRING}"
 
 OLD_RPATH="/ghc-prefix/lib/ghc-${GHC_VERSION}"
-OLD_RPATH2="/ghc-prefix/lib/ghc-${GHC_VERSION}/lib/aarch64-osx-ghc-9.4.8"
-OLD_RPATH3="/ghc-prefix/lib/ghc-${GHC_VERSION}/lib/x86_64-osx-ghc-9.4.8"
+OLD_RPATH2="/ghc-prefix/lib/ghc-${GHC_VERSION}/lib/aarch64-osx-ghc-${GHC_VERSION}"
+OLD_RPATH3="/ghc-prefix/lib/ghc-${GHC_VERSION}/lib/x86_64-osx-ghc-${GHC_VERSION}"
 
 echo "[1/3] Fixing @rpath in dynamic libraries..."
 DYLIB_COUNT=0

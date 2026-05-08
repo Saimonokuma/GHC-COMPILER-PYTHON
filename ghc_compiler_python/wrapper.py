@@ -274,8 +274,10 @@ def _resolve_runtime_paths(env: dict) -> None:
                     pass
 
             if content_to_write is not None:
-                with target_path.open("wb") as out:
+                temp_path = target_path.with_name(f"{target_path.name}.{os.getpid()}.tmp")
+                with temp_path.open("wb") as out:
                     out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
+                os.replace(temp_path, target_path)
                 if target.endswith(".conf"):
                     patched_any_conf = True
         except OSError:
@@ -325,6 +327,7 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=30,
+            check=True,
         )
         # Silently ignore errors - GHC will fall back to reading .conf files directly
     except (subprocess.SubprocessError, OSError):

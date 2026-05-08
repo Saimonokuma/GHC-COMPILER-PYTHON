@@ -44,13 +44,11 @@ def mock_ghc_env(tmp_ghc_home: Path, ghc_bindist: Path) -> dict:
 
 
 @pytest.fixture
-def clean_ghc_env(tmp_ghc_home: Path) -> Generator[dict, None, None]:
+def clean_ghc_env(tmp_ghc_home: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     """
     Provides a clean environment for GHC tests.
-    Sets HOME to tmp, clears GHC pollution vars, restores after test.
+    Sets HOME to tmp, clears GHC pollution vars, restores after test using monkeypatch.
     """
-    original_env = os.environ.copy()
-
     pollution_vars = [
         "GHC_PACKAGE_PATH",
         "GHC_ENVIRONMENT",
@@ -65,15 +63,12 @@ def clean_ghc_env(tmp_ghc_home: Path) -> Generator[dict, None, None]:
         "GHCRTS_OPTS",
     ]
 
-    os.environ["HOME"] = str(tmp_ghc_home)
+    monkeypatch.setenv("HOME", str(tmp_ghc_home))
 
     for var in pollution_vars:
-        os.environ.pop(var, None)
+        monkeypatch.delenv(var, raising=False)
 
-    yield os.environ.copy()
-
-    os.environ.clear()
-    os.environ.update(original_env)
+    return os.environ.copy()
 
 
 @pytest.fixture
