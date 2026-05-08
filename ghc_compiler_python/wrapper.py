@@ -20,6 +20,7 @@ import subprocess
 import tempfile
 import signal
 import functools
+import mmap
 from pathlib import Path
 from typing import Any, List, NoReturn, Optional
 
@@ -247,14 +248,22 @@ def _resolve_runtime_paths(env: dict) -> None:
     for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
         target_path = Path(target)
         try:
-            # ⚡ Bolt: Read in binary mode first to avoid severe performance degradation
-            # when encountering binary files. UTF-8 decoding with errors="replace"
-            # on large binaries can take seconds.
+            # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
+            # the entire binary into memory. Drastically reduces I/O latency for large binaries.
+            content_to_write = None
             with target_path.open("rb") as f:
-                content = f.read()
-            if b"@GHC_PREFIX@" in content:
+                try:
+                    with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
+                        if m.find(b"@GHC_PREFIX@") != -1:
+                            f.seek(0)
+                            content_to_write = f.read()
+                except ValueError:
+                    # mmap throws ValueError for empty files
+                    pass
+
+            if content_to_write is not None:
                 with target_path.open("wb") as out:
-                    out.write(content.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
+                    out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
                 if target.endswith(".conf"):
                     patched_any_conf = True
         except OSError:

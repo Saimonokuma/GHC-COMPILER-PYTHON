@@ -7,3 +7,6 @@
 ## 2024-05-06 - Avoid redundant path discovery in wrapper.py
 **Learning:** During the wrapper execution (`ghc`, `ghci`, `cabal`), functions `_find_ghc_settings` and `_find_package_databases` perform slow filesystem traversals (especially the fallback `rglob` over `sys.prefix / "lib"`). Because these are called multiple times per invocation, they contribute to a significant startup delay.
 **Action:** Memoize these functions using `@functools.lru_cache(maxsize=None)` since the environment layout does not change mid-execution, preventing redundant traversal.
+## 2024-05-06 - Avoid fully reading large binaries during runtime patching
+**Learning:** During GHC environment setup, `_resolve_runtime_paths` scans executable files to dynamically patch `@GHC_PREFIX@`. Using `f.read()` on large binaries (e.g., 50MB-100MB) blocks execution by loading them entirely into memory just to perform a substring check.
+**Action:** Use `mmap.mmap` (with `access=mmap.ACCESS_READ`) to zero-copy search for the prefix string from disk. Fallback to `f.read()` only if the string is found to perform the actual replacement. Catch `ValueError` since `mmap` fails on 0-byte files. This optimization nearly halves the runtime path resolution latency.
