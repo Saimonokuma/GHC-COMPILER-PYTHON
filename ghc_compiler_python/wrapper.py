@@ -93,23 +93,25 @@ def _find_platform_lib_subdir() -> str:
     if not ghc_lib_dir.is_dir():
         return ""
 
-    # Look for the platform-specific subdirectory (e.g., x86_64-linux-ghc-9.4.8)
-    for candidate in ghc_lib_dir.iterdir():
-        if candidate.is_dir() and candidate.name.endswith(f"-ghc-{GHC_VERSION}"):
-            return str(candidate)
-
-    return ""
+    # 🧪 Alchemist: Generator expression replaces verbose loop
+    return next(
+        (
+            str(c)
+            for c in ghc_lib_dir.iterdir()
+            if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")
+        ),
+        "",
+    )
 
 
 def _sterilize_environment() -> dict:
     """Create a sterilized subprocess environment with proper library paths."""
     global _HOME_ORIGINAL
-    env = os.environ.copy()
 
-    _HOME_ORIGINAL = env.get("HOME", env.get("USERPROFILE", ""))
+    _HOME_ORIGINAL = os.environ.get("HOME", os.environ.get("USERPROFILE", ""))
 
-    for var in HASKELL_POLLUTION_VARS:
-        env.pop(var, None)
+    # 🧪 Alchemist: Dictionary comprehension replaces manual pop loop
+    env = {k: v for k, v in os.environ.items() if k not in HASKELL_POLLUTION_VARS}
 
     safe_home = Path(sys.prefix) / ".ghc-compiler-python-home"
     try:
@@ -129,27 +131,24 @@ def _sterilize_environment() -> dict:
     current_path = env.get("PATH", "")
     env["PATH"] = f"{env_bin}{os.pathsep}{current_path}"
 
-    # 🧪 Alchemist: Dictionary mapping with lambdas and generators replace verbose if-chains and manual append loops
-    # Lambdas are used for lazy evaluation so that platform-specific code doesn't evaluate eagerly.
-    platform_config = {
-        "darwin": lambda: (
-            [
+    # 🧪 Alchemist: Structural pattern matching is far cleaner than dictionary mapping of lambdas
+    match sys.platform:
+        case "darwin":
+            candidates = [
                 Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
                 Path(sys.prefix) / "lib",
-            ],
-            ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"],
-        ),
-        "linux": lambda: (
-            [
+            ]
+            vars_to_update = ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"]
+        case "linux":
+            candidates = [
                 Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}",
                 Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
                 Path(_find_platform_lib_subdir() or "."),
                 Path(__file__).resolve().parent.parent / "ghc_compiler_python.libs",
-            ],
-            ["LD_LIBRARY_PATH"],
-        ),
-    }
-    candidates, vars_to_update = platform_config.get(sys.platform, lambda: ([], []))()
+            ]
+            vars_to_update = ["LD_LIBRARY_PATH"]
+        case _:
+            candidates, vars_to_update = [], []
 
     if lib_dirs_str := os.pathsep.join(
         str(p) for p in candidates if p.is_dir() and str(p) != "."
@@ -173,25 +172,26 @@ def _find_ghc_settings() -> Optional[str]:
         # Windows: settings lives directly in lib/
         Path(sys.prefix) / "lib" / "settings",
     ]
-    for candidate in candidates:
-        if candidate.exists():
-            return str(candidate)
+
+    # 🧪 Alchemist: Generator expression with next() replaces manual loops
+    if static_match := next((str(c) for c in candidates if c.exists()), None):
+        return static_match
 
     # Dynamic fallback: search recursively
     lib_dir = Path(sys.prefix) / "lib"
-    if lib_dir.exists():
-        for candidate in lib_dir.rglob("settings"):
-            if candidate.is_file():
-                try:
-                    content = candidate.read_text(encoding="utf-8", errors="replace")
-                    if (
-                        '"C compiler command"' in content
-                        or '"C preprocessor command"' in content
-                    ):
-                        return str(candidate)
-                except OSError:
-                    continue
-    return None
+    if not lib_dir.exists():
+        return None
+
+    def _is_valid_settings(p: Path) -> bool:
+        if not p.is_file():
+            return False
+        try:
+            content = p.read_text(encoding="utf-8", errors="replace")
+            return '"C compiler command"' in content or '"C preprocessor command"' in content
+        except OSError:
+            return False
+
+    return next((str(c) for c in lib_dir.rglob("settings") if _is_valid_settings(c)), None)
 
 
 @functools.lru_cache(maxsize=None)
@@ -203,22 +203,21 @@ def _find_package_databases() -> List[str]:
         # Windows: package.conf.d lives directly in lib/
         Path(sys.prefix) / "lib" / "package.conf.d",
     ]
-    found = []
-    for candidate in candidates:
-        if candidate.is_dir():
-            found.append(str(candidate))
+
+    # 🧪 Alchemist: List comprehensions replace manual list appending loops
+    if found := [str(c) for c in candidates if c.is_dir()]:
+        return found
 
     # Dynamic fallback: search recursively
-    if not found:
-        lib_dir = Path(sys.prefix) / "lib"
-        if lib_dir.exists():
-            for candidate in lib_dir.rglob("package.conf.d"):
-                if candidate.is_dir() and any(
-                    f.name.endswith(".conf") for f in candidate.iterdir()
-                ):
-                    found.append(str(candidate))
+    lib_dir = Path(sys.prefix) / "lib"
+    if not lib_dir.exists():
+        return []
 
-    return found
+    return [
+        str(c)
+        for c in lib_dir.rglob("package.conf.d")
+        if c.is_dir() and any(f.name.endswith(".conf") for f in c.iterdir())
+    ]
 
 
 def _resolve_runtime_paths(env: dict) -> None:
