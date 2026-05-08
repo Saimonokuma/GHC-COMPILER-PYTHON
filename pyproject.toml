@@ -28,11 +28,10 @@ classifiers = [
 	"Topic :: Software Development :: Build Tools",
 ]
 dependencies = []
+dynamic = ["scripts"]
 
-[project.scripts]
-ghc-wrapper = "ghc_compiler_python.wrapper:execute_ghc"
-ghci-wrapper = "ghc_compiler_python.wrapper:execute_ghci"
-cabal-wrapper = "ghc_compiler_python.wrapper:execute_cabal"
+[tool.hatch.metadata.hooks.custom]
+path = "hatch_build.py"
 
 [tool.hatch.build.targets.wheel]
 strict-naming = true
