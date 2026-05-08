@@ -4,6 +4,9 @@ set -euo pipefail
 cleanup() {
 	local exit_code=$?
 	rm -rf "${BUILD_DIR:-}"
+	rm -rf "${SAFE_TMP_DIR:-}"
+	rm -rf "${DESTDIR_ABS:-}"
+	# exit "$exit_code"
 	exit "$exit_code"
 }
 trap cleanup EXIT
@@ -111,7 +114,9 @@ if [[ "${OS}" == "Linux" || "${OS}" == "Darwin" ]]; then
 	cd "${GHC_EXTRACTED_DIR}"
 
 	# FIX v2: Use absolute path for DESTDIR to avoid path resolution issues
-	DESTDIR_ABS="$(cd ../.. && pwd)/${STAGING_DIR}_raw"
+	# FIX v3: Use a safe temp directory to avoid issues with spaces in the current path
+	SAFE_TMP_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'ghc-build')
+	DESTDIR_ABS="${SAFE_TMP_DIR}/${STAGING_DIR}_raw"
 	rm -rf "${DESTDIR_ABS}"
 	mkdir -p "${DESTDIR_ABS}"
 
@@ -128,6 +133,7 @@ if [[ "${OS}" == "Linux" || "${OS}" == "Darwin" ]]; then
 		find "${DESTDIR_ABS}" -mindepth 1 -maxdepth 1 -exec cp -a {} "../${STAGING_DIR}/" \;
 	fi
 	rm -rf "${DESTDIR_ABS}"
+	rm -rf "${SAFE_TMP_DIR}"
 
 	# Extract Cabal for Unix
 	tar -xf "${CABAL_TAR}"

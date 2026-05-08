@@ -154,7 +154,10 @@ def patch_package_database(pkg_db: Path):
     # Remove cached package database
     cache_file = pkg_db / "package.cache"
     if cache_file.exists():
-        cache_file.unlink()
+        try:
+            cache_file.unlink()
+        except OSError:
+            pass
 
     return patched_count
 
