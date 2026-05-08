@@ -1,4 +1,4 @@
-## 2024-05-06 - [Read-only sys.prefix & Missing Trap Cleanup]
-**Bug:** The wrapper crashed with `PermissionError` when `sys.prefix` was a read-only filesystem (e.g., system-wide or Docker installs) because it tried to create `.ghc-compiler-python-home` in it without a fallback. In shell scripts, the `cleanup()` function in traps was left empty causing temporary directories like `build_artifacts` to leak if the script failed. Also, `_HOME_ORIGINAL` was being assigned an empty string because it was read *after* `HOME` was popped from the environment dictionary.
-**Root Cause:** Lack of defensive fallback for filesystem writes, missing implementation in trap callbacks, and ordering error in environment dictionary manipulation.
-**Prevention:** Always wrap writes to `sys.prefix` in `try/except OSError` and provide a `tempfile` fallback. Implement trap cleanups explicitly with `rm -rf "${DIR:-}"` and remove redundant non-trap cleanups. Ensure original state variables are captured *before* mutation loops.
+## REPO CONTEXT (Last updated: 2024-05-06)
+**Project:** ghc-compiler-python | **Languages:** Python, Bash | **Build/Test/Lint:** hatch, pytest
+**Known Bug Patterns:** Missing trap cleanups, unhandled OS failures in wrappers, paths with spaces
+**Fixed Bugs:** Wrapper crashed on read-only sys.prefix, shell script trap cleanup missing.

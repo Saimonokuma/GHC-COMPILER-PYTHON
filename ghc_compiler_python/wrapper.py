@@ -116,7 +116,11 @@ def _sterilize_environment() -> dict:
         safe_home.mkdir(parents=True, exist_ok=True)
     except OSError:
         safe_home = Path(tempfile.gettempdir()) / ".ghc-compiler-python-home"
-        safe_home.mkdir(parents=True, exist_ok=True)
+        try:
+            safe_home.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            # Final fallback, just use the original home
+            safe_home = Path(_HOME_ORIGINAL or tempfile.gettempdir())
 
     env["HOME"] = str(safe_home)
 
