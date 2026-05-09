@@ -7,3 +7,8 @@
 **Transformation:** Same as above, using `os.execve`.
 **Result:** The GitHub Actions CI check failed on the `windows-latest` platform.
 **Lesson:** Windows doesn't actually have a native POSIX `exec()` syscall. Instead, `os.execvpe()`/`os.execve()` on Windows spawn a new process using `CreateProcess` and immediately terminate the calling process. This completely breaks wait semantics on the shell side, since the parent Python process exits immediately while the child program keeps running detached, causing the shell (like bash/pwsh) to continue execution prematurely. We must fallback to `subprocess.run` on `sys.platform == "win32"`.
+
+## 2024-05-19 - Optimization of wrapper.py Using Alchemist Patterns
+**The Target:** `ghc_compiler_python/wrapper.py` was bloated with nested `try...except`, loops, and redundant conditions in `_sterilize_environment`, `_resolve_runtime_paths`, `_find_ghc_settings` and `__getattr__`.
+**The Transmutation:** Replaced `try...except` and manual path checking with concise generator pipelines using `next(...)`. Used `any()` and filtered directory traversals (`dirs[:]`) to collapse nested loops in `os.walk`. Merged repetitive mmap replacement logic with the `write_bytes()` shorthand to simplify binary path injections. Transmuted `__getattr__` wrapper logic using dynamic `type` generation.
+**The Impact:** Eliminated dozens of lines of repetitive logic. Memory footprint and speed improved by avoiding manual iteration overhead for resolving path constants. Maintained behavior correctly for all edge cases including platform-specific directory layouts.
