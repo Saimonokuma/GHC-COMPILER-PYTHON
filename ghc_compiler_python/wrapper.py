@@ -20,6 +20,7 @@ import subprocess
 import tempfile
 import functools
 import mmap
+import re
 from pathlib import Path
 from typing import Any, List, NoReturn, Optional
 
@@ -287,6 +288,10 @@ def _resolve_runtime_paths(env: dict) -> None:
                     pass
 
             if content_to_write is not None:
+                if target.endswith(".conf") and b" " in prefix_clean_bytes:
+                    s = content_to_write.decode("utf-8", errors="replace")
+                    s = re.sub(r'(?<!")(@GHC_PREFIX@[^\s"]+)', r'"\1"', s)
+                    content_to_write = s.encode("utf-8", errors="replace")
                 with target_path.open("wb") as out:
                     out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
                 if target.endswith(".conf"):
