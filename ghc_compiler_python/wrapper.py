@@ -21,7 +21,7 @@ import tempfile
 import functools
 import mmap
 from pathlib import Path
-from typing import Any, List, NoReturn, Optional
+from typing import Any, Callable, List, NoReturn, Optional
 
 
 GHC_VERSION = "9.4.8"
@@ -164,74 +164,81 @@ def _sterilize_environment() -> dict:
     return env
 
 
-@functools.lru_cache(maxsize=None)
-def _find_ghc_settings() -> Optional[str]:
-    """Find the GHC settings file in platform-specific locations."""
-    candidates = [
-        # Linux/macOS: settings lives inside the nested lib dir
-        Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "settings",
-        # Windows: settings lives directly in lib/
-        Path(sys.prefix) / "lib" / "settings",
-        # In hatch shared-data it could be directly in sys.prefix
-        Path(sys.prefix) / "settings",
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return str(candidate)
+def _locator_factory(
+    target_name: str,
+    is_dir: bool = False,
+    validator: Optional[Callable] = None,
+    multiple: bool = False,
+) -> Callable:
+    """Generate an lru_cached locator function for specific GHC paths.
 
-    # Dynamic fallback: search recursively
-    lib_dir = Path(sys.prefix) / "lib"
-    if lib_dir.exists():
-        for root, dirs, files in os.walk(lib_dir):
-            if "site-packages" in dirs:
-                dirs.remove("site-packages")
-            if "dist-packages" in dirs:
-                dirs.remove("dist-packages")
-            if "settings" in files:
-                candidate = Path(root) / "settings"
-                try:
-                    content = candidate.read_text(encoding="utf-8", errors="replace")
-                    if (
-                        '"C compiler command"' in content
-                        or '"C preprocessor command"' in content
-                    ):
-                        return str(candidate)
-                except OSError:
-                    continue
-    return None
+    Dynamically constructs a search strategy combining explicit platform candidates
+    and a recursive fallback, eliminating repetitive directory walking boilerplate.
+    """
+    @functools.lru_cache(maxsize=None)
+    def locator() -> Any:
+        candidates = [
+            Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib" / target_name,
+            Path(sys.prefix) / "lib" / target_name,
+            Path(sys.prefix) / target_name,
+        ]
 
+        found = []
+        for candidate in candidates:
+            if (is_dir and candidate.is_dir()) or (not is_dir and candidate.exists()):
+                if multiple:
+                    found.append(str(candidate))
+                else:
+                    return str(candidate)
 
-@functools.lru_cache(maxsize=None)
-def _find_package_databases() -> List[str]:
-    """Find all GHC package database directories in platform-specific locations."""
-    candidates = [
-        # Linux/macOS: package.conf.d lives inside the nested lib dir
-        Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "package.conf.d",
-        # Windows: package.conf.d lives directly in lib/
-        Path(sys.prefix) / "lib" / "package.conf.d",
-        # In hatch shared-data it could be directly in sys.prefix
-        Path(sys.prefix) / "package.conf.d",
-    ]
-    found = []
-    for candidate in candidates:
-        if candidate.is_dir():
-            found.append(str(candidate))
+        if not found:
+            lib_dir = Path(sys.prefix) / "lib"
+            if lib_dir.exists():
+                for root, dirs, files in os.walk(lib_dir):
+                    if "site-packages" in dirs: dirs.remove("site-packages")
+                    if "dist-packages" in dirs: dirs.remove("dist-packages")
 
-    # Dynamic fallback: search recursively
-    if not found:
-        lib_dir = Path(sys.prefix) / "lib"
-        if lib_dir.exists():
-            for root, dirs, files in os.walk(lib_dir):
-                if "site-packages" in dirs:
-                    dirs.remove("site-packages")
-                if "dist-packages" in dirs:
-                    dirs.remove("dist-packages")
-                if "package.conf.d" in dirs:
-                    candidate = Path(root) / "package.conf.d"
-                    if any(f.name.endswith(".conf") for f in candidate.iterdir()):
-                        found.append(str(candidate))
+                    if is_dir and target_name in dirs:
+                        candidate = Path(root) / target_name
+                        if not validator or validator(candidate):
+                            if multiple:
+                                found.append(str(candidate))
+                            else:
+                                return str(candidate)
+                    elif not is_dir and target_name in files:
+                        candidate = Path(root) / target_name
+                        if not validator or validator(candidate):
+                            if multiple:
+                                found.append(str(candidate))
+                            else:
+                                return str(candidate)
 
-    return found
+        return found if multiple else None
+    return locator
+
+def _settings_validator(p: Path) -> bool:
+    try:
+        content = p.read_text(encoding="utf-8", errors="replace")
+        return '"C compiler command"' in content or '"C preprocessor command"' in content
+    except OSError:
+        return False
+
+def _pkg_db_validator(p: Path) -> bool:
+    return any(f.name.endswith(".conf") for f in p.iterdir())
+
+_find_ghc_settings = _locator_factory(
+    target_name="settings",
+    is_dir=False,
+    validator=_settings_validator,
+    multiple=False,
+)
+
+_find_package_databases = _locator_factory(
+    target_name="package.conf.d",
+    is_dir=True,
+    validator=_pkg_db_validator,
+    multiple=True,
+)
 
 
 def _resolve_runtime_paths(env: dict) -> None:
@@ -397,7 +404,19 @@ def __getattr__(name: str) -> Any:
 
 
 def __dir__() -> List[str]:
-    """Provide explicit autocompletion for common dynamically generated entry points."""
+    """Provide explicit autocompletion for dynamically generated entry points based on installed binaries."""
     base_dir = list(globals().keys())
-    dynamic_tools = ["execute_ghc", "execute_ghci", "execute_cabal"]
-    return base_dir + dynamic_tools
+    bin_dir = Path(sys.prefix) / ("Scripts" if sys.platform == "win32" else "bin")
+
+    dynamic_tools = []
+    if bin_dir.exists() and bin_dir.is_dir():
+        for p in bin_dir.iterdir():
+            if p.is_file():
+                name = p.stem if p.name.endswith(".exe") else p.name
+                dynamic_tools.append(f"execute_{name.replace('-', '_')}")
+
+    # Always provide fallbacks (and avoid dupes)
+    fallbacks = {"execute_ghc", "execute_ghci", "execute_cabal"}
+    fallbacks.update(dynamic_tools)
+
+    return base_dir + list(fallbacks)

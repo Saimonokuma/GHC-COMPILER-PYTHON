@@ -21,71 +21,61 @@ PLACEHOLDER_PREFIX = "@GHC_PREFIX@"
 STAGING_DIR = Path("ghc-bindist")
 
 
-def find_settings_file(staging_dir: Path):
-    """Find the GHC settings file by searching the actual directory structure.
+def robust_patcher(func):
+    """Decorator that handles reading, writing, and safe exception trapping for file patching."""
+    def wrapper(file_path: Path, *args, **kwargs) -> bool:
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="replace")
+            new_content = func(content, file_path, *args, **kwargs)
+            if new_content and new_content != content:
+                file_path.write_text(new_content, encoding="utf-8")
+                return True
+        except OSError:
+            pass
+        return False
+    return wrapper
 
-    On Linux/macOS: ghc-bindist/lib/ghc-{ver}/lib/settings
-    On Windows:     ghc-bindist/lib/settings
-    Also searches recursively for any file named 'settings' containing GHC config keys.
-    """
-    # Explicit platform-specific paths
-    candidates = [
-        # Linux/macOS: settings lives inside the nested lib dir
-        staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "settings",
-        # Windows: settings lives directly in lib/
-        staging_dir / "lib" / "settings",
-    ]
 
-    for c in candidates:
-        if c.exists():
-            return c
+from typing import Callable
+def locator_factory(target_name: str, is_dir: bool, validator: Callable = None):
+    """Declarative path locator factory."""
+    def locator(staging_dir: Path):
+        candidates = [
+            staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "lib" / target_name,
+            staging_dir / "lib" / target_name,
+        ]
 
-    # Dynamic fallback: find any file named 'settings' that looks like a GHC config
-    for candidate in staging_dir.rglob("settings"):
-        if candidate.is_file():
-            try:
-                content = candidate.read_text(encoding="utf-8", errors="replace")
-                if (
-                    '"C compiler command"' in content
-                    or '"C preprocessor command"' in content
-                ):
+        for c in candidates:
+            if (is_dir and c.is_dir()) or (not is_dir and c.is_file()):
+                return c
+
+        for candidate in staging_dir.rglob(target_name):
+            if (is_dir and candidate.is_dir()) or (not is_dir and candidate.is_file()):
+                if not validator or validator(candidate):
                     return candidate
-            except OSError:
-                continue
-
-    return None
+        return None
+    return locator
 
 
-def find_package_database(staging_dir: Path):
-    """Find the GHC package database directory by searching the actual directory structure.
-
-    On Linux/macOS: ghc-bindist/lib/ghc-{ver}/lib/package.conf.d/
-    On Windows:     ghc-bindist/lib/package.conf.d/
-    Also searches recursively for any directory named 'package.conf.d' containing .conf files.
-    """
-    # Explicit platform-specific paths
-    candidates = [
-        # Linux/macOS: package.conf.d lives inside the nested lib dir
-        staging_dir / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "package.conf.d",
-        # Windows: package.conf.d lives directly in lib/
-        staging_dir / "lib" / "package.conf.d",
-    ]
-
-    for c in candidates:
-        if c.exists() and c.is_dir():
-            return c
-
-    # Dynamic fallback: find any directory named 'package.conf.d' with .conf files
-    for candidate in staging_dir.rglob("package.conf.d"):
-        if candidate.is_dir() and list(candidate.glob("*.conf")):
-            return candidate
-
-    return None
+def _settings_validator(p: Path) -> bool:
+    try:
+        content = p.read_text(encoding="utf-8", errors="replace")
+        return '"C compiler command"' in content or '"C preprocessor command"' in content
+    except OSError:
+        return False
 
 
-def patch_settings_file(settings_path: Path):
+def _pkg_db_validator(p: Path) -> bool:
+    return bool(list(p.glob("*.conf")))
+
+
+find_settings_file = locator_factory("settings", is_dir=False, validator=_settings_validator)
+find_package_database = locator_factory("package.conf.d", is_dir=True, validator=_pkg_db_validator)
+
+
+@robust_patcher
+def patch_settings_file(content: str, _path: Path) -> str:
     """Replace hardcoded GHC paths in the settings file with @GHC_PREFIX@."""
-    content = settings_path.read_text(encoding="utf-8", errors="replace")
     patterns = [
         (
             r"/usr/local/lib/ghc-" + re.escape(GHC_VERSION),
@@ -105,51 +95,43 @@ def patch_settings_file(settings_path: Path):
         ),
         (r"/ghc-prefix", PLACEHOLDER_PREFIX),
     ]
-    modified = False
     for pattern, replacement in patterns:
-        new_content = re.sub(pattern, replacement, content)
-        if new_content != content:
-            content = new_content
-            modified = True
-    if modified:
-        settings_path.write_text(content, encoding="utf-8")
-    return modified
+        content = re.sub(pattern, replacement, content)
+    return content
 
+
+@robust_patcher
+def patch_single_conf(content: str, _path: Path) -> str:
+    """Replace hardcoded paths in a single .conf file."""
+    content = re.sub(
+        r"dynamic-library-dirs:\s*/[^\s]+",
+        f"dynamic-library-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}",
+        content,
+    )
+    content = re.sub(
+        r"library-dirs:\s*/[^\s]+",
+        f"library-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}",
+        content,
+    )
+    content = re.sub(
+        r"include-dirs:\s*/[^\s]+",
+        f"include-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}/include",
+        content,
+    )
+    content = re.sub(
+        r"/ghc-prefix/lib/ghc-" + re.escape(GHC_VERSION),
+        f"{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}",
+        content,
+    )
+    content = re.sub(r"/ghc-prefix", PLACEHOLDER_PREFIX, content)
+    return content
 
 def patch_package_database(pkg_db: Path):
     """Replace hardcoded paths in package.conf.d/*.conf files."""
     patched_count = 0
     for conf_file in pkg_db.glob("*.conf"):
-        try:
-            content = conf_file.read_text(encoding="utf-8", errors="replace")
-            original = content
-            # Replace various path patterns
-            content = re.sub(
-                r"dynamic-library-dirs:\s*/[^\s]+",
-                f"dynamic-library-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}",
-                content,
-            )
-            content = re.sub(
-                r"library-dirs:\s*/[^\s]+",
-                f"library-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}",
-                content,
-            )
-            content = re.sub(
-                r"include-dirs:\s*/[^\s]+",
-                f"include-dirs: {PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}/include",
-                content,
-            )
-            content = re.sub(
-                r"/ghc-prefix/lib/ghc-" + re.escape(GHC_VERSION),
-                f"{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}",
-                content,
-            )
-            content = re.sub(r"/ghc-prefix", PLACEHOLDER_PREFIX, content)
-            if content != original:
-                conf_file.write_text(content, encoding="utf-8")
-                patched_count += 1
-        except OSError:
-            pass
+        if patch_single_conf(conf_file):
+            patched_count += 1
 
     # Remove cached package database
     cache_file = pkg_db / "package.cache"
@@ -160,6 +142,29 @@ def patch_package_database(pkg_db: Path):
             pass
 
     return patched_count
+
+
+@robust_patcher
+def patch_single_bin_wrapper(content: str, _path: Path, staging_dir: Path) -> str:
+    # Standard Unix prefixes
+    content = re.sub(
+        r"/usr/local/lib/ghc-" + re.escape(GHC_VERSION),
+        f"{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}",
+        content,
+    )
+    content = re.sub(r"/ghc-prefix", PLACEHOLDER_PREFIX, content)
+
+    # Windows specific prefixes (or absolute staging paths)
+    abs_staging = staging_dir.absolute().as_posix()
+    if abs_staging in content:
+        content = content.replace(abs_staging, PLACEHOLDER_PREFIX)
+
+    # Also handle Windows backslash paths
+    abs_staging_win = str(staging_dir.absolute()).replace("/", "\\\\")
+    if abs_staging_win in content:
+        content = content.replace(abs_staging_win, PLACEHOLDER_PREFIX)
+
+    return content
 
 
 def patch_bin_wrappers(staging_dir: Path):
@@ -191,36 +196,11 @@ def patch_bin_wrappers(staging_dir: Path):
             if script.name.endswith(".exe"):
                 continue
 
-            try:
-                content = script.read_text(encoding="utf-8", errors="replace")
-                original = content
-
-                # Standard Unix prefixes
-                content = re.sub(
-                    r"/usr/local/lib/ghc-" + re.escape(GHC_VERSION),
-                    f"{PLACEHOLDER_PREFIX}/lib/ghc-{GHC_VERSION}",
-                    content,
-                )
-                content = re.sub(r"/ghc-prefix", PLACEHOLDER_PREFIX, content)
-
-                # Windows specific prefixes (or absolute staging paths)
-                abs_staging = staging_dir.absolute().as_posix()
-                if abs_staging in content:
-                    content = content.replace(abs_staging, PLACEHOLDER_PREFIX)
-
-                # Also handle Windows backslash paths
-                abs_staging_win = str(staging_dir.absolute()).replace("/", "\\\\")
-                if abs_staging_win in content:
-                    content = content.replace(abs_staging_win, PLACEHOLDER_PREFIX)
-
-                if content != original:
-                    script.write_text(content, encoding="utf-8")
-                    if is_cmd:
-                        patched_cmd += 1
-                    else:
-                        patched_unix += 1
-            except OSError:
-                pass
+            if patch_single_bin_wrapper(script, staging_dir=staging_dir):
+                if is_cmd:
+                    patched_cmd += 1
+                else:
+                    patched_unix += 1
 
         if patched_cmd > 0:
             print(

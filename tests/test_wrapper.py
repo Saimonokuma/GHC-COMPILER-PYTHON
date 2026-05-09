@@ -92,6 +92,40 @@ class TestPollutionVars:
         assert isinstance(HASKELL_POLLUTION_VARS, frozenset)
 
 
+class TestDynamicEntryPoints:
+    """Tests for dynamically generated proxy closures."""
+
+    @pytest.mark.parametrize(
+        "tool_name, expected_args",
+        [
+            ("ghc", ["-v0"]),
+            ("ghci", None),
+            ("cabal", None),
+            ("runghc", None),
+            ("haddock", None),
+            ("ghc-pkg", None),
+        ]
+    )
+    @patch("ghc_compiler_python.wrapper._execute_tool")
+    def test_dynamic_closures(self, mock_execute, tool_name, expected_args):
+        import ghc_compiler_python.wrapper as wrapper
+
+        # Format the attribute name correctly (e.g., execute_ghc_pkg)
+        attr_name = f"execute_{tool_name.replace('-', '_')}"
+
+        # Verify the dynamically generated closure exists
+        assert hasattr(wrapper, attr_name)
+
+        # Extract the dynamically generated closure
+        executor = getattr(wrapper, attr_name)
+
+        # Execute it
+        executor()
+
+        # Verify the proxy was called with the correct tool and args
+        mock_execute.assert_called_once_with(tool_name, extra_args=expected_args)
+
+
 class TestExceptionHandling:
     """Tests for proper specific exception handling."""
 
