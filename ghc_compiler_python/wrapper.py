@@ -52,10 +52,6 @@ def _resolve_binary(name: str) -> str:
     """Resolve the absolute path to a bundled native binary."""
     binary_name = f"{name}.exe" if sys.platform == "win32" else name
 
-    resolved = shutil.which(binary_name)
-    if resolved:
-        return resolved
-
     bin_dir = "Scripts" if sys.platform == "win32" else "bin"
     fallback_path = Path(sys.prefix) / bin_dir / binary_name
 
@@ -66,6 +62,10 @@ def _resolve_binary(name: str) -> str:
     env_bin = package_dir.parent / bin_dir / binary_name
     if env_bin.exists():
         return str(env_bin)
+
+    resolved = shutil.which(binary_name)
+    if resolved:
+        return resolved
 
     sys.stderr.write(
         f"FATAL ERROR: Bundled compiler binary '{binary_name}' could not be located.\n"
