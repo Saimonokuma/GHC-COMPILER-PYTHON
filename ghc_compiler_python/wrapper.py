@@ -52,10 +52,6 @@ def _resolve_binary(name: str) -> str:
     """Resolve the absolute path to a bundled native binary."""
     binary_name = f"{name}.exe" if sys.platform == "win32" else name
 
-    resolved = shutil.which(binary_name)
-    if resolved:
-        return resolved
-
     bin_dir = "Scripts" if sys.platform == "win32" else "bin"
     fallback_path = Path(sys.prefix) / bin_dir / binary_name
 
@@ -66,6 +62,10 @@ def _resolve_binary(name: str) -> str:
     env_bin = package_dir.parent / bin_dir / binary_name
     if env_bin.exists():
         return str(env_bin)
+
+    resolved = shutil.which(binary_name)
+    if resolved:
+        return resolved
 
     sys.stderr.write(
         f"FATAL ERROR: Bundled compiler binary '{binary_name}' could not be located.\n"
@@ -115,12 +115,12 @@ def _sterilize_environment() -> dict:
     try:
         safe_home.mkdir(parents=True, exist_ok=True)
     except OSError:
-        safe_home = Path(tempfile.gettempdir()) / ".ghc-compiler-python-home"
         try:
+            safe_home = Path.home() / ".ghc-compiler-python-home"
             safe_home.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            # Final fallback, just use the original home
-            safe_home = Path(_HOME_ORIGINAL or tempfile.gettempdir())
+        except (OSError, RuntimeError):
+            # Final fallback, secure temp directory
+            safe_home = Path(tempfile.mkdtemp(prefix="ghc-compiler-python-home-"))
 
     env["HOME"] = str(safe_home)
 
@@ -251,7 +251,9 @@ def _resolve_runtime_paths(env: dict) -> None:
 
     for pkg_db in _find_package_databases():
         db_path = Path(pkg_db)
-        targets.extend(str(f) for f in db_path.iterdir() if f.name.endswith(".conf"))
+        targets.extend(
+            str(f) for f in db_path.iterdir() if f.name.endswith(".conf") and not f.is_symlink()
+        )
 
     # 🧪 Alchemist: Consolidate repetitive directory scanning into a compact tuple traversal
     for bin_dir_path in (
@@ -264,7 +266,7 @@ def _resolve_runtime_paths(env: dict) -> None:
             targets.extend(
                 str(f)
                 for f in bin_dir_path.iterdir()
-                if f.is_file() and not f.name.endswith(".exe")
+                if f.is_file() and not f.name.endswith(".exe") and not f.is_symlink()
             )
 
     # Replace @GHC_PREFIX@ in all target files
