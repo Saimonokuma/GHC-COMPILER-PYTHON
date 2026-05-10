@@ -245,11 +245,28 @@ def _resolve_runtime_paths(env: dict) -> None:
 
     targets = []
 
-    # 🧪 Alchemist: Walrus operator replaces verbose assignments
-    if settings_file := _find_ghc_settings():
+    settings_file = _find_ghc_settings()
+    pkg_dbs = _find_package_databases()
+
+    # ⚡ Bolt: Fast-path early return to avoid extremely expensive directory
+    # traversal and mmap checks on subsequent invocations.
+    if settings_file and pkg_dbs:
+        if all((Path(db) / "package.cache").exists() for db in pkg_dbs):
+            try:
+                with Path(settings_file).open("rb") as f:
+                    try:
+                        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
+                            if m.find(b"@GHC_PREFIX@") == -1:
+                                return  # Already patched and cache is built
+                    except ValueError:
+                        pass
+            except OSError:
+                pass
+
+    if settings_file:
         targets.append(settings_file)
 
-    for pkg_db in _find_package_databases():
+    for pkg_db in pkg_dbs:
         db_path = Path(pkg_db)
         targets.extend(str(f) for f in db_path.iterdir() if f.name.endswith(".conf"))
 
