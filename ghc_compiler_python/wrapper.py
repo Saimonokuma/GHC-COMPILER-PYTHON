@@ -183,10 +183,7 @@ def _find_ghc_settings() -> Optional[str]:
     lib_dir = Path(sys.prefix) / "lib"
     if lib_dir.exists():
         for root, dirs, files in os.walk(lib_dir):
-            if "site-packages" in dirs:
-                dirs.remove("site-packages")
-            if "dist-packages" in dirs:
-                dirs.remove("dist-packages")
+            dirs[:] = [d for d in dirs if d not in {"site-packages", "dist-packages"} and not d.startswith(("python", "pypy"))]
             if "settings" in files:
                 candidate = Path(root) / "settings"
                 try:
@@ -222,10 +219,7 @@ def _find_package_databases() -> List[str]:
         lib_dir = Path(sys.prefix) / "lib"
         if lib_dir.exists():
             for root, dirs, files in os.walk(lib_dir):
-                if "site-packages" in dirs:
-                    dirs.remove("site-packages")
-                if "dist-packages" in dirs:
-                    dirs.remove("dist-packages")
+                dirs[:] = [d for d in dirs if d not in {"site-packages", "dist-packages"} and not d.startswith(("python", "pypy"))]
                 if "package.conf.d" in dirs:
                     candidate = Path(root) / "package.conf.d"
                     if any(f.name.endswith(".conf") for f in candidate.iterdir()):
