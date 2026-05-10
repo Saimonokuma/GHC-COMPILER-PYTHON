@@ -1,4 +1,4 @@
-## REPO CONTEXT (Last updated: 2024-05-09)
+## REPO CONTEXT (Last updated: 2026-05-10)
 **Project:** ghc-compiler-python
 **Languages:** Python, Bash, Haskell
 **Build/Test:** hatch, pytest, python -m build
