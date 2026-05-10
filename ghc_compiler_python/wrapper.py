@@ -22,11 +22,12 @@ import functools
 import mmap
 import re
 from pathlib import Path
-from typing import Any, List, NoReturn, Optional
+from typing import Any, Dict, List, NoReturn, Optional
 
 
 GHC_VERSION = "9.4.8"
 CABAL_VERSION = "3.10.3.0"
+RECACHE_TIMEOUT_SECONDS = 30
 
 HASKELL_POLLUTION_VARS = frozenset(
     {
@@ -49,18 +50,38 @@ HASKELL_POLLUTION_VARS = frozenset(
 _HOME_ORIGINAL: Optional[str] = None
 
 
+def _die(message: str) -> NoReturn:
+    """Print an error message and exit."""
+    sys.stderr.write(f"FATAL ERROR: {message}\n")
+    sys.exit(1)
+
+
+def _get_bin_dir_name() -> str:
+    """Return the platform-specific bin directory name."""
+    return "Scripts" if sys.platform == "win32" else "bin"
+
+
+def _get_env_bin_dir() -> Path:
+    """Return the absolute path to the active environment's bin directory."""
+    return Path(sys.prefix) / _get_bin_dir_name()
+
+
+def _get_ghc_lib_dir() -> Path:
+    """Return the absolute path to the main GHC library directory."""
+    return Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}"
+
+
 def _resolve_binary(name: str) -> str:
     """Resolve the absolute path to a bundled native binary."""
     binary_name = f"{name}.exe" if sys.platform == "win32" else name
 
-    bin_dir = "Scripts" if sys.platform == "win32" else "bin"
-    fallback_path = Path(sys.prefix) / bin_dir / binary_name
+    fallback_path = _get_env_bin_dir() / binary_name
 
     if fallback_path.exists():
         return str(fallback_path)
 
     package_dir = Path(__file__).resolve().parent
-    env_bin = package_dir.parent / bin_dir / binary_name
+    env_bin = package_dir.parent / _get_bin_dir_name() / binary_name
     if env_bin.exists():
         return str(env_bin)
 
@@ -68,19 +89,18 @@ def _resolve_binary(name: str) -> str:
     if resolved:
         return resolved
 
-    sys.stderr.write(
-        f"FATAL ERROR: Bundled compiler binary '{binary_name}' could not be located.\n"
-    )
-    sys.exit(1)
+    _die(f"Bundled compiler binary '{binary_name}' could not be located.")
 
 
 def _validate_c_linker() -> None:
     """Pre-flight validation: assert the existence of a host C-linker."""
     if not shutil.which("gcc") and not shutil.which("clang"):
-        sys.stderr.write(
-            "FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).\n"
-        )
-        sys.exit(1)
+        _die("The GHC compiler requires a host C-linker (gcc or clang).")
+
+
+def _get_ghc_nested_lib_dir() -> Path:
+    """Return the absolute path to the nested lib directory where GHC stores its settings."""
+    return _get_ghc_lib_dir() / "lib"
 
 
 def _find_platform_lib_subdir() -> str:
@@ -90,7 +110,7 @@ def _find_platform_lib_subdir() -> str:
     On macOS:   lib/ghc-9.4.8/lib/aarch64-osx-ghc-9.4.8/ (or similar)
     On Windows: Does not exist (DLLs are in mingw/bin/)
     """
-    ghc_lib_dir = Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib"
+    ghc_lib_dir = _get_ghc_nested_lib_dir()
     if not ghc_lib_dir.is_dir():
         return ""
 
@@ -102,7 +122,7 @@ def _find_platform_lib_subdir() -> str:
     return ""
 
 
-def _sterilize_environment() -> dict:
+def _sterilize_environment() -> Dict[str, str]:
     """Create a sterilized subprocess environment with proper library paths."""
     global _HOME_ORIGINAL
     env = os.environ.copy()
@@ -125,8 +145,7 @@ def _sterilize_environment() -> dict:
 
     env["HOME"] = str(safe_home)
 
-    bin_dir = "Scripts" if sys.platform == "win32" else "bin"
-    env_bin = Path(sys.prefix) / bin_dir
+    env_bin = _get_env_bin_dir()
     current_path = env.get("PATH", "")
     env["PATH"] = f"{env_bin}{os.pathsep}{current_path}"
 
@@ -135,15 +154,15 @@ def _sterilize_environment() -> dict:
     platform_config = {
         "darwin": lambda: (
             [
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
+                _get_ghc_nested_lib_dir(),
                 Path(sys.prefix) / "lib",
             ],
             ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"],
         ),
         "linux": lambda: (
             [
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}",
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
+                _get_ghc_lib_dir(),
+                _get_ghc_nested_lib_dir(),
                 Path(_find_platform_lib_subdir() or "."),
                 Path(__file__).resolve().parent.parent / "ghc_compiler_python.libs",
             ],
@@ -165,12 +184,24 @@ def _sterilize_environment() -> dict:
     return env
 
 
+def _iter_lib_dirs(lib_dir: Path):
+    """Recursively yield directory paths inside `lib_dir`, ignoring common Python site-package directories."""
+    if not lib_dir.exists():
+        return
+    for root, dirs, _files in os.walk(lib_dir):
+        dirs[:] = [
+            d for d in dirs
+            if d not in {"site-packages", "dist-packages"} and not d.startswith(("python", "pypy"))
+        ]
+        yield Path(root), dirs, _files
+
+
 @functools.lru_cache(maxsize=None)
 def _find_ghc_settings() -> Optional[str]:
     """Find the GHC settings file in platform-specific locations."""
     candidates = [
         # Linux/macOS: settings lives inside the nested lib dir
-        Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "settings",
+        _get_ghc_nested_lib_dir() / "settings",
         # Windows: settings lives directly in lib/
         Path(sys.prefix) / "lib" / "settings",
         # In hatch shared-data it could be directly in sys.prefix
@@ -182,20 +213,18 @@ def _find_ghc_settings() -> Optional[str]:
 
     # Dynamic fallback: search recursively
     lib_dir = Path(sys.prefix) / "lib"
-    if lib_dir.exists():
-        for root, dirs, files in os.walk(lib_dir):
-            dirs[:] = [d for d in dirs if d not in {"site-packages", "dist-packages"} and not d.startswith(("python", "pypy"))]
-            if "settings" in files:
-                candidate = Path(root) / "settings"
-                try:
-                    content = candidate.read_text(encoding="utf-8", errors="replace")
-                    if (
-                        '"C compiler command"' in content
-                        or '"C preprocessor command"' in content
-                    ):
-                        return str(candidate)
-                except OSError:
-                    continue
+    for root, _dirs, files in _iter_lib_dirs(lib_dir):
+        if "settings" in files:
+            candidate = root / "settings"
+            try:
+                content = candidate.read_text(encoding="utf-8", errors="replace")
+                if (
+                    '"C compiler command"' in content
+                    or '"C preprocessor command"' in content
+                ):
+                    return str(candidate)
+            except OSError:
+                continue
     return None
 
 
@@ -204,7 +233,7 @@ def _find_package_databases() -> List[str]:
     """Find all GHC package database directories in platform-specific locations."""
     candidates = [
         # Linux/macOS: package.conf.d lives inside the nested lib dir
-        Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "package.conf.d",
+        _get_ghc_nested_lib_dir() / "package.conf.d",
         # Windows: package.conf.d lives directly in lib/
         Path(sys.prefix) / "lib" / "package.conf.d",
         # In hatch shared-data it could be directly in sys.prefix
@@ -218,18 +247,16 @@ def _find_package_databases() -> List[str]:
     # Dynamic fallback: search recursively
     if not found:
         lib_dir = Path(sys.prefix) / "lib"
-        if lib_dir.exists():
-            for root, dirs, files in os.walk(lib_dir):
-                dirs[:] = [d for d in dirs if d not in {"site-packages", "dist-packages"} and not d.startswith(("python", "pypy"))]
-                if "package.conf.d" in dirs:
-                    candidate = Path(root) / "package.conf.d"
-                    if any(f.name.endswith(".conf") for f in candidate.iterdir()):
-                        found.append(str(candidate))
+        for root, dirs, _files in _iter_lib_dirs(lib_dir):
+            if "package.conf.d" in dirs:
+                candidate = root / "package.conf.d"
+                if any(f.name.endswith(".conf") for f in candidate.iterdir()):
+                    found.append(str(candidate))
 
     return found
 
 
-def _resolve_runtime_paths(env: dict) -> None:
+def _resolve_runtime_paths(env: Dict[str, str]) -> None:
     """Dynamically replace @GHC_PREFIX@ with the active sys.prefix at runtime,
     then regenerate package.cache.
 
@@ -252,8 +279,8 @@ def _resolve_runtime_paths(env: dict) -> None:
 
     # 🧪 Alchemist: Consolidate repetitive directory scanning into a compact tuple traversal
     for bin_dir_path in (
-        Path(sys.prefix) / ("Scripts" if sys.platform == "win32" else "bin"),
-        Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "bin",
+        _get_env_bin_dir(),
+        _get_ghc_lib_dir() / "bin",
         Path(sys.prefix) / "bin",
         Path(sys.prefix) / "lib" / "bin",
     ):
@@ -303,7 +330,7 @@ def _resolve_runtime_paths(env: dict) -> None:
         _rebuild_package_cache(env)
 
 
-def _rebuild_package_cache(env: dict) -> None:
+def _rebuild_package_cache(env: Dict[str, str]) -> None:
     """Run ghc-pkg recache to regenerate package.cache.
 
     GHC requires package.cache to function properly. The build process
@@ -317,7 +344,7 @@ def _rebuild_package_cache(env: dict) -> None:
         _ghc_pkg_recache(pkg_db, env)
 
 
-def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
+def _ghc_pkg_recache(pkg_db_dir: str, env: Dict[str, str]) -> None:
     """Run ghc-pkg recache for the given package database directory.
 
     Args:
@@ -338,7 +365,7 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
             env=recache_env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            timeout=30,
+            timeout=RECACHE_TIMEOUT_SECONDS,
         )
         # Silently ignore errors - GHC will fall back to reading .conf files directly
     except (subprocess.SubprocessError, OSError):
@@ -369,13 +396,11 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
             result = subprocess.run(cmd, env=env)
             sys.exit(result.returncode)
     except FileNotFoundError:
-        sys.stderr.write(f"FATAL ERROR: Binary not found at '{binary_path}'.\n")
-        sys.exit(1)
+        _die(f"Binary not found at '{binary_path}'.")
     except KeyboardInterrupt:
         sys.exit(130)
     except (subprocess.SubprocessError, OSError) as e:
-        sys.stderr.write(f"FATAL ERROR: Execution failed: {e}\n")
-        sys.exit(1)
+        _die(f"Execution failed: {e}")
 
 
 def __getattr__(name: str) -> Any:
