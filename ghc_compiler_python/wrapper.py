@@ -64,10 +64,6 @@ def _resolve_binary(name: str) -> str:
     if env_bin.exists():
         return str(env_bin)
 
-    resolved = shutil.which(binary_name)
-    if resolved:
-        return resolved
-
     sys.stderr.write(
         f"FATAL ERROR: Bundled compiler binary '{binary_name}' could not be located.\n"
     )
@@ -112,18 +108,38 @@ def _sterilize_environment() -> dict:
     for var in HASKELL_POLLUTION_VARS:
         env.pop(var, None)
 
-    safe_home = Path(sys.prefix) / ".ghc-compiler-python-home"
+    # Securely create or reuse a temporary home directory
+    candidates = [Path(sys.prefix) / ".ghc-compiler-python-home"]
     try:
-        safe_home.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        try:
-            safe_home = Path.home() / ".ghc-compiler-python-home"
-            safe_home.mkdir(parents=True, exist_ok=True)
-        except (OSError, RuntimeError):
-            # Final fallback, secure temp directory
-            safe_home = Path(tempfile.mkdtemp(prefix="ghc-compiler-python-home-"))
+        candidates.append(Path.home() / ".ghc-compiler-python-home")
+    except RuntimeError:
+        pass
 
-    env["HOME"] = str(safe_home)
+    safe_home_path = None
+    for candidate in candidates:
+        try:
+            candidate.mkdir(mode=0o700, parents=True, exist_ok=False)
+            safe_home_path = candidate
+            break
+        except FileExistsError:
+            if candidate.is_dir() and not candidate.is_symlink():
+                if sys.platform == "win32":
+                    safe_home_path = candidate
+                    break
+                try:
+                    if candidate.stat().st_uid == os.getuid():
+                        candidate.chmod(0o700)
+                        safe_home_path = candidate
+                        break
+                except OSError:
+                    pass
+        except OSError:
+            pass
+
+    if safe_home_path is None:
+        safe_home_path = Path(tempfile.mkdtemp(prefix="ghc-compiler-python-home-"))
+
+    env["HOME"] = str(safe_home_path)
 
     bin_dir = "Scripts" if sys.platform == "win32" else "bin"
     env_bin = Path(sys.prefix) / bin_dir

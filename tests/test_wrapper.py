@@ -61,14 +61,7 @@ class TestValidateCLinker:
 class TestResolveBinary:
     """Tests for binary resolution."""
 
-    @patch("ghc_compiler_python.wrapper.shutil.which")
-    def test_finds_binary_in_path(self, mock_which):
-        mock_which.return_value = "/usr/local/bin/ghc"
-        result = _resolve_binary("ghc")
-        assert result == "/usr/local/bin/ghc"
-
-    @patch("ghc_compiler_python.wrapper.shutil.which", return_value=None)
-    def test_exits_when_binary_not_found(self, mock_which):
+    def test_exits_when_binary_not_found(self):
         with pytest.raises(SystemExit):
             _resolve_binary("nonexistent_binary")
 
