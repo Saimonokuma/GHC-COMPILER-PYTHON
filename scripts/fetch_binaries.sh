@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+die() {
+	printf "FATAL ERROR: %s\n" "$1" >&2
+	exit "${2:-1}"
+}
+
 cleanup() {
 	local exit_code=$?
 	rm -rf "${BUILD_DIR:-}"
@@ -46,8 +51,7 @@ elif [[ "${OS}" == MINGW* || "${OS}" == MSYS* || "${OS}" == CYGWIN* ]] && [[ "${
 	GHC_TAR="ghc-${GHC_VERSION}-x86_64-unknown-mingw32.tar.xz"
 	CABAL_TAR="cabal-install-${CABAL_VERSION}-x86_64-windows.zip"
 else
-	echo "FATAL: Unsupported OS/Architecture combination: ${OS}/${ARCH}" >&2
-	exit 1
+	die "Unsupported OS/Architecture combination: ${OS}/${ARCH}" 1
 fi
 
 GHC_URL="${GHC_BASE_URL}/${GHC_TAR}"
@@ -79,8 +83,7 @@ sha256_check() {
 	elif command -v sha256sum >/dev/null 2>&1; then
 		echo "${expected_hash}  ${filepath}" | sha256sum --check --status
 	else
-		echo "FATAL: No SHA-256 tool found (sha256sum, shasum)" >&2
-		exit 3
+		die "No SHA-256 tool found (sha256sum, shasum)" 3
 	fi
 }
 
@@ -88,13 +91,11 @@ GHC_EXPECTED=$(grep "${GHC_TAR}" ghc_sha256.txt | awk '{print $1}')
 CABAL_EXPECTED=$(grep "${CABAL_TAR}" cabal_sha256.txt | awk '{print $1}')
 
 if ! sha256_check "${GHC_EXPECTED}" "${GHC_TAR}"; then
-	echo "FATAL: GHC SHA-256 validation failed!" >&2
-	exit 3
+	die "GHC SHA-256 validation failed!" 3
 fi
 
 if ! sha256_check "${CABAL_EXPECTED}" "${CABAL_TAR}"; then
-	echo "FATAL: Cabal SHA-256 validation failed!" >&2
-	exit 3
+	die "Cabal SHA-256 validation failed!" 3
 fi
 
 echo "[5/5] Unpacking archives into staging directory..."
@@ -162,8 +163,7 @@ cd ..
 echo "Verifying staging directory structure..."
 for dir in bin lib; do
 	if [ ! -d "${STAGING_DIR}/${dir}" ]; then
-		echo "FATAL: Staging directory ${STAGING_DIR}/${dir} is missing!" >&2
-		exit 4
+		die "Staging directory ${STAGING_DIR}/${dir} is missing!" 4
 	fi
 done
 
