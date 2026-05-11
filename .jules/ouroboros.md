@@ -7,3 +7,8 @@
 **The Glitch:** While the Python 3.7 `__getattr__` trick successfully bypassed having to write boilerplate proxy functions in `wrapper.py`, the `[project.scripts]` array in `pyproject.toml` remained a static, hardcoded list. This defeated the dynamic nature of the proxy, requiring manual updates whenever new tools (like `runghc`, `haddock`, or `ghc-pkg`) needed to be exposed.
 **The Bend:** We can hook into the Hatchling build system via `MetadataHookInterface` before the wheel is finalized. By modifying `scripts` dynamically inside a custom `hatch_build.py` hook at build time, we read the tools available (or a preset core list) and generate the `[project.scripts]` mappings automatically.
 **The Loop:** A dynamically generated list of script entry points generated at build time mapped to a single proxy entry point generated dynamically at runtime (`__getattr__`). No manual proxy definitions are required anywhere.
+
+## 2024-05-20 - The Resource Locator Metaclass
+**The Glitch:** Procedural path discovery code was duplicated in both `wrapper.py` (runtime) and `scripts/patch_ghc_paths.py` (build time). We had verbose procedural logic with ~280 lines across multiple search loops just to locate and patch `settings`, `package.conf.d`, and `bin/*`.
+**The Bend:** We abstracted the path finding and patching logic into `BaseResource` subclasses registered automatically via `ResourceMeta`. This unifies platform-specific directory structure paths.
+**The Loop:** A polymorphic `patch_build_time` at build time and `locate` at runtime dynamic invocation. Any new GHC resource type needing relocation just subclasses `BaseResource` and specifies its candidates. Boilerplate eliminated entirely.
