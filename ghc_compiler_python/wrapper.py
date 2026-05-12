@@ -21,6 +21,7 @@ import tempfile
 import functools
 import mmap
 import re
+import stat
 from pathlib import Path
 from typing import Any, List, NoReturn, Optional
 
@@ -64,10 +65,6 @@ def _resolve_binary(name: str) -> str:
     if env_bin.exists():
         return str(env_bin)
 
-    resolved = shutil.which(binary_name)
-    if resolved:
-        return resolved
-
     sys.stderr.write(
         f"FATAL ERROR: Bundled compiler binary '{binary_name}' could not be located.\n"
     )
@@ -102,6 +99,37 @@ def _find_platform_lib_subdir() -> str:
     return ""
 
 
+def _get_safe_home() -> Path:
+    """Securely resolve or create the isolated home directory."""
+    candidates = [
+        Path(sys.prefix) / ".ghc-compiler-python-home",
+    ]
+    try:
+        candidates.append(Path.home() / ".ghc-compiler-python-home")
+    except (OSError, RuntimeError):
+        pass
+
+    for candidate in candidates:
+        try:
+            candidate.mkdir(parents=True, exist_ok=False)
+            return candidate
+        except FileExistsError:
+            try:
+                # TOCTOU prevention: verify the existing path
+                # is a directory, is not a symlink, and is owned by the current user
+                fstat = candidate.lstat()
+                if stat.S_ISDIR(fstat.st_mode) and not stat.S_ISLNK(fstat.st_mode):
+                    if not hasattr(os, "getuid") or fstat.st_uid == os.getuid():
+                        return candidate
+            except OSError:
+                pass
+        except OSError:
+            pass
+
+    # Final fallback, secure temp directory
+    return Path(tempfile.mkdtemp(prefix="ghc-compiler-python-home-"))
+
+
 def _sterilize_environment() -> dict:
     """Create a sterilized subprocess environment with proper library paths."""
     global _HOME_ORIGINAL
@@ -112,16 +140,7 @@ def _sterilize_environment() -> dict:
     for var in HASKELL_POLLUTION_VARS:
         env.pop(var, None)
 
-    safe_home = Path(sys.prefix) / ".ghc-compiler-python-home"
-    try:
-        safe_home.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        try:
-            safe_home = Path.home() / ".ghc-compiler-python-home"
-            safe_home.mkdir(parents=True, exist_ok=True)
-        except (OSError, RuntimeError):
-            # Final fallback, secure temp directory
-            safe_home = Path(tempfile.mkdtemp(prefix="ghc-compiler-python-home-"))
+    safe_home = _get_safe_home()
 
     env["HOME"] = str(safe_home)
 

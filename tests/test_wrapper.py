@@ -61,14 +61,24 @@ class TestValidateCLinker:
 class TestResolveBinary:
     """Tests for binary resolution."""
 
-    @patch("ghc_compiler_python.wrapper.shutil.which")
-    def test_finds_binary_in_path(self, mock_which):
-        mock_which.return_value = "/usr/local/bin/ghc"
-        result = _resolve_binary("ghc")
-        assert result == "/usr/local/bin/ghc"
+    @patch("ghc_compiler_python.wrapper.Path.exists")
+    def test_finds_binary_in_sys_prefix(self, mock_exists):
+        # First call is fallback_path.exists()
+        mock_exists.side_effect = [True]
 
-    @patch("ghc_compiler_python.wrapper.shutil.which", return_value=None)
-    def test_exits_when_binary_not_found(self, mock_which):
+        # Test just the return logic, path building is covered by code
+        # We patch sys.prefix to make it predictable but let's just
+        # mock exists and check if it resolves properly without error
+        with patch("ghc_compiler_python.wrapper.sys.prefix", "/fake/prefix"):
+            result = _resolve_binary("ghc")
+
+        assert "ghc" in result
+        assert "/fake/prefix" in result
+
+    @patch("ghc_compiler_python.wrapper.Path.exists")
+    def test_exits_when_binary_not_found(self, mock_exists):
+        # All Path.exists checks return False
+        mock_exists.return_value = False
         with pytest.raises(SystemExit):
             _resolve_binary("nonexistent_binary")
 
