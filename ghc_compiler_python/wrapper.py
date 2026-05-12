@@ -52,65 +52,47 @@ _HOME_ORIGINAL: Optional[str] = None
 def _resolve_binary(name: str) -> str:
     """Resolve the absolute path to a bundled native binary."""
     binary_name = f"{name}.exe" if sys.platform == "win32" else name
-
     bin_dir = "Scripts" if sys.platform == "win32" else "bin"
-    fallback_path = Path(sys.prefix) / bin_dir / binary_name
 
-    if fallback_path.exists():
-        return str(fallback_path)
+    # 🧪 Alchemist: Generator expression replaces verbose if-chains
+    candidates = (
+        Path(sys.prefix) / bin_dir / binary_name,
+        Path(__file__).resolve().parent.parent / bin_dir / binary_name,
+    )
 
-    package_dir = Path(__file__).resolve().parent
-    env_bin = package_dir.parent / bin_dir / binary_name
-    if env_bin.exists():
-        return str(env_bin)
-
-    resolved = shutil.which(binary_name)
-    if resolved:
+    if resolved := next((str(p) for p in candidates if p.exists()), None):
         return resolved
 
-    sys.stderr.write(
-        f"FATAL ERROR: Bundled compiler binary '{binary_name}' could not be located.\n"
-    )
+    if resolved := shutil.which(binary_name):
+        return resolved
+
+    sys.stderr.write(f"FATAL ERROR: Bundled compiler binary '{binary_name}' could not be located.\n")
     sys.exit(1)
 
 
 def _validate_c_linker() -> None:
     """Pre-flight validation: assert the existence of a host C-linker."""
-    if not shutil.which("gcc") and not shutil.which("clang"):
-        sys.stderr.write(
-            "FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).\n"
-        )
+    if not (shutil.which("gcc") or shutil.which("clang")):
+        sys.stderr.write("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).\n")
         sys.exit(1)
 
 
 def _find_platform_lib_subdir() -> str:
-    """Find the platform-specific library subdirectory inside the GHC lib directory.
-
-    On Linux:   lib/ghc-9.4.8/lib/x86_64-linux-ghc-9.4.8/
-    On macOS:   lib/ghc-9.4.8/lib/aarch64-osx-ghc-9.4.8/ (or similar)
-    On Windows: Does not exist (DLLs are in mingw/bin/)
-    """
+    """Find the platform-specific library subdirectory inside the GHC lib directory."""
     ghc_lib_dir = Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib"
-    if not ghc_lib_dir.is_dir():
-        return ""
+    # 🧪 Alchemist: Generator expression collapses verbose iteration into a single line
+    return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "") if ghc_lib_dir.is_dir() else ""
 
-    # Look for the platform-specific subdirectory (e.g., x86_64-linux-ghc-9.4.8)
-    for candidate in ghc_lib_dir.iterdir():
-        if candidate.is_dir() and candidate.name.endswith(f"-ghc-{GHC_VERSION}"):
-            return str(candidate)
 
-    return ""
 
 
 def _sterilize_environment() -> dict:
     """Create a sterilized subprocess environment with proper library paths."""
     global _HOME_ORIGINAL
-    env = os.environ.copy()
+    _HOME_ORIGINAL = os.environ.get("HOME", os.environ.get("USERPROFILE", ""))
 
-    _HOME_ORIGINAL = env.get("HOME", env.get("USERPROFILE", ""))
-
-    for var in HASKELL_POLLUTION_VARS:
-        env.pop(var, None)
+    # 🧪 Alchemist: Dictionary comprehension eliminates manual pops and copies
+    env = {k: v for k, v in os.environ.items() if k not in HASKELL_POLLUTION_VARS}
 
     safe_home = Path(sys.prefix) / ".ghc-compiler-python-home"
     try:
@@ -168,31 +150,23 @@ def _sterilize_environment() -> dict:
 @functools.lru_cache(maxsize=None)
 def _find_ghc_settings() -> Optional[str]:
     """Find the GHC settings file in platform-specific locations."""
-    candidates = [
-        # Linux/macOS: settings lives inside the nested lib dir
+    candidates = (
         Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "settings",
-        # Windows: settings lives directly in lib/
         Path(sys.prefix) / "lib" / "settings",
-        # In hatch shared-data it could be directly in sys.prefix
         Path(sys.prefix) / "settings",
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return str(candidate)
+    )
+    if found := next((str(c) for c in candidates if c.exists()), None):
+        return found
 
     # Dynamic fallback: search recursively
-    lib_dir = Path(sys.prefix) / "lib"
-    if lib_dir.exists():
+    if (lib_dir := Path(sys.prefix) / "lib").exists():
         for root, dirs, files in os.walk(lib_dir):
             dirs[:] = [d for d in dirs if d not in {"site-packages", "dist-packages"} and not d.startswith(("python", "pypy"))]
             if "settings" in files:
                 candidate = Path(root) / "settings"
                 try:
-                    content = candidate.read_text(encoding="utf-8", errors="replace")
-                    if (
-                        '"C compiler command"' in content
-                        or '"C preprocessor command"' in content
-                    ):
+                    # 🧪 Alchemist: Walrus operator merges read and condition
+                    if '"C compiler command"' in (content := candidate.read_text(encoding="utf-8", errors="replace")) or '"C preprocessor command"' in content:
                         return str(candidate)
                 except OSError:
                     continue
@@ -202,29 +176,21 @@ def _find_ghc_settings() -> Optional[str]:
 @functools.lru_cache(maxsize=None)
 def _find_package_databases() -> List[str]:
     """Find all GHC package database directories in platform-specific locations."""
-    candidates = [
-        # Linux/macOS: package.conf.d lives inside the nested lib dir
+    candidates = (
         Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "package.conf.d",
-        # Windows: package.conf.d lives directly in lib/
         Path(sys.prefix) / "lib" / "package.conf.d",
-        # In hatch shared-data it could be directly in sys.prefix
         Path(sys.prefix) / "package.conf.d",
-    ]
-    found = []
-    for candidate in candidates:
-        if candidate.is_dir():
-            found.append(str(candidate))
+    )
+    found = [str(c) for c in candidates if c.is_dir()]
 
     # Dynamic fallback: search recursively
-    if not found:
-        lib_dir = Path(sys.prefix) / "lib"
-        if lib_dir.exists():
-            for root, dirs, files in os.walk(lib_dir):
-                dirs[:] = [d for d in dirs if d not in {"site-packages", "dist-packages"} and not d.startswith(("python", "pypy"))]
-                if "package.conf.d" in dirs:
-                    candidate = Path(root) / "package.conf.d"
-                    if any(f.name.endswith(".conf") for f in candidate.iterdir()):
-                        found.append(str(candidate))
+    if not found and (lib_dir := Path(sys.prefix) / "lib").exists():
+        for root, dirs, files in os.walk(lib_dir):
+            dirs[:] = [d for d in dirs if d not in {"site-packages", "dist-packages"} and not d.startswith(("python", "pypy"))]
+            if "package.conf.d" in dirs:
+                candidate = Path(root) / "package.conf.d"
+                if any(f.name.endswith(".conf") for f in candidate.iterdir()):
+                    found.append(str(candidate))
 
     return found
 
@@ -399,6 +365,5 @@ def __getattr__(name: str) -> Any:
 
 def __dir__() -> List[str]:
     """Provide explicit autocompletion for common dynamically generated entry points."""
-    base_dir = list(globals().keys())
-    dynamic_tools = ["execute_ghc", "execute_ghci", "execute_cabal"]
-    return base_dir + dynamic_tools
+    # 🧪 Alchemist: List concatenation inline
+    return list(globals().keys()) + ["execute_ghc", "execute_ghci", "execute_cabal"]
