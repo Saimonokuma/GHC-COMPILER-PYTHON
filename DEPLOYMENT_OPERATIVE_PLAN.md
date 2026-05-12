@@ -38,7 +38,7 @@ ghc-compiler-python/
 ```bash
 gh repo create ghc-compiler-python --public --description "Native GHC 9.4.8 and Cabal 3.10.3.0 packaged as a Python Wheel"
 
-git clone 
+git clone
 cd ghc-compiler-python
 ```
 

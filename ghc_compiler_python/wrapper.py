@@ -183,10 +183,10 @@ def _find_ghc_settings() -> Optional[str]:
     # Dynamic fallback: search recursively
     lib_dir = Path(sys.prefix) / "lib"
     if lib_dir.exists():
-        for root, dirs, files in os.walk(lib_dir):
+        for root, dirs, files in lib_dir.walk():
             dirs[:] = [d for d in dirs if d not in {"site-packages", "dist-packages"} and not d.startswith(("python", "pypy"))]
             if "settings" in files:
-                candidate = Path(root) / "settings"
+                candidate = root / "settings"
                 try:
                     content = candidate.read_text(encoding="utf-8", errors="replace")
                     if (
@@ -219,10 +219,10 @@ def _find_package_databases() -> List[str]:
     if not found:
         lib_dir = Path(sys.prefix) / "lib"
         if lib_dir.exists():
-            for root, dirs, files in os.walk(lib_dir):
+            for root, dirs, files in lib_dir.walk():
                 dirs[:] = [d for d in dirs if d not in {"site-packages", "dist-packages"} and not d.startswith(("python", "pypy"))]
                 if "package.conf.d" in dirs:
-                    candidate = Path(root) / "package.conf.d"
+                    candidate = root / "package.conf.d"
                     if any(f.name.endswith(".conf") for f in candidate.iterdir()):
                         found.append(str(candidate))
 
