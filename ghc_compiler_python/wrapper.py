@@ -15,17 +15,16 @@ FIX v2: Added DYLD_LIBRARY_PATH for macOS runtime library resolution.
 
 import os
 import sys
-import shutil
-import subprocess
-import tempfile
-import functools
-import mmap
-import re
-from pathlib import Path
-from typing import Any, List, NoReturn, Optional
+
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from typing import Any, List, NoReturn, Optional
 
 
 GHC_VERSION = "9.4.8"
+
+_ghc_settings_cache = False
+_package_databases_cache = None
 CABAL_VERSION = "3.10.3.0"
 
 HASKELL_POLLUTION_VARS = frozenset(
@@ -46,10 +45,12 @@ HASKELL_POLLUTION_VARS = frozenset(
     }
 )
 
-_HOME_ORIGINAL: Optional[str] = None
+_HOME_ORIGINAL: 'Optional[str]' = None
 
 
 def _resolve_binary(name: str) -> str:
+    import shutil
+    from pathlib import Path
     """Resolve the absolute path to a bundled native binary."""
     binary_name = f"{name}.exe" if sys.platform == "win32" else name
 
@@ -75,6 +76,7 @@ def _resolve_binary(name: str) -> str:
 
 
 def _validate_c_linker() -> None:
+    import shutil
     """Pre-flight validation: assert the existence of a host C-linker."""
     if not shutil.which("gcc") and not shutil.which("clang"):
         sys.stderr.write(
@@ -84,6 +86,7 @@ def _validate_c_linker() -> None:
 
 
 def _find_platform_lib_subdir() -> str:
+    from pathlib import Path
     """Find the platform-specific library subdirectory inside the GHC lib directory.
 
     On Linux:   lib/ghc-9.4.8/lib/x86_64-linux-ghc-9.4.8/
@@ -103,6 +106,8 @@ def _find_platform_lib_subdir() -> str:
 
 
 def _sterilize_environment() -> dict:
+    import tempfile
+    from pathlib import Path
     """Create a sterilized subprocess environment with proper library paths."""
     global _HOME_ORIGINAL
     env = os.environ.copy()
@@ -165,9 +170,13 @@ def _sterilize_environment() -> dict:
     return env
 
 
-@functools.lru_cache(maxsize=None)
-def _find_ghc_settings() -> Optional[str]:
-    """Find the GHC settings file in platform-specific locations."""
+
+def _find_ghc_settings() -> 'Optional[str]':
+    from pathlib import Path
+    global _ghc_settings_cache
+    if _ghc_settings_cache is not False:
+        return _ghc_settings_cache
+
     candidates = [
         # Linux/macOS: settings lives inside the nested lib dir
         Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "settings",
@@ -178,7 +187,8 @@ def _find_ghc_settings() -> Optional[str]:
     ]
     for candidate in candidates:
         if candidate.exists():
-            return str(candidate)
+            _ghc_settings_cache = str(candidate)
+            return _ghc_settings_cache
 
     # Dynamic fallback: search recursively
     lib_dir = Path(sys.prefix) / "lib"
@@ -188,20 +198,26 @@ def _find_ghc_settings() -> Optional[str]:
             if "settings" in files:
                 candidate = Path(root) / "settings"
                 try:
-                    content = candidate.read_text(encoding="utf-8", errors="replace")
+                    c = candidate.read_text(encoding="utf-8", errors="replace")
                     if (
-                        '"C compiler command"' in content
-                        or '"C preprocessor command"' in content
+                        '"C compiler command"' in c
+                        or '"C preprocessor command"' in c
                     ):
-                        return str(candidate)
+                        _ghc_settings_cache = str(candidate)
+                        return _ghc_settings_cache
                 except OSError:
                     continue
-    return None
+    _ghc_settings_cache = None
+    return _ghc_settings_cache
 
 
-@functools.lru_cache(maxsize=None)
-def _find_package_databases() -> List[str]:
-    """Find all GHC package database directories in platform-specific locations."""
+
+def _find_package_databases() -> 'List[str]':
+    from pathlib import Path
+    global _package_databases_cache
+    if _package_databases_cache is not None:
+        return _package_databases_cache
+
     candidates = [
         # Linux/macOS: package.conf.d lives inside the nested lib dir
         Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "package.conf.d",
@@ -226,10 +242,14 @@ def _find_package_databases() -> List[str]:
                     if any(f.name.endswith(".conf") for f in candidate.iterdir()):
                         found.append(str(candidate))
 
-    return found
+    _package_databases_cache = found
+    return _package_databases_cache
 
 
 def _resolve_runtime_paths(env: dict) -> None:
+    import mmap
+    import re
+    from pathlib import Path
     """Dynamically replace @GHC_PREFIX@ with the active sys.prefix at runtime,
     then regenerate package.cache.
 
@@ -318,6 +338,7 @@ def _rebuild_package_cache(env: dict) -> None:
 
 
 def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
+    import subprocess
     """Run ghc-pkg recache for the given package database directory.
 
     Args:
@@ -345,7 +366,8 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
         pass  # Non-fatal: if recache fails, GHC can still work without cache
 
 
-def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoReturn:
+def _execute_tool(tool_name: str, extra_args: 'Optional[List[str]]' = None) -> 'NoReturn':
+    import subprocess
     """Generic subprocess proxy for bundled Haskell tooling."""
     _validate_c_linker()
     env = _sterilize_environment()
@@ -378,7 +400,7 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
         sys.exit(1)
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str) -> 'Any':
     """Dynamic console script entry point generator.
 
     Generates execution closures dynamically for any binary requested via entry points
@@ -388,7 +410,7 @@ def __getattr__(name: str) -> Any:
         tool_name = name[8:].replace("_", "-")
         extra_args = ["-v0"] if tool_name == "ghc" else None
 
-        def executor() -> NoReturn:
+        def executor() -> 'NoReturn':
             _execute_tool(tool_name, extra_args=extra_args)
 
         executor.__name__ = name
@@ -397,7 +419,7 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def __dir__() -> List[str]:
+def __dir__() -> 'List[str]':
     """Provide explicit autocompletion for common dynamically generated entry points."""
     base_dir = list(globals().keys())
     dynamic_tools = ["execute_ghc", "execute_ghci", "execute_cabal"]
