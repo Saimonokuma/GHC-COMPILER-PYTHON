@@ -33,9 +33,14 @@ echo " GHC Version: ${GHC_VERSION}"
 echo "============================================"
 
 # Find the actual subdirectory containing the dylibs (e.g. lib/ghc-9.4.8/lib/aarch64-osx-ghc-9.4.8)
-DEEP_LIB_DIR=$(dirname "$(find "${LIB_DIR}" -name "*.dylib" | head -n 1)" || echo "")
+DYLIB_FIRST=$(find "${LIB_DIR}" -name "*.dylib" 2>/dev/null | head -n 1 || true)
+if [ -n "$DYLIB_FIRST" ]; then
+	DEEP_LIB_DIR=$(dirname "$DYLIB_FIRST")
+else
+	DEEP_LIB_DIR=""
+fi
 
-if [ -z "${DEEP_LIB_DIR}" ]; then
+if [ -z "${DEEP_LIB_DIR}" ] || [ "${DEEP_LIB_DIR}" = "." ]; then
 	echo "FATAL: Could not find any .dylib files in ${LIB_DIR}" >&2
 	exit_code=1
 	exit $exit_code
