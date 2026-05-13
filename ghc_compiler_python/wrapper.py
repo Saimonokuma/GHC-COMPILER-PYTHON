@@ -408,7 +408,7 @@ def _resolve_runtime_paths(env: dict) -> None:
                     pass
 
             if content_to_write is not None:
-                if target.endswith(".conf") and b" " in prefix_clean_bytes:
+                if b" " in prefix_clean_bytes and b"\0" not in content_to_write:
                     s = content_to_write.decode("utf-8", errors="replace")
                     s = re.sub(r'(?<!")(@GHC_PREFIX@[^\s"]+)', r'"\1"', s)
                     content_to_write = s.encode("utf-8", errors="replace")
