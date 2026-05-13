@@ -4,5 +4,5 @@
 **Known Vulnerabilities:**
 - Local Privilege Escalation / TOCTOU via predictable fallback temp directory.
 - PATH execution hijacking via incorrect `shutil.which` priority.
-**Fixed Vulnerabilities:** None yet.
+**Fixed Vulnerabilities:** Local Privilege Escalation / TOCTOU via predictable fallback temp directory, PATH execution hijacking via incorrect shutil.which priority.
 **Security Dependencies:** None specific.

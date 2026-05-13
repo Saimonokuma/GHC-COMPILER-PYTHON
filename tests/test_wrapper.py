@@ -44,12 +44,12 @@ class TestValidateCLinker:
 
     @patch("ghc_compiler_python.wrapper.shutil.which")
     def test_passes_with_gcc(self, mock_which):
-        mock_which.side_effect = lambda x: "/usr/bin/gcc" if x == "gcc" else None
+        mock_which.side_effect = lambda x, path=None: "/usr/bin/gcc" if x == "gcc" else None
         _validate_c_linker()  # Should not exit
 
     @patch("ghc_compiler_python.wrapper.shutil.which")
     def test_passes_with_clang(self, mock_which):
-        mock_which.side_effect = lambda x: "/usr/bin/clang" if x == "clang" else None
+        mock_which.side_effect = lambda x, path=None: "/usr/bin/clang" if x == "clang" else None
         _validate_c_linker()  # Should not exit
 
     @patch("ghc_compiler_python.wrapper.shutil.which", return_value=None)

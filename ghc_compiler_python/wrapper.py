@@ -17,6 +17,7 @@ import os
 import sys
 import shutil
 import subprocess
+import stat
 import tempfile
 import functools
 import mmap
@@ -49,7 +50,39 @@ HASKELL_POLLUTION_VARS = frozenset(
 _HOME_ORIGINAL: Optional[str] = None
 
 
-def _resolve_binary(name: str) -> str:
+def _secure_mkdir(path: Path) -> None:
+    """Securely create a directory, preventing TOCTOU and permission issues."""
+    try:
+        path.mkdir(parents=True, exist_ok=False)
+        if sys.platform != "win32":
+            os.chmod(path, stat.S_IRWXU)
+    except FileExistsError:
+        if sys.platform != "win32":
+            try:
+                stat_info = os.stat(path)
+                if stat_info.st_uid != os.getuid():
+                    raise RuntimeError(f"Directory {path} exists but is owned by another user.")
+                if stat.S_IMODE(stat_info.st_mode) & (stat.S_IRWXG | stat.S_IRWXO):
+                    try:
+                        os.chmod(path, stat.S_IRWXU)
+                    except OSError:
+                        raise RuntimeError(f"Directory {path} has insecure permissions and could not be fixed.")
+            except OSError as e:
+                raise RuntimeError(f"Could not verify or fix directory {path}: {e}")
+        if not path.is_dir():
+            raise RuntimeError(f"Path {path} exists but is not a directory.")
+
+
+def _get_safe_search_path(env: Optional[dict]) -> Optional[str]:
+    """Return a sanitized search path for shutil.which, preventing execution hijacking."""
+    if env and "PATH" in env:
+        paths = env["PATH"].split(os.pathsep)
+        safe_paths = [p for p in paths if p and p != "." and p != os.getcwd()]
+        return os.pathsep.join(safe_paths)
+    return None
+
+
+def _resolve_binary(name: str, env: Optional[dict] = None) -> str:
     """Resolve the absolute path to a bundled native binary."""
     binary_name = f"{name}.exe" if sys.platform == "win32" else name
 
@@ -64,7 +97,9 @@ def _resolve_binary(name: str) -> str:
     if env_bin.exists():
         return str(env_bin)
 
-    resolved = shutil.which(binary_name)
+    search_path = _get_safe_search_path(env)
+
+    resolved = shutil.which(binary_name, path=search_path)
     if resolved:
         return resolved
 
@@ -74,9 +109,11 @@ def _resolve_binary(name: str) -> str:
     sys.exit(1)
 
 
-def _validate_c_linker() -> None:
+def _validate_c_linker(env: Optional[dict] = None) -> None:
     """Pre-flight validation: assert the existence of a host C-linker."""
-    if not shutil.which("gcc") and not shutil.which("clang"):
+    search_path = _get_safe_search_path(env)
+
+    if not shutil.which("gcc", path=search_path) and not shutil.which("clang", path=search_path):
         sys.stderr.write(
             "FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).\n"
         )
@@ -114,11 +151,11 @@ def _sterilize_environment() -> dict:
 
     safe_home = Path(sys.prefix) / ".ghc-compiler-python-home"
     try:
-        safe_home.mkdir(parents=True, exist_ok=True)
-    except OSError:
+        _secure_mkdir(safe_home)
+    except (OSError, RuntimeError):
         try:
             safe_home = Path.home() / ".ghc-compiler-python-home"
-            safe_home.mkdir(parents=True, exist_ok=True)
+            _secure_mkdir(safe_home)
         except (OSError, RuntimeError):
             # Final fallback, secure temp directory
             safe_home = Path(tempfile.mkdtemp(prefix="ghc-compiler-python-home-"))
@@ -324,7 +361,7 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
             pkg_db_dir: Path to the package.conf.d directory.
             env: The sterilized environment dict with proper LD_LIBRARY_PATH set.
     """
-    ghc_pkg = _resolve_binary("ghc-pkg")
+    ghc_pkg = _resolve_binary("ghc-pkg", env=env)
     if not ghc_pkg:
         return  # Can't recache without ghc-pkg
 
@@ -347,10 +384,10 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
 
 def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoReturn:
     """Generic subprocess proxy for bundled Haskell tooling."""
-    _validate_c_linker()
     env = _sterilize_environment()
+    _validate_c_linker(env=env)
     _resolve_runtime_paths(env)
-    binary_path = _resolve_binary(tool_name)
+    binary_path = _resolve_binary(tool_name, env=env)
 
     cmd = [binary_path]
     if extra_args:
