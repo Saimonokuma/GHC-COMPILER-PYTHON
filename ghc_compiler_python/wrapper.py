@@ -49,38 +49,31 @@ HASKELL_POLLUTION_VARS = frozenset(
 _HOME_ORIGINAL: Optional[str] = None
 
 
+def _die(msg: str) -> NoReturn:
+    sys.stderr.write(f"{msg}\n")
+    sys.exit(1)
+
+
 def _resolve_binary(name: str) -> str:
     """Resolve the absolute path to a bundled native binary."""
     binary_name = f"{name}.exe" if sys.platform == "win32" else name
-
     bin_dir = "Scripts" if sys.platform == "win32" else "bin"
-    fallback_path = Path(sys.prefix) / bin_dir / binary_name
 
-    if fallback_path.exists():
-        return str(fallback_path)
+    candidates = [
+        Path(sys.prefix) / bin_dir / binary_name,
+        Path(__file__).resolve().parent.parent / bin_dir / binary_name
+    ]
 
-    package_dir = Path(__file__).resolve().parent
-    env_bin = package_dir.parent / bin_dir / binary_name
-    if env_bin.exists():
-        return str(env_bin)
-
-    resolved = shutil.which(binary_name)
-    if resolved:
-        return resolved
-
-    sys.stderr.write(
-        f"FATAL ERROR: Bundled compiler binary '{binary_name}' could not be located.\n"
-    )
-    sys.exit(1)
+    return next(
+        (str(p) for p in candidates if p.exists()),
+        shutil.which(binary_name)
+    ) or _die(f"FATAL ERROR: Bundled compiler binary '{binary_name}' could not be located.")
 
 
 def _validate_c_linker() -> None:
     """Pre-flight validation: assert the existence of a host C-linker."""
     if not shutil.which("gcc") and not shutil.which("clang"):
-        sys.stderr.write(
-            "FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).\n"
-        )
-        sys.exit(1)
+        _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
 
 
 def _find_platform_lib_subdir() -> str:
@@ -94,12 +87,8 @@ def _find_platform_lib_subdir() -> str:
     if not ghc_lib_dir.is_dir():
         return ""
 
-    # Look for the platform-specific subdirectory (e.g., x86_64-linux-ghc-9.4.8)
-    for candidate in ghc_lib_dir.iterdir():
-        if candidate.is_dir() and candidate.name.endswith(f"-ghc-{GHC_VERSION}"):
-            return str(candidate)
-
-    return ""
+    # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
+    return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
 
 
 def _sterilize_environment() -> dict:
@@ -112,16 +101,28 @@ def _sterilize_environment() -> dict:
     for var in HASKELL_POLLUTION_VARS:
         env.pop(var, None)
 
-    safe_home = Path(sys.prefix) / ".ghc-compiler-python-home"
-    try:
-        safe_home.mkdir(parents=True, exist_ok=True)
-    except OSError:
+    def _get_home_path() -> Path:
         try:
-            safe_home = Path.home() / ".ghc-compiler-python-home"
-            safe_home.mkdir(parents=True, exist_ok=True)
+            return Path.home() / ".ghc-compiler-python-home"
+        except RuntimeError:
+            return Path()
+
+    def _try_mkdir(path: Path) -> Optional[Path]:
+        try:
+            if str(path) != ".":
+                path.mkdir(parents=True, exist_ok=True)
+                return path
         except (OSError, RuntimeError):
-            # Final fallback, secure temp directory
-            safe_home = Path(tempfile.mkdtemp(prefix="ghc-compiler-python-home-"))
+            pass
+        return None
+
+    # 🧪 Alchemist: Declarative fallback chain replaces nested try-except blocks.
+    # Lazily evaluate Path.home() to prevent premature RuntimeError.
+    safe_home = (
+        _try_mkdir(Path(sys.prefix) / ".ghc-compiler-python-home") or
+        _try_mkdir(_get_home_path()) or
+        Path(tempfile.mkdtemp(prefix="ghc-compiler-python-home-"))
+    )
 
     env["HOME"] = str(safe_home)
 
@@ -185,9 +186,8 @@ class BaseResource:
 
         # Check explicit candidates first
         for c in candidates:
-            if cls.is_dir and c.is_dir() and cls.validate(c):
-                return [c]
-            elif not cls.is_dir and c.is_file() and cls.validate(c):
+            # 🧪 Alchemist: Ternary conditional combines file and directory checks
+            if (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c):
                 return [c]
 
         # Dynamic fallback
@@ -388,12 +388,13 @@ def _resolve_runtime_paths(env: dict) -> None:
     """
     prefix_clean = sys.prefix.replace("\\", "/")
 
-    targets = []
-
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
-    for resource_cls in BaseResource.registry:
-        for resource_path in resource_cls.locate():
-            targets.extend(resource_cls.extract_targets(resource_path))
+    # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
+    targets = [
+        target for resource_cls in BaseResource.registry
+        for resource_path in resource_cls.locate()
+        for target in resource_cls.extract_targets(resource_path)
+    ]
 
     # Replace @GHC_PREFIX@ in all target files
     prefix_clean_bytes = prefix_clean.encode("utf-8")
@@ -415,10 +416,9 @@ def _resolve_runtime_paths(env: dict) -> None:
                     pass
 
             if content_to_write is not None:
+                # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
                 if b" " in prefix_clean_bytes and b"\0" not in content_to_write:
-                    s = content_to_write.decode("utf-8", errors="replace")
-                    s = re.sub(r'(?<!")(@GHC_PREFIX@[^\s"]+)', r'"\1"', s)
-                    content_to_write = s.encode("utf-8", errors="replace")
+                    content_to_write = re.sub(rb'(?<!")(@GHC_PREFIX@[^\s"]+)', rb'"\1"', content_to_write)
                 with target_path.open("wb") as out:
                     out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
                 if target.endswith(".conf"):
@@ -461,12 +461,10 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
 
     try:
         # Use the sterilized environment which has LD_LIBRARY_PATH properly set
-        recache_env = env.copy()
-        recache_env["GHC_PACKAGE_PATH"] = pkg_db_dir
-
+        # 🧪 Alchemist: Dictionary unpacking replaces manual environment copying and mutation
         subprocess.run(
             [ghc_pkg, "recache", "--package-db", pkg_db_dir],
-            env=recache_env,
+            env={**env, "GHC_PACKAGE_PATH": pkg_db_dir},
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=30,
@@ -499,13 +497,11 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
         else:
             sys.exit(subprocess.run(cmd, env=env).returncode)
     except FileNotFoundError:
-        sys.stderr.write(f"FATAL ERROR: Binary not found at '{binary_path}'.\n")
-        sys.exit(1)
+        _die(f"FATAL ERROR: Binary not found at '{binary_path}'.")
     except KeyboardInterrupt:
         sys.exit(130)
     except (subprocess.SubprocessError, OSError) as e:
-        sys.stderr.write(f"FATAL ERROR: Execution failed: {e}\n")
-        sys.exit(1)
+        _die(f"FATAL ERROR: Execution failed: {e}")
 
 
 def __getattr__(name: str) -> Any:

@@ -14,3 +14,8 @@
 - Chain `sys.exit` directly onto `subprocess.run(...).returncode` to remove intermediate assignments.
 **Result:** Code is shorter, more idiomatic, and conceptually simpler without breaking correctness. Tests pass.
 **Lesson:** `__init_subclass__` is almost always a cleaner and more native-feeling alternative to metaclasses when the only goal is registering subclasses.
+
+## 2025-05-14 - Refactored ghc_compiler_python/wrapper.py
+**Transformation:** Compressed several functions, replacing explicit loop operations and state checks with single-pass generators, nested comprehensions, short-circuited `or` statements, and bytes regex replacements. Replaced manual `sys.stderr.write` + `sys.exit` code duplications with a concise `_die()` handler.
+**Result:** Code size reduced, execution latency possibly improved, readability heightened by keeping operations closer to a declarative style.
+**Lesson:** Python eagerly evaluates arguments to functions, even inside logical statements that might be expected to lazily evaluate via `or` or `try/except`. Wrapping these eager `Path.home()` or `sys.exit()` calls inside lazily evaluated generators or helper closures prevents runtime crash errors during initialization.
