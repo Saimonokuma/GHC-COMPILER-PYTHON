@@ -12,3 +12,8 @@
 **The Glitch:** Procedural path discovery code was duplicated in both `wrapper.py` (runtime) and `scripts/patch_ghc_paths.py` (build time). We had verbose procedural logic with ~280 lines across multiple search loops just to locate and patch `settings`, `package.conf.d`, and `bin/*`.
 **The Bend:** We abstracted the path finding and patching logic into `BaseResource` subclasses registered automatically via `ResourceMeta`. This unifies platform-specific directory structure paths.
 **The Loop:** A polymorphic `patch_build_time` at build time and `locate` at runtime dynamic invocation. Any new GHC resource type needing relocation just subclasses `BaseResource` and specifies its candidates. Boilerplate eliminated entirely.
+
+## 2024-05-20 - Python Pipeline Generator for GitHub Actions
+**The Glitch:** The GitHub Actions workflow (`.github/workflows/build.yml`) was using a matrix strategy, leading to excessive `if: runner.os == '...'` conditional statements scattered throughout the steps. This YAML boilerplate made the pipeline hard to read and maintain, acting as a rigid static structure.
+**The Bend:** We implemented a Python pipeline generator (`scripts/generate_workflow.py`) that compiles a Python-based pipeline definition into a static, unrolled YAML workflow. This explicitly generates platform-specific jobs (linux, macos, windows) without the need for conditional logic within the steps.
+**The Loop:** A dynamic Python configuration source generates a static, clean YAML file. Any new pipeline variations or steps can be added via code logic rather than error-prone YAML conditionals. This resulted in a 3:1 compression ratio in logical flow complexity.

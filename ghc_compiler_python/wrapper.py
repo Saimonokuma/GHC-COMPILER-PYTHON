@@ -166,20 +166,15 @@ def _sterilize_environment() -> dict:
 
 
 
-class ResourceMeta(type):
-    """Metaclass to automatically register GHC resources for dynamic path resolution."""
-    registry = []
-
-    def __new__(mcs, name, bases, attrs):
-        cls = super().__new__(mcs, name, bases, attrs)
-        if name != "BaseResource":
-            mcs.registry.append(cls)
-        return cls
-
-class BaseResource(metaclass=ResourceMeta):
+class BaseResource:
     """Base class for all GHC resource locators and patchers."""
     name: str = ""
     is_dir: bool = False
+    registry = []
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls.registry.append(cls)
 
     @classmethod
     @functools.lru_cache(maxsize=None)
@@ -201,13 +196,25 @@ class BaseResource(metaclass=ResourceMeta):
             lib_dir = base_path / "lib"
             search_dir = lib_dir if lib_dir.exists() else base_path
 
-            for p in search_dir.rglob(cls.name):
-                if any(x in {"site-packages", "dist-packages"} or x.startswith("python") or x.startswith("pypy") for x in p.parts):
-                    continue
-                if cls.is_dir and p.is_dir() and cls.validate(p):
-                    found.append(p)
-                elif not cls.is_dir and p.is_file() and cls.validate(p):
-                    found.append(p)
+            for root, dirs, files in os.walk(search_dir):
+                # ⚡ Bolt: Prune os.walk to prevent recursion into massive Python directories.
+                # Modifying `dirs` in place avoids walking into these branches entirely.
+                dirs[:] = [
+                    d for d in dirs
+                    if d not in {"site-packages", "dist-packages"}
+                    and not d.startswith(("python", "pypy"))
+                ]
+
+                if cls.is_dir:
+                    if cls.name in dirs:
+                        p = Path(root) / cls.name
+                        if cls.validate(p):
+                            found.append(p)
+                else:
+                    if cls.name in files:
+                        p = Path(root) / cls.name
+                        if cls.validate(p):
+                            found.append(p)
         return found
 
     @classmethod
@@ -300,13 +307,13 @@ class PackageDBResource(BaseResource):
         patched_count = 0
         for conf_file in path.glob("*.conf"):
             try:
-                content = conf_file.read_text(encoding="utf-8", errors="replace")
-                original = content
-                content = re.sub(r"dynamic-library-dirs:\s*/[^\s]+", f"dynamic-library-dirs: {placeholder}/lib/ghc-{version}", content)
-                content = re.sub(r"library-dirs:\s*/[^\s]+", f"library-dirs: {placeholder}/lib/ghc-{version}", content)
-                content = re.sub(r"include-dirs:\s*/[^\s]+", f"include-dirs: {placeholder}/lib/ghc-{version}/include", content)
+                original = conf_file.read_text(encoding="utf-8", errors="replace")
+                # 🧪 Alchemist: Consolidate redundant re.sub logic using groupings
+                content = re.sub(r"(dynamic-library-dirs:\s*|library-dirs:\s*)/[^\s]+", rf"\g<1>{placeholder}/lib/ghc-{version}", original)
+                content = re.sub(r"(include-dirs:\s*)/[^\s]+", rf"\g<1>{placeholder}/lib/ghc-{version}/include", content)
                 content = re.sub(r"/ghc-prefix/lib/ghc-" + re.escape(version), f"{placeholder}/lib/ghc-{version}", content)
                 content = re.sub(r"/ghc-prefix", placeholder, content)
+
                 if content != original:
                     conf_file.write_text(content, encoding="utf-8")
                     patched_count += 1
@@ -383,8 +390,8 @@ def _resolve_runtime_paths(env: dict) -> None:
 
     targets = []
 
-    # 🐍 Ouroboros: Iterate over the ResourceMeta registry to locate all path targets dynamically
-    for resource_cls in ResourceMeta.registry:
+    # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
+    for resource_cls in BaseResource.registry:
         for resource_path in resource_cls.locate():
             targets.extend(resource_cls.extract_targets(resource_path))
 
@@ -490,8 +497,7 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
         if sys.platform != "win32":
             os.execve(binary_path, cmd, env)
         else:
-            result = subprocess.run(cmd, env=env)
-            sys.exit(result.returncode)
+            sys.exit(subprocess.run(cmd, env=env).returncode)
     except FileNotFoundError:
         sys.stderr.write(f"FATAL ERROR: Binary not found at '{binary_path}'.\n")
         sys.exit(1)

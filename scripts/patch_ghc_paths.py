@@ -15,7 +15,7 @@ from pathlib import Path
 
 # Add project root to sys.path to import the wrapper
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from ghc_compiler_python.wrapper import ResourceMeta, GHC_VERSION
+from ghc_compiler_python.wrapper import BaseResource, GHC_VERSION
 
 PLACEHOLDER_PREFIX = "@GHC_PREFIX@"
 STAGING_DIR = Path("ghc-bindist")
@@ -30,7 +30,7 @@ def main():
     # 🐍 Ouroboros: The Engine
     # Iterate over every registered resource (Settings, PackageDB, BinWrappers)
     # and call its polymorphic patch_build_time method.
-    for resource_cls in ResourceMeta.registry:
+    for resource_cls in BaseResource.registry:
         print(f"\n--- Processing {resource_cls.name} ---")
         found_paths = resource_cls.locate(base=str(STAGING_DIR), version=GHC_VERSION)
 
