@@ -92,6 +92,22 @@ class TestPollutionVars:
         assert isinstance(HASKELL_POLLUTION_VARS, frozenset)
 
 
+class TestGHCPkgRecache:
+    """Tests for _ghc_pkg_recache."""
+
+    @patch("ghc_compiler_python.wrapper.subprocess.run")
+    @patch("ghc_compiler_python.wrapper._resolve_binary")
+    def test_recache_handles_subprocess_error(self, mock_resolve, mock_run):
+        from ghc_compiler_python.wrapper import _ghc_pkg_recache
+        import subprocess
+
+        mock_resolve.return_value = "/fake/ghc-pkg"
+        mock_run.side_effect = subprocess.CalledProcessError(1, "ghc-pkg")
+
+        # This should not raise an exception
+        _ghc_pkg_recache("/fake/db", {})
+
+
 class TestExceptionHandling:
     """Tests for proper specific exception handling."""
 

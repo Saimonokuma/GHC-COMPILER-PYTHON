@@ -168,7 +168,7 @@ def _sterilize_environment() -> dict:
 
 class ResourceMeta(type):
     """Metaclass to automatically register GHC resources for dynamic path resolution."""
-    registry = []
+    registry: List[Type['BaseResource']] = []
 
     def __new__(mcs, name, bases, attrs):
         cls = super().__new__(mcs, name, bases, attrs)
@@ -463,6 +463,7 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=30,
+            check=True,
         )
         # Silently ignore errors - GHC will fall back to reading .conf files directly
     except (subprocess.SubprocessError, OSError):

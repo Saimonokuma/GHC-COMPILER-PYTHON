@@ -39,3 +39,43 @@ title: "Missing crucible.lock manifest for tool version pinning"
 **Level:** L5
 
 ---
+entry_id: "CRUCIBLE-$(date +%Y-%m-%d)-003"
+schema_version: "2.0"
+timestamp: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+title: "Axis II: Subprocess run failure handling"
+---
+## $(date +%Y-%m-%d) - Axis II: Subprocess run failure handling
+
+**Learning:** When using `subprocess.run()`, failures (non-zero exit codes) are ignored by default. If you intend to catch these failures via `except subprocess.SubprocessError:`, you must explicitly pass `check=True` to `subprocess.run()`. Otherwise, the exception block becomes dead code and errors fail silently.
+
+**Action:** Always use `check=True` in `subprocess.run()` when expecting to catch execution failures via try-except blocks.
+
+**Defect Pattern ID:** PATTERN-007
+
+**Related Entries:** []
+
+**Axes Affected:** II (Semantic)
+
+**Level:** L2
+
+---
+entry_id: "CRUCIBLE-$(date +%Y-%m-%d)-004"
+schema_version: "2.0"
+timestamp: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+title: "Axis V: Package manager determinism (pip vs uv)"
+---
+## $(date +%Y-%m-%d) - Axis V: Package manager determinism (pip vs uv)
+
+**Learning:** Relying on `pip` in CI environments can lead to non-deterministic builds and temporal defects due to floating dependency resolution and slower installation times.
+
+**Action:** Consistently replace `pip` with `uv` across all environments (including GitHub Actions workflows) to enforce strict determinism and performance, adhering to the "uv/uvx (never pip)" constraint.
+
+**Defect Pattern ID:** PATTERN-012
+
+**Related Entries:** []
+
+**Axes Affected:** V (Temporal)
+
+**Level:** L5
+
+---
