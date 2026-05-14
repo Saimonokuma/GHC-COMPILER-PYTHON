@@ -6,7 +6,6 @@ cleanup() {
 	rm -rf "${BUILD_DIR:-}"
 	rm -rf "${SAFE_TMP_DIR:-}"
 	rm -rf "${DESTDIR_ABS:-}"
-	# exit "$exit_code"
 	exit "$exit_code"
 }
 trap cleanup EXIT
