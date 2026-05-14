@@ -129,3 +129,41 @@ class TestExceptionHandling:
                 with pytest.raises(SystemExit) as exc:
                     _execute_tool("ghc")
                 assert exc.value.code == 1
+
+class TestDynamicGetattr:
+    """Tests for dynamic __getattr__ execution closure generation."""
+
+    @patch("ghc_compiler_python.wrapper._execute_tool")
+    def test_execute_ghc_generation(self, mock_execute_tool):
+        import ghc_compiler_python.wrapper as wrapper
+
+        # Test getting the dynamic attribute
+        executor = wrapper.__getattr__("execute_ghc")
+
+        # Verify it returns a callable with the correct name
+        assert callable(executor)
+        assert executor.__name__ == "execute_ghc"
+
+        # Execute it and verify it calls _execute_tool correctly
+        executor()
+        mock_execute_tool.assert_called_once_with("ghc", extra_args=["-v0"])
+
+    @patch("ghc_compiler_python.wrapper._execute_tool")
+    def test_execute_other_tool_generation(self, mock_execute_tool):
+        import ghc_compiler_python.wrapper as wrapper
+
+        # Test tool names with underscores that need replacing
+        executor = wrapper.__getattr__("execute_cabal_install")
+
+        assert callable(executor)
+        assert executor.__name__ == "execute_cabal_install"
+
+        executor()
+        # _ to - replacement
+        mock_execute_tool.assert_called_once_with("cabal-install", extra_args=None)
+
+    def test_invalid_attribute(self):
+        import ghc_compiler_python.wrapper as wrapper
+
+        with pytest.raises(AttributeError, match="has no attribute 'invalid_attr'"):
+            wrapper.__getattr__("invalid_attr")
