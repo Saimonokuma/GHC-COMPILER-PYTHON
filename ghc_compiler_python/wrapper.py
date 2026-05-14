@@ -270,8 +270,8 @@ class SettingsResource(BaseResource):
             if modified:
                 path.write_text(content, encoding="utf-8")
                 return 1
-        except OSError:
-            pass
+        except OSError as e:
+            sys.stderr.write(f"WARNING: Failed to patch {path}: {e}\n")
         return 0
 
 
@@ -310,15 +310,15 @@ class PackageDBResource(BaseResource):
                 if content != original:
                     conf_file.write_text(content, encoding="utf-8")
                     patched_count += 1
-            except OSError:
-                pass
+            except OSError as e:
+                sys.stderr.write(f"WARNING: Failed to patch {conf_file}: {e}\n")
 
         cache_file = path / "package.cache"
         if cache_file.exists():
             try:
                 cache_file.unlink()
-            except OSError:
-                pass
+            except OSError as e:
+                sys.stderr.write(f"WARNING: Failed to unlink {cache_file}: {e}\n")
         return patched_count
 
 
@@ -369,8 +369,8 @@ class BinWrappersResource(BaseResource):
                 if content != original:
                     script.write_text(content, encoding="utf-8")
                     patched += 1
-            except OSError:
-                pass
+            except OSError as e:
+                sys.stderr.write(f"WARNING: Failed to patch {script}: {e}\n")
         return patched
 def _resolve_runtime_paths(env: dict) -> None:
     """Dynamically replace @GHC_PREFIX@ with the active sys.prefix at runtime,
@@ -416,8 +416,8 @@ def _resolve_runtime_paths(env: dict) -> None:
                     out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
                 if target.endswith(".conf"):
                     patched_any_conf = True
-        except OSError:
-            pass  # Ignore read-only files if already patched
+        except OSError as e:
+            sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
 
     # 🧪 Alchemist: any() replaces manual flag variables and loops for succinct boolean reduction
     if patched_any_conf or any(
@@ -465,8 +465,8 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
             timeout=30,
         )
         # Silently ignore errors - GHC will fall back to reading .conf files directly
-    except (subprocess.SubprocessError, OSError):
-        pass  # Non-fatal: if recache fails, GHC can still work without cache
+    except (subprocess.SubprocessError, OSError) as e:
+        sys.stderr.write(f"WARNING: ghc-pkg recache failed for {pkg_db_dir}: {e}\n")
 
 
 def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoReturn:
