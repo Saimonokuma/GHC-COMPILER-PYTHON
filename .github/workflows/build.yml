@@ -71,7 +71,7 @@ jobs:
         shell: bash
         run: |
           # Find the exact directory where the nested .so files are located inside ghc-bindist/lib/
-          LINUX_LIB_DIR=$(find ghc-bindist/lib -name "libHS*.so" | head -n 1 | xargs dirname)
+          LINUX_LIB_DIR=$(find ghc-bindist/lib -name "libHS*.so" 2>/dev/null | head -n 1 | xargs -r dirname)
           if [ -n "$LINUX_LIB_DIR" ]; then
               echo "Found Linux GHC libraries at $LINUX_LIB_DIR"
               export LD_LIBRARY_PATH="$(pwd)/$LINUX_LIB_DIR:${LD_LIBRARY_PATH:-}"

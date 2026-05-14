@@ -2,3 +2,4 @@
 **Project:** ghc-compiler-python | **Languages:** Python, Bash | **Build/Test/Lint:** hatch, pytest
 **Known Bug Patterns:** Missing trap cleanups, unhandled OS failures in wrappers, paths with spaces
 **Fixed Bugs:** Wrapper crashed on read-only sys.prefix, shell script trap cleanup missing.
+Deleted test script files that I added during my debugging phase.
