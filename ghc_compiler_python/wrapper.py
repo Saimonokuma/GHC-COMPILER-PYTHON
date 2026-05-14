@@ -201,13 +201,25 @@ class BaseResource(metaclass=ResourceMeta):
             lib_dir = base_path / "lib"
             search_dir = lib_dir if lib_dir.exists() else base_path
 
-            for p in search_dir.rglob(cls.name):
-                if any(x in {"site-packages", "dist-packages"} or x.startswith("python") or x.startswith("pypy") for x in p.parts):
-                    continue
-                if cls.is_dir and p.is_dir() and cls.validate(p):
-                    found.append(p)
-                elif not cls.is_dir and p.is_file() and cls.validate(p):
-                    found.append(p)
+            for root, dirs, files in os.walk(search_dir):
+                # ⚡ Bolt: Prune os.walk to prevent recursion into massive Python directories.
+                # Modifying `dirs` in place avoids walking into these branches entirely.
+                dirs[:] = [
+                    d for d in dirs
+                    if d not in {"site-packages", "dist-packages"}
+                    and not d.startswith(("python", "pypy"))
+                ]
+
+                if cls.is_dir:
+                    if cls.name in dirs:
+                        p = Path(root) / cls.name
+                        if cls.validate(p):
+                            found.append(p)
+                else:
+                    if cls.name in files:
+                        p = Path(root) / cls.name
+                        if cls.validate(p):
+                            found.append(p)
         return found
 
     @classmethod
