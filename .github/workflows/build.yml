@@ -24,10 +24,13 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
           sudo apt-get clean
           df -h
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'uv.lock'
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-          cache: 'pip'
+          python-version: '3.12'
       - name: Install System C-Linker (Linux)
         run: |
           sudo apt-get update
@@ -39,11 +42,7 @@ jobs:
              sudo ln -sf /usr/lib/x86_64-linux-gnu/libncursesw.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5 && \
              sudo ln -sf /usr/lib/x86_64-linux-gnu/libffi.so.8 /usr/lib/x86_64-linux-gnu/libffi.so.7)
       - name: Install Vendoring Tools (Linux)
-        run: pip install auditwheel
-      - name: Install Python Build Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install build hatchling
+        run: uv tool install auditwheel
       - name: Fetch and Verify GHC/Cabal Binaries
         shell: bash
         run: bash scripts/fetch_binaries.sh
@@ -66,12 +65,12 @@ jobs:
         shell: bash
         run: python scripts/patch_ghc_paths.py
       - name: Build PEP 427 Python Wheel
-        run: python -m build --wheel
+        run: uv build --wheel
       - name: Vendor Dynamic Libraries (Linux)
         shell: bash
         run: |
           # Find the exact directory where the nested .so files are located inside ghc-bindist/lib/
-          LINUX_LIB_DIR=$(find ghc-bindist/lib -name "libHS*.so" 2>/dev/null | head -n 1 | xargs -r dirname)
+          LINUX_LIB_DIR=$(find ghc-bindist/lib -name "libHS*.so" | head -n 1 | xargs dirname)
           if [ -n "$LINUX_LIB_DIR" ]; then
               echo "Found Linux GHC libraries at $LINUX_LIB_DIR"
               export LD_LIBRARY_PATH="$(pwd)/$LINUX_LIB_DIR:${LD_LIBRARY_PATH:-}"
@@ -86,14 +85,14 @@ jobs:
       - name: End-to-End Compilation Validation
         shell: bash
         run: |
-          python -m venv test-env
+          uv venv test-env
           if [ -f test-env/Scripts/activate ]; then
             source test-env/Scripts/activate
           else
             source test-env/bin/activate
           fi
 
-          pip install dist/*.whl
+          uv pip install dist/*.whl
           echo "=== Debug Library Paths ==="
           find test-env -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" || true
           ls -la test-env/lib/ghc-9.4.8/bin || true
@@ -126,18 +125,17 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'uv.lock'
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-          cache: 'pip'
+          python-version: '3.12'
       - name: Install System C-Linker (macOS)
         run: xcode-select -p || xcode-select --install
       - name: Install Vendoring Tools (macOS)
-        run: pip install delocate
-      - name: Install Python Build Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install build hatchling
+        run: uv tool install delocate
       - name: Fetch and Verify GHC/Cabal Binaries
         shell: bash
         run: bash scripts/fetch_binaries.sh
@@ -163,7 +161,7 @@ jobs:
         shell: bash
         run: bash scripts/fix_macos_rpaths.sh
       - name: Build PEP 427 Python Wheel
-        run: python -m build --wheel
+        run: uv build --wheel
       - name: Vendor Dynamic Libraries (macOS)
         shell: bash
         run: |
@@ -173,14 +171,14 @@ jobs:
       - name: End-to-End Compilation Validation
         shell: bash
         run: |
-          python -m venv test-env
+          uv venv test-env
           if [ -f test-env/Scripts/activate ]; then
             source test-env/Scripts/activate
           else
             source test-env/bin/activate
           fi
 
-          pip install dist/*.whl
+          uv pip install dist/*.whl
           echo "=== Debug Library Paths ==="
           find test-env -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" || true
           ls -la test-env/lib/ghc-9.4.8/bin || true
@@ -213,19 +211,18 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'uv.lock'
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-          cache: 'pip'
+          python-version: '3.12'
       - name: Install System C-Linker (Windows)
         shell: pwsh
         run: |
           choco install mingw -y
           echo "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-      - name: Install Python Build Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install build hatchling
       - name: Fetch and Verify GHC/Cabal Binaries
         shell: bash
         run: bash scripts/fetch_binaries.sh
@@ -248,18 +245,18 @@ jobs:
         shell: bash
         run: python scripts/patch_ghc_paths.py
       - name: Build PEP 427 Python Wheel
-        run: python -m build --wheel
+        run: uv build --wheel
       - name: End-to-End Compilation Validation
         shell: bash
         run: |
-          python -m venv test-env
+          uv venv test-env
           if [ -f test-env/Scripts/activate ]; then
             source test-env/Scripts/activate
           else
             source test-env/bin/activate
           fi
 
-          pip install dist/*.whl
+          uv pip install dist/*.whl
           echo "=== Debug Library Paths ==="
           find test-env -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" || true
           ls -la test-env/lib/ghc-9.4.8/bin || true

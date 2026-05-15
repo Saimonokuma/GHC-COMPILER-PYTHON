@@ -73,7 +73,8 @@ def generate_job(platform_key, platform_data):
     if platform_key == "linux":
         add_step(name="Free disk space (Linux)", run="sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc\nsudo apt-get clean\ndf -h")
 
-    add_step(uses="actions/setup-python@v5", with_args={"python-version": "'3.10'", "cache": "'pip'"})
+    add_step(uses="astral-sh/setup-uv@v5", with_args={"enable-cache": "true", "cache-dependency-glob": "'uv.lock'"})
+    add_step(uses="actions/setup-python@v5", with_args={"python-version": "'3.12'"})
 
     if platform_key == "linux":
         add_step(name="Install System C-Linker (Linux)", run="""sudo apt-get update
@@ -84,15 +85,14 @@ sudo apt-get install -y libtinfo5 libncurses5 libffi7 || \\
    sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5 && \\
    sudo ln -sf /usr/lib/x86_64-linux-gnu/libncursesw.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5 && \\
    sudo ln -sf /usr/lib/x86_64-linux-gnu/libffi.so.8 /usr/lib/x86_64-linux-gnu/libffi.so.7)""")
-        add_step(name="Install Vendoring Tools (Linux)", run="pip install auditwheel")
+        add_step(name="Install Vendoring Tools (Linux)", run="uv tool install auditwheel")
     elif platform_key == "macos":
         add_step(name="Install System C-Linker (macOS)", run="xcode-select -p || xcode-select --install")
-        add_step(name="Install Vendoring Tools (macOS)", run="pip install delocate")
+        add_step(name="Install Vendoring Tools (macOS)", run="uv tool install delocate")
     elif platform_key == "windows":
         add_step(name="Install System C-Linker (Windows)", shell="pwsh", run="""choco install mingw -y
 echo "C:\\msys64\\mingw64\\bin" | Out-File -FilePath $env:GITHUB_PATH -Append""")
 
-    add_step(name="Install Python Build Dependencies", run="python -m pip install --upgrade pip\npip install build hatchling")
     add_step(name="Fetch and Verify GHC/Cabal Binaries", shell="bash", run="bash scripts/fetch_binaries.sh")
     add_step(name="Verify Shared Libraries", shell="bash", run="""echo "=== Checking for required .so files ==="
 find ghc-bindist -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" -o -name "libgmp*" || true
@@ -110,7 +110,7 @@ fi""")
     if platform_key == "macos":
         add_step(name="Fix macOS Dynamic Library Paths", shell="bash", run="bash scripts/fix_macos_rpaths.sh")
 
-    add_step(name="Build PEP 427 Python Wheel", run="python -m build --wheel")
+    add_step(name="Build PEP 427 Python Wheel", run="uv build --wheel")
 
     if platform_key == "linux":
         add_step(name="Vendor Dynamic Libraries (Linux)", shell="bash", run="""# Find the exact directory where the nested .so files are located inside ghc-bindist/lib/
@@ -131,14 +131,14 @@ mv wheelhouse/*.whl dist/""")
 # Our rpaths are already correctly pointing to the internal libs
 delocate-wheel -v dist/*.whl""")
 
-    add_step(name="End-to-End Compilation Validation", shell="bash", run="""python -m venv test-env
+    add_step(name="End-to-End Compilation Validation", shell="bash", run="""uv venv test-env
 if [ -f test-env/Scripts/activate ]; then
   source test-env/Scripts/activate
 else
   source test-env/bin/activate
 fi
 
-pip install dist/*.whl
+uv pip install dist/*.whl
 echo "=== Debug Library Paths ==="
 find test-env -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" || true
 ls -la test-env/lib/ghc-9.4.8/bin || true

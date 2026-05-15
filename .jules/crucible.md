@@ -59,3 +59,24 @@ title: "No Defects Found"
 **Axes Affected:** None
 
 **Level:** None
+---
+entry_id: "CRUCIBLE-2026-05-14-004"
+schema_version: "2.0"
+timestamp: "2026-05-14T12:00:00Z"
+title: "CI Hardening and Semantic Verification"
+---
+## 2026-05-14 - CI Hardening and Semantic Verification
+
+**Learning:** `pip` without `uv` causes CI environments to be slow and vulnerable to temporal regressions. `subprocess.run` without exit code checking hides runtime failures. Python 3.12+ `pathlib.Path.walk()` is more efficient and correct than `os.walk`.
+
+**Action:** Upgraded python version to `3.12`. Replaced `pip` with `uv` in CI. Captured `subprocess.run` exit codes during `ghc-pkg recache`. Replaced `os.walk` with `pathlib.Path.walk()`.
+
+**Defect Pattern ID:** PATTERN-007
+
+**Related Entries:** []
+
+**Axes Affected:** II (Semantic), III (Structural), V (Temporal)
+
+**Level:** L2, L3, L5
+
+---

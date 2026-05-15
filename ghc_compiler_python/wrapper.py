@@ -196,8 +196,8 @@ class BaseResource:
             lib_dir = base_path / "lib"
             search_dir = lib_dir if lib_dir.exists() else base_path
 
-            for root, dirs, files in os.walk(search_dir):
-                # ⚡ Bolt: Prune os.walk to prevent recursion into massive Python directories.
+            for root, dirs, files in search_dir.walk():
+                # ⚡ Bolt: Prune walk to prevent recursion into massive Python directories.
                 # Modifying `dirs` in place avoids walking into these branches entirely.
                 dirs[:] = [
                     d for d in dirs
@@ -207,12 +207,12 @@ class BaseResource:
 
                 if cls.is_dir:
                     if cls.name in dirs:
-                        p = Path(root) / cls.name
+                        p = root / cls.name
                         if cls.validate(p):
                             found.append(p)
                 else:
                     if cls.name in files:
-                        p = Path(root) / cls.name
+                        p = root / cls.name
                         if cls.validate(p):
                             found.append(p)
         return found
@@ -462,14 +462,15 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
     try:
         # Use the sterilized environment which has LD_LIBRARY_PATH properly set
         # 🧪 Alchemist: Dictionary unpacking replaces manual environment copying and mutation
-        subprocess.run(
+        result = subprocess.run(
             [ghc_pkg, "recache", "--package-db", pkg_db_dir],
             env={**env, "GHC_PACKAGE_PATH": pkg_db_dir},
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=30,
         )
-        # Silently ignore errors - GHC will fall back to reading .conf files directly
+        if result.returncode != 0:
+            sys.stderr.write(f"WARNING: ghc-pkg recache exited with code {result.returncode} for {pkg_db_dir}\n")
     except (subprocess.SubprocessError, OSError) as e:
         sys.stderr.write(f"WARNING: ghc-pkg recache failed for {pkg_db_dir}: {e}\n")
 
