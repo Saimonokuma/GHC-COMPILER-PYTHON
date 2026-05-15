@@ -130,6 +130,59 @@ class TestExceptionHandling:
                     _execute_tool("ghc")
                 assert exc.value.code == 1
 
+class TestBinWrappersResource:
+    """Tests for BinWrappersResource binary filtering."""
+
+    def test_extract_targets_ignores_binaries(self, tmp_path):
+        from ghc_compiler_python.wrapper import BinWrappersResource
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+
+        # Text script
+        script = bin_dir / "ghc-script"
+        script.write_text("#!/bin/bash\necho test")
+
+        # Binary file
+        binary = bin_dir / "ghc-pkg"
+        binary.write_bytes(b"\x7fELF\x00\x01")
+
+        # Windows executable
+        exe = bin_dir / "ghc.exe"
+        exe.write_text("dummy exe")
+
+        # Symlink
+        symlink = bin_dir / "ghc-link"
+        symlink.symlink_to(script)
+
+        targets = BinWrappersResource.extract_targets(bin_dir)
+
+        assert str(script) in targets
+        assert str(binary) not in targets
+        assert str(exe) not in targets
+        assert str(symlink) not in targets
+
+    def test_patch_build_time_ignores_binaries(self, tmp_path):
+        from ghc_compiler_python.wrapper import BinWrappersResource
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+
+        script = bin_dir / "ghc-script"
+        script.write_text("#!/bin/bash\necho /ghc-prefix")
+
+        binary_content = b"\x7fELF\x00\x01/ghc-prefix"
+        binary = bin_dir / "ghc-pkg"
+        binary.write_bytes(binary_content)
+
+        patched_count = BinWrappersResource.patch_build_time(bin_dir, "9.4.8", "@GHC_PREFIX@")
+
+        # Only the script should be patched
+        assert patched_count == 1
+        assert "@GHC_PREFIX@" in script.read_text()
+
+        # Binary should remain untouched
+        assert binary.read_bytes() == binary_content
+
+
 class TestDynamicGetattr:
     """Tests for dynamic __getattr__ execution closure generation."""
 

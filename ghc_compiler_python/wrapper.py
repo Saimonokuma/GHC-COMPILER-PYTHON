@@ -54,6 +54,16 @@ def _die(msg: str) -> NoReturn:
     sys.exit(1)
 
 
+def _is_text_file(filepath: Path) -> bool:
+    """Check if a file is a text file by looking for null bytes in the first 1024 bytes."""
+    try:
+        with filepath.open("rb") as f:
+            chunk = f.read(1024)
+            return b"\0" not in chunk
+    except OSError:
+        return False
+
+
 def _resolve_binary(name: str) -> str:
     """Resolve the absolute path to a bundled native binary."""
     binary_name = f"{name}.exe" if sys.platform == "win32" else name
@@ -341,13 +351,16 @@ class BinWrappersResource(BaseResource):
 
     @classmethod
     def extract_targets(cls, path: Path) -> List[str]:
-        return [str(f) for f in path.iterdir() if f.is_file() and not f.name.endswith(".exe") and not f.is_symlink()]
+        return [
+            str(f) for f in path.iterdir()
+            if f.is_file() and not f.is_symlink() and not f.name.endswith(".exe") and _is_text_file(f)
+        ]
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched = 0
         for script in path.iterdir():
-            if not script.is_file() or script.name.endswith(".exe"):
+            if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
                 continue
             try:
                 content = script.read_text(encoding="utf-8", errors="replace")
