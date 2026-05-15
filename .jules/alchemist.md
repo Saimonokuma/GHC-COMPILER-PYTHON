@@ -19,3 +19,13 @@
 **Transformation:** Compressed several functions, replacing explicit loop operations and state checks with single-pass generators, nested comprehensions, short-circuited `or` statements, and bytes regex replacements. Replaced manual `sys.stderr.write` + `sys.exit` code duplications with a concise `_die()` handler.
 **Result:** Code size reduced, execution latency possibly improved, readability heightened by keeping operations closer to a declarative style.
 **Lesson:** Python eagerly evaluates arguments to functions, even inside logical statements that might be expected to lazily evaluate via `or` or `try/except`. Wrapping these eager `Path.home()` or `sys.exit()` calls inside lazily evaluated generators or helper closures prevents runtime crash errors during initialization.
+
+## 2025-05-18 - Additional Python Wrapper Optimizations
+**Transformation:**
+- Used structural pattern matching (`match sys.platform`) instead of lambdas in a dictionary to resolve platform configurations in `_sterilize_environment`, making it much more readable.
+- Combined multiple sequential regex substitutions (`re.sub`) into a single pass using alternation `(?:...)` and a callback replacement function in `SettingsResource.patch_build_time`.
+- Swapped `{**env, "VAR": "VAL"}` dictionary unpacking with the more modern Python 3.9+ dictionary merge operator `env | {"VAR": "VAL"}`.
+- Replaced the redundant `_rebuild_package_cache` helper function with an inline list comprehension directly inside `_resolve_runtime_paths`.
+- Adopted the walrus operator `:=` in `PackageDBResource.patch_build_time` to combine cache file path assignment and existence check into a single expression.
+**Result:** Code size reduced, execution speed nominally improved by eliminating redundant passes and unnecessary function call overhead, and the Pythonic syntax increases legibility.
+**Lesson:** Python 3.8+ and 3.10+ have several modern language features (walrus, dict merge, structural pattern matching) that reduce boilerplate significantly. Regex alternation coupled with callbacks is much more efficient than multiple `re.sub` string manipulations on large text blocks.
