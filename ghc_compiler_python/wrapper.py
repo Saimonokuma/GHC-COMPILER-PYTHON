@@ -94,12 +94,9 @@ def _find_platform_lib_subdir() -> str:
 def _sterilize_environment() -> dict:
     """Create a sterilized subprocess environment with proper library paths."""
     global _HOME_ORIGINAL
-    env = os.environ.copy()
+    env = {k: v for k, v in os.environ.items() if k not in HASKELL_POLLUTION_VARS}
 
-    _HOME_ORIGINAL = env.get("HOME", env.get("USERPROFILE", ""))
-
-    for var in HASKELL_POLLUTION_VARS:
-        env.pop(var, None)
+    _HOME_ORIGINAL = os.environ.get("HOME", os.environ.get("USERPROFILE", ""))
 
     def _get_home_path() -> Path:
         try:
@@ -131,27 +128,24 @@ def _sterilize_environment() -> dict:
     current_path = env.get("PATH", "")
     env["PATH"] = f"{env_bin}{os.pathsep}{current_path}"
 
-    # 🧪 Alchemist: Dictionary mapping with lambdas and generators replace verbose if-chains and manual append loops
-    # Lambdas are used for lazy evaluation so that platform-specific code doesn't evaluate eagerly.
-    platform_config = {
-        "darwin": lambda: (
-            [
+    # 🧪 Alchemist: Structural pattern matching replaces lambda-based dictionary lookup
+    match sys.platform:
+        case "darwin":
+            candidates = [
                 Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
                 Path(sys.prefix) / "lib",
-            ],
-            ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"],
-        ),
-        "linux": lambda: (
-            [
+            ]
+            vars_to_update = ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"]
+        case "linux":
+            candidates = [
                 Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}",
                 Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
                 Path(_find_platform_lib_subdir() or "."),
                 Path(__file__).resolve().parent.parent / "ghc_compiler_python.libs",
-            ],
-            ["LD_LIBRARY_PATH"],
-        ),
-    }
-    candidates, vars_to_update = platform_config.get(sys.platform, lambda: ([], []))()
+            ]
+            vars_to_update = ["LD_LIBRARY_PATH"]
+        case _:
+            candidates, vars_to_update = [], []
 
     if lib_dirs_str := os.pathsep.join(
         str(p) for p in candidates if p.is_dir() and str(p) != "."
@@ -261,21 +255,20 @@ class SettingsResource(BaseResource):
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         try:
             content = path.read_text(encoding="utf-8", errors="replace")
-            patterns = [
-                (r"/usr/local/lib/ghc-" + re.escape(version), f"{placeholder}/lib/ghc-{version}"),
-                (r"/usr/lib/ghc-" + re.escape(version), f"{placeholder}/lib/ghc-{version}"),
-                (r"/opt/ghc/" + re.escape(version), f"{placeholder}/lib/ghc-{version}"),
-                (r"/ghc-prefix/lib/ghc-" + re.escape(version), f"{placeholder}/lib/ghc-{version}"),
-                (r"/ghc-prefix", placeholder),
-            ]
-            modified = False
-            for pattern, replacement in patterns:
-                new_content = re.sub(pattern, replacement, content)
-                if new_content != content:
-                    content = new_content
-                    modified = True
-            if modified:
-                path.write_text(content, encoding="utf-8")
+            # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
+            pattern = re.compile(
+                r"/(?:usr/local/lib|usr/lib|opt|ghc-prefix)/ghc(?:-|/)" + re.escape(version) + r"|/ghc-prefix"
+            )
+
+            def repl(m: re.Match) -> str:
+                match = m.group(0)
+                if match == "/ghc-prefix":
+                    return placeholder
+                return f"{placeholder}/lib/ghc-{version}"
+
+            new_content = pattern.sub(repl, content)
+            if new_content != content:
+                path.write_text(new_content, encoding="utf-8")
                 return 1
         except OSError as e:
             sys.stderr.write(f"WARNING: Failed to patch {path}: {e}\n")
@@ -320,8 +313,8 @@ class PackageDBResource(BaseResource):
             except OSError as e:
                 sys.stderr.write(f"WARNING: Failed to patch {conf_file}: {e}\n")
 
-        cache_file = path / "package.cache"
-        if cache_file.exists():
+        # 🧪 Alchemist: Walrus operator (:=) consolidates variable assignment and existence check
+        if (cache_file := path / "package.cache").exists():
             try:
                 cache_file.unlink()
             except OSError as e:
@@ -431,21 +424,7 @@ def _resolve_runtime_paths(env: dict) -> None:
         not (pkg_db / "package.cache").exists()
         for pkg_db in PackageDBResource.locate()
     ):
-        _rebuild_package_cache(env)
-
-
-def _rebuild_package_cache(env: dict) -> None:
-    """Run ghc-pkg recache to regenerate package.cache.
-
-    GHC requires package.cache to function properly. The build process
-    deletes it after patching .conf files, so we must regenerate it
-    at runtime after @GHC_PREFIX@ replacement.
-
-    Args:
-            env: The sterilized environment dict with proper LD_LIBRARY_PATH set.
-    """
-    for pkg_db in PackageDBResource.locate():
-        _ghc_pkg_recache(str(pkg_db), env)
+        [_ghc_pkg_recache(str(pkg_db), env) for pkg_db in PackageDBResource.locate()]
 
 
 def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
@@ -461,10 +440,10 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
 
     try:
         # Use the sterilized environment which has LD_LIBRARY_PATH properly set
-        # 🧪 Alchemist: Dictionary unpacking replaces manual environment copying and mutation
+        # 🧪 Alchemist: Dictionary merge operator (|) replaces unpacking
         subprocess.run(
             [ghc_pkg, "recache", "--package-db", pkg_db_dir],
-            env={**env, "GHC_PACKAGE_PATH": pkg_db_dir},
+            env=env | {"GHC_PACKAGE_PATH": pkg_db_dir},
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=30,

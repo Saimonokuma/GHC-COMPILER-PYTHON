@@ -19,7 +19,7 @@ def test_resolve_runtime_paths_with_spaces(tmp_path):
         with patch("ghc_compiler_python.wrapper.SettingsResource.locate", return_value=[]):
             with patch("ghc_compiler_python.wrapper.PackageDBResource.locate", return_value=[conf_d]):
                 with patch("ghc_compiler_python.wrapper.BinWrappersResource.locate", return_value=[]):
-                    with patch("ghc_compiler_python.wrapper._rebuild_package_cache"):
+                    with patch("ghc_compiler_python.wrapper._ghc_pkg_recache"):
                         _resolve_runtime_paths({})
 
     content = conf_file.read_text()
