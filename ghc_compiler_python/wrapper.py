@@ -324,11 +324,10 @@ class PackageDBResource(BaseResource):
                 sys.stderr.write(f"WARNING: Failed to patch {conf_file}: {e}\n")
 
         # 🧪 Alchemist: Walrus operator (:=) consolidates variable assignment and existence check
-        if (cache_file := path / "package.cache").exists():
-            try:
-                cache_file.unlink()
-            except OSError as e:
-                sys.stderr.write(f"WARNING: Failed to unlink {cache_file}: {e}\n")
+        try:
+            (path / "package.cache").unlink(missing_ok=True)
+        except OSError as e:
+            sys.stderr.write(f"WARNING: Failed to unlink {path / 'package.cache'}: {e}\n")
         return patched_count
 
 
@@ -437,7 +436,8 @@ def _resolve_runtime_paths(env: dict) -> None:
         not (pkg_db / "package.cache").exists()
         for pkg_db in PackageDBResource.locate()
     ):
-        [_ghc_pkg_recache(str(pkg_db), env) for pkg_db in PackageDBResource.locate()]
+        for pkg_db in PackageDBResource.locate():
+            _ghc_pkg_recache(str(pkg_db), env)
 
 
 def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
@@ -460,8 +460,8 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=30,
+            check=True,
         )
-        # Silently ignore errors - GHC will fall back to reading .conf files directly
     except (subprocess.SubprocessError, OSError) as e:
         sys.stderr.write(f"WARNING: ghc-pkg recache failed for {pkg_db_dir}: {e}\n")
 
