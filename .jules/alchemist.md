@@ -29,3 +29,11 @@
 - Adopted the walrus operator `:=` in `PackageDBResource.patch_build_time` to combine cache file path assignment and existence check into a single expression.
 **Result:** Code size reduced, execution speed nominally improved by eliminating redundant passes and unnecessary function call overhead, and the Pythonic syntax increases legibility.
 **Lesson:** Python 3.8+ and 3.10+ have several modern language features (walrus, dict merge, structural pattern matching) that reduce boilerplate significantly. Regex alternation coupled with callbacks is much more efficient than multiple `re.sub` string manipulations on large text blocks.
+
+## 2026-05-18 - Additional Python Wrapper Optimizations
+**Transformation:**
+- Consolidated redundant multiple `re.sub` string manipulation passes into a single pass regex compilation using alternation and callback substitution in `BinWrappersResource.patch_build_time` and `PackageDBResource.patch_build_time`.
+
+**Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
+
+**Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
