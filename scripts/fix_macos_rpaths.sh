@@ -101,5 +101,30 @@ fi
 echo "	Fixed ${BIN_COUNT} executables."
 
 echo "[3/3] Verifying @rpath repairs..."
-echo "	All @rpath repairs verified successfully."
+VERIFY_FAIL=0
+for binary in "${BIN_DIR}"/*; do
+	if [ -f "$binary" ] && file "$binary" | grep -q "Mach-O"; then
+		if otool -l "$binary" | grep -Eq "${OLD_RPATH}|${OLD_RPATH2}|${OLD_RPATH3}"; then
+			echo "	WARNING: Old rpath still present in $(basename "$binary")" >&2
+			VERIFY_FAIL=$((VERIFY_FAIL + 1))
+		fi
+	fi
+done
+
+if [ -d "${LIB_DIR}/bin" ]; then
+    for binary in "${LIB_DIR}/bin"/*; do
+        if [ -f "$binary" ] && file "$binary" | grep -q "Mach-O"; then
+            if otool -l "$binary" | grep -Eq "${OLD_RPATH}|${OLD_RPATH2}|${OLD_RPATH3}"; then
+                echo "	WARNING: Old rpath still present in $(basename "$binary")" >&2
+                VERIFY_FAIL=$((VERIFY_FAIL + 1))
+            fi
+        fi
+    done
+fi
+
+if [ ${VERIFY_FAIL} -gt 0 ]; then
+    echo "WARNING: ${VERIFY_FAIL} verification checks failed."
+else
+    echo "	All @rpath repairs verified successfully."
+fi
 echo "macOS @rpath repair complete."

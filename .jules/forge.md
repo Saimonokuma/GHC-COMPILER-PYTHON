@@ -8,3 +8,7 @@
 Deleted test script files that I added during my debugging phase.
 ### Critical Learnings (2024-05-15):
 - Discovered and fixed a critical bug in `ghc_compiler_python/wrapper.py` where binary executables without a `.exe` extension (like `ghc-pkg` on Unix) could be read, corrupted via text replacement, and rewritten. Introduced `_is_text_file` heuristic to correctly skip non-text files and symlinks during build-time patching and runtime target extraction.
+### Critical Learnings (YYYY-MM-DD):
+- Unhandled `PermissionError` (a subclass of `OSError`) caused crashes during path resolution when `iterdir()` was called on unreadable directories in `wrapper.py`. Added proper `try...except OSError` fallback.
+- Prevented a fatal crash (`sys.exit(1)`) triggered by missing `ghc-pkg` during recache by splitting binary resolution into a safe `_try_resolve_binary` method.
+- Replaced a stubbed verification string with proper `otool -l` execution checks inside `scripts/fix_macos_rpaths.sh`. Ensured to use `grep -E` (Extended Regular Expressions) for BSD `grep` compatibility on macOS when alternating values.
