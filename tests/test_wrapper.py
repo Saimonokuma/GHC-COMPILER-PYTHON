@@ -220,3 +220,41 @@ class TestDynamicGetattr:
 
         with pytest.raises(AttributeError, match="has no attribute 'invalid_attr'"):
             wrapper.__getattr__("invalid_attr")
+
+class TestOSErrorHandling:
+    """Tests for proper OSError handling during iterdir."""
+
+    def test_find_platform_lib_subdir_permission_error(self, tmp_path):
+        from ghc_compiler_python.wrapper import _find_platform_lib_subdir
+
+        # Create directory structure
+        ghc_lib = tmp_path / "lib" / "ghc-9.4.8" / "lib"
+        ghc_lib.mkdir(parents=True)
+
+        with patch("ghc_compiler_python.wrapper.sys.prefix", str(tmp_path)):
+            with patch("pathlib.Path.iterdir", side_effect=PermissionError("test permission error")):
+                # Should not raise exception
+                result = _find_platform_lib_subdir()
+                assert result == ""
+
+    def test_package_db_resource_permission_error(self, tmp_path):
+        from ghc_compiler_python.wrapper import PackageDBResource
+
+        pkg_db = tmp_path / "package.conf.d"
+        pkg_db.mkdir()
+
+        with patch("pathlib.Path.iterdir", side_effect=PermissionError("test permission error")):
+            # Should not raise exception
+            assert PackageDBResource.validate(pkg_db) is False
+            assert PackageDBResource.extract_targets(pkg_db) == []
+
+    def test_bin_wrappers_resource_permission_error(self, tmp_path):
+        from ghc_compiler_python.wrapper import BinWrappersResource
+
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+
+        with patch("pathlib.Path.iterdir", side_effect=PermissionError("test permission error")):
+            # Should not raise exception
+            assert BinWrappersResource.extract_targets(bin_dir) == []
+            assert BinWrappersResource.patch_build_time(bin_dir, "9.4.8", "@GHC_PREFIX@") == 0
