@@ -321,11 +321,18 @@ class PackageDBResource(BaseResource):
         for conf_file in path.glob("*.conf"):
             try:
                 original = conf_file.read_text(encoding="utf-8", errors="replace")
-                # 🧪 Alchemist: Consolidate redundant re.sub logic using groupings
-                content = re.sub(r"(dynamic-library-dirs:\s*|library-dirs:\s*)/[^\s]+", rf"\g<1>{placeholder}/lib/ghc-{version}", original)
-                content = re.sub(r"(include-dirs:\s*)/[^\s]+", rf"\g<1>{placeholder}/lib/ghc-{version}/include", content)
-                content = re.sub(r"/ghc-prefix/lib/ghc-" + re.escape(version), f"{placeholder}/lib/ghc-{version}", content)
-                content = re.sub(r"/ghc-prefix", placeholder, content)
+                # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
+                pattern = re.compile(
+                    r"(dynamic-library-dirs:\s*|library-dirs:\s*|include-dirs:\s*)/[^\s]+|/ghc-prefix/lib/ghc-" + re.escape(version) + r"|/ghc-prefix"
+                )
+
+                def repl(m: re.Match) -> str:
+                    g1 = m.group(1)
+                    if g1:
+                        return f"{g1}{placeholder}/lib/ghc-{version}{'/include' if 'include' in g1 else ''}"
+                    return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
+
+                content = pattern.sub(repl, original)
 
                 if content != original:
                     conf_file.write_text(content, encoding="utf-8")
@@ -379,18 +386,20 @@ class BinWrappersResource(BaseResource):
                 content = script.read_text(encoding="utf-8", errors="replace")
                 original = content
 
-                content = re.sub(r"/usr/local/lib/ghc-" + re.escape(version), f"{placeholder}/lib/ghc-{version}", content)
-                content = re.sub(r"/ghc-prefix", placeholder, content)
-
-                # Replace absolute staging paths
                 staging_dir = path.parent.parent if path.parent.name == f"ghc-{version}" else path.parent
                 abs_staging = staging_dir.absolute().as_posix()
-                if abs_staging in content:
-                    content = content.replace(abs_staging, placeholder)
-
                 abs_staging_win = str(staging_dir.absolute()).replace("/", "\\")
-                if abs_staging_win in content:
-                    content = content.replace(abs_staging_win, placeholder)
+
+                # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
+                pattern = re.compile(
+                    r"/usr/local/lib/ghc-" + re.escape(version) + r"|/ghc-prefix|" +
+                    re.escape(abs_staging) + r"|" + re.escape(abs_staging_win)
+                )
+
+                def repl(m: re.Match) -> str:
+                    return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
+
+                content = pattern.sub(repl, content)
 
                 if content != original:
                     script.write_text(content, encoding="utf-8")
