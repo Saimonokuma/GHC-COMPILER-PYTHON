@@ -98,7 +98,11 @@ def _find_platform_lib_subdir() -> str:
         return ""
 
     # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
-    return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    try:
+        return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    except OSError as e:
+        sys.stderr.write(f"WARNING: Failed to list directory {ghc_lib_dir}: {e}\n")
+        return ""
 
 
 def _sterilize_environment() -> dict:
@@ -299,11 +303,17 @@ class PackageDBResource(BaseResource):
 
     @classmethod
     def validate(cls, path: Path) -> bool:
-        return any(f.name.endswith(".conf") for f in path.iterdir())
+        try:
+            return any(f.name.endswith(".conf") for f in path.iterdir())
+        except OSError:
+            return False
 
     @classmethod
     def extract_targets(cls, path: Path) -> List[str]:
-        return [str(f) for f in path.iterdir() if f.name.endswith(".conf") and not f.is_symlink()]
+        try:
+            return [str(f) for f in path.iterdir() if f.name.endswith(".conf") and not f.is_symlink()]
+        except OSError:
+            return []
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
@@ -351,15 +361,24 @@ class BinWrappersResource(BaseResource):
 
     @classmethod
     def extract_targets(cls, path: Path) -> List[str]:
-        return [
-            str(f) for f in path.iterdir()
-            if f.is_file() and not f.is_symlink() and not f.name.endswith(".exe") and _is_text_file(f)
-        ]
+        try:
+            return [
+                str(f) for f in path.iterdir()
+                if f.is_file() and not f.is_symlink() and not f.name.endswith(".exe") and _is_text_file(f)
+            ]
+        except OSError:
+            return []
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched = 0
-        for script in path.iterdir():
+        try:
+            scripts = list(path.iterdir())
+        except OSError as e:
+            sys.stderr.write(f"WARNING: Failed to list directory {path}: {e}\n")
+            return 0
+
+        for script in scripts:
             if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
                 continue
             try:

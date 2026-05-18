@@ -8,3 +8,5 @@
 Deleted test script files that I added during my debugging phase.
 ### Critical Learnings (2024-05-15):
 - Discovered and fixed a critical bug in `ghc_compiler_python/wrapper.py` where binary executables without a `.exe` extension (like `ghc-pkg` on Unix) could be read, corrupted via text replacement, and rewritten. Introduced `_is_text_file` heuristic to correctly skip non-text files and symlinks during build-time patching and runtime target extraction.
+### Critical Learnings (2024-05-18):
+- Wrapped several `iterdir()` operations inside `ghc_compiler_python/wrapper.py` in `try...except OSError` blocks to ensure defensive programming. This prevents fatal crashes caused by `PermissionError` or `FileNotFoundError` during path validation and target extraction.
