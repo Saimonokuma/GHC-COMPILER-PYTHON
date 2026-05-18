@@ -101,3 +101,23 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+
+---
+entry_id: "CRUCIBLE-2026-05-18-005"
+schema_version: "2.0"
+timestamp: "2026-05-18T17:03:59Z"
+title: "Hardening Fixes: Unbounded resource leak, TOCTOU race conditions"
+---
+## 2026-05-18 - Hardening Fixes: Unbounded resource leak, TOCTOU race conditions
+
+**Learning:** `tempfile.mkdtemp()` creates directories that are leaked if the process calls `os.execve()` and is replaced. Additionally, non-atomic file writes (`write_bytes` or `open("wb")`) and `is_file()` checks create TOCTOU vulnerabilities and can corrupt configuration files or binaries on concurrent execution. `shutil.copymode()` is required when doing atomic file replacements to preserve executable flags.
+
+**Action:** Replaced `mkdtemp` fallback in `_sterilize_environment` with a deterministic, reusable path `Path(tempfile.gettempdir()) / f".ghc-compiler-python-home-uid"`. Replaced check-then-read with a direct read-and-catch. Added atomic write patterns (`tempfile.mkstemp` -> `shutil.copymode` -> `os.replace`) to safely update runtime paths and marker files in `_resolve_runtime_paths`.
+
+**Defect Pattern ID:** PATTERN-008, PATTERN-005
+
+**Related Entries:** []
+
+**Axes Affected:** II (Semantic), IV (Operational)
+
+**Level:** L2

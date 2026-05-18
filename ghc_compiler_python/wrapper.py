@@ -129,10 +129,14 @@ def _sterilize_environment() -> dict:
 
     # 🧪 Alchemist: Declarative fallback chain replaces nested try-except blocks.
     # Lazily evaluate Path.home() to prevent premature RuntimeError.
+    def _deterministic_fallback() -> Path:
+        uid_str = str(os.getuid()) if hasattr(os, "getuid") else "win"
+        return Path(tempfile.gettempdir()) / f".ghc-compiler-python-home-{uid_str}"
+
     safe_home = (
         _try_mkdir(Path(sys.prefix) / ".ghc-compiler-python-home") or
         _try_mkdir(_get_home_path()) or
-        Path(tempfile.mkdtemp(prefix="ghc-compiler-python-home-"))
+        _try_mkdir(_deterministic_fallback()) or _deterministic_fallback()
     )
 
     env["HOME"] = str(safe_home)
@@ -419,7 +423,7 @@ def _resolve_runtime_paths(env: dict) -> None:
     # If the marker file exists and contains the current prefix, we are already patched.
     marker_file = Path(sys.prefix) / "lib" / f".ghc_patched_{GHC_VERSION}.txt"
     try:
-        if marker_file.is_file() and marker_file.read_text(encoding="utf-8") == prefix_clean:
+        if marker_file.read_text(encoding="utf-8") == prefix_clean:
             return
     except OSError:
         pass
@@ -458,10 +462,17 @@ def _resolve_runtime_paths(env: dict) -> None:
                 # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
                 if b" " in prefix_clean_bytes and b"\0" not in content_to_write:
                     content_to_write = re.sub(rb'(?<!")(@GHC_PREFIX@[^\s"]+)', rb'"\1"', content_to_write)
-                with target_path.open("wb") as out:
-                    out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
-                if target.endswith(".conf"):
-                    patched_any_conf = True
+                fd, tmp_path_str = tempfile.mkstemp(dir=target_path.parent, prefix=target_path.name + ".tmp")
+                try:
+                    with open(fd, "wb") as out:
+                        out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
+                    shutil.copymode(target_path, tmp_path_str)
+                    os.replace(tmp_path_str, target_path)
+                    if target.endswith(".conf"):
+                        patched_any_conf = True
+                except Exception:
+                    Path(tmp_path_str).unlink(missing_ok=True)
+                    raise
         except OSError as e:
             sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
 
@@ -476,8 +487,17 @@ def _resolve_runtime_paths(env: dict) -> None:
     # ⚡ Bolt: Write marker file to indicate this prefix has been successfully patched
     try:
         marker_file.parent.mkdir(parents=True, exist_ok=True)
-        marker_file.write_text(prefix_clean, encoding="utf-8")
-    except OSError:
+        fd, tmp_marker_str = tempfile.mkstemp(dir=marker_file.parent, prefix=marker_file.name + ".tmp")
+        try:
+            with open(fd, "w", encoding="utf-8") as out:
+                out.write(prefix_clean)
+            if marker_file.exists():
+                shutil.copymode(marker_file, tmp_marker_str)
+            os.replace(tmp_marker_str, marker_file)
+        except Exception:
+            Path(tmp_marker_str).unlink(missing_ok=True)
+            raise
+    except Exception:
         pass
 
 

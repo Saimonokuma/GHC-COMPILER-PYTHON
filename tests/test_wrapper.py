@@ -1,6 +1,8 @@
 """Unit tests for ghc_compiler_python.wrapper module."""
 
 import os
+import tempfile
+from pathlib import Path
 import sys
 import pytest
 from unittest.mock import patch
@@ -220,3 +222,46 @@ class TestDynamicGetattr:
 
         with pytest.raises(AttributeError, match="has no attribute 'invalid_attr'"):
             wrapper.__getattr__("invalid_attr")
+
+class TestCrucibleFixes:
+    """Tests to verify Crucible fixes for unbounded resource leaks and TOCTOU vulnerabilities."""
+
+    @patch("ghc_compiler_python.wrapper.tempfile.gettempdir")
+    @patch("ghc_compiler_python.wrapper.Path.mkdir")
+    @patch("ghc_compiler_python.wrapper.os.getuid", create=True)
+    def test_sterilize_environment_deterministic_fallback(self, mock_getuid, mock_mkdir, mock_gettempdir):
+        from ghc_compiler_python.wrapper import _sterilize_environment
+
+        mock_getuid.return_value = 12345
+        mock_gettempdir.return_value = "/fake/tmp"
+
+        def mock_mkdir_side_effect(*args, **kwargs):
+            raise OSError("Permission denied")
+
+        mock_mkdir.side_effect = mock_mkdir_side_effect
+
+        with patch("ghc_compiler_python.wrapper.Path.home", side_effect=RuntimeError):
+            with patch("ghc_compiler_python.wrapper.sys.prefix", "/read_only_prefix"):
+                env = _sterilize_environment()
+                assert "12345" in env["HOME"] or "win" in env["HOME"]
+                assert "/fake/tmp" in env["HOME"]
+
+    @patch("ghc_compiler_python.wrapper.os.replace")
+    def test_resolve_runtime_paths_atomic(self, mock_replace, tmp_path):
+        from ghc_compiler_python.wrapper import _resolve_runtime_paths, GHC_VERSION
+
+        target = tmp_path / "test_binary"
+        target.write_bytes(b"hello @GHC_PREFIX@ world")
+
+        class DummyResource:
+            pass
+
+        with patch("sys.prefix", str(tmp_path)):
+            with patch("ghc_compiler_python.wrapper.BaseResource.registry", [DummyResource]):
+                with patch("ghc_compiler_python.wrapper.PackageDBResource.locate", return_value=[]):
+                    with patch.object(DummyResource, "extract_targets", return_value=[str(target)], create=True):
+                        with patch.object(DummyResource, "locate", return_value=[tmp_path], create=True):
+                            _resolve_runtime_paths({})
+
+                            # Should be called twice: once for the target, once for the marker
+                            assert mock_replace.call_count == 2
