@@ -37,3 +37,16 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2026-05-18 - Additional Python Wrapper Optimizations 2
+**Transformation:**
+- In `_try_resolve_binary`: Rewrote fallback using `next(..., None) or shutil.which(binary_name)` natively to avoid unconditional fallback evaluation.
+- In `BaseResource.locate`: Refactored `os.walk` to eliminate duplicate variable creation (`p = Path(...)`) and `cls.validate(p)` branches using a simple walrus operator condition `if (cls.name in (dirs if cls.is_dir else files)) and cls.validate(p := Path(root) / cls.name): found.append(p)`.
+- In `PackageDBResource.validate`: Replaced the generator `any(f.name.endswith(".conf") for f in path.iterdir())` with a native `path.glob("*.conf")` and a `next(..., None)` early return.
+- In `PackageDBResource.extract_targets`: Replaced list comprehension `[str(f) for f in path.iterdir() if f.name.endswith(".conf") and not f.is_symlink()]` with `[str(f) for f in path.glob("*.conf") if not f.is_symlink()]`.
+- In `_resolve_runtime_paths`: Eliminated the redundant `set()` cast loop by casting `targets` directly inside a set comprehension instead of an intermediate list comprehension.
+- In `_resolve_runtime_paths`: Added a `package_dbs = PackageDBResource.locate()` assignment to cache the resource before evaluating the `patched_any_conf` logical `or` condition, preventing duplicate filesystem scanning.
+
+**Result:** Code size reduced slightly, execution speed significantly improved by eliminating duplicate os loops, unnecessary function call overhead, and redundant IO operations, and tests pass successfully.
+
+**Lesson:** Leveraging Python's builtin `path.glob` combined with `next()`, walrus operators in `os.walk`, and caching results like `PackageDBResource.locate()` are powerful mechanisms to reduce algorithmic overhead in deep filesystem traversal without sacrificing any functionality. Set comprehensions also flatten multiple loops effectively in a single pass.
