@@ -24,3 +24,9 @@ HelloWorld.exe
 HelloWorld.hi
 HelloWorld.o
 ghc-bindist_raw
+
+test_prefix/
+bin/
+test_perf*.py
+dummy_*.py
+bench.py

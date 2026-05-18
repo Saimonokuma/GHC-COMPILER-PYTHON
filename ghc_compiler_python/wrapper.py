@@ -394,6 +394,19 @@ def _resolve_runtime_paths(env: dict) -> None:
     """
     prefix_clean = sys.prefix.replace("\\", "/")
 
+    # ⚡ Bolt: Fast path to skip expensive path resolution if prefix hasn't changed
+    marker_file = Path(sys.prefix) / ".ghc-compiler-python-paths-resolved"
+    try:
+        if marker_file.exists():
+            with marker_file.open("r", encoding="utf-8") as f:
+                if f.read().strip() == prefix_clean:
+                    pkg_dbs = PackageDBResource.locate()
+                    if any(not (pkg_db / "package.cache").exists() for pkg_db in pkg_dbs):
+                        [_ghc_pkg_recache(str(pkg_db), env) for pkg_db in pkg_dbs]
+                    return
+    except OSError:
+        pass
+
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
     # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
     targets = [
@@ -438,6 +451,13 @@ def _resolve_runtime_paths(env: dict) -> None:
         for pkg_db in PackageDBResource.locate()
     ):
         [_ghc_pkg_recache(str(pkg_db), env) for pkg_db in PackageDBResource.locate()]
+
+    # ⚡ Bolt: Save the marker file after successful resolution
+    try:
+        with marker_file.open("w", encoding="utf-8") as f:
+            f.write(prefix_clean)
+    except OSError:
+        pass
 
 
 def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
