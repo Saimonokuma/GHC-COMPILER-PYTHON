@@ -59,3 +59,45 @@ title: "No Defects Found"
 **Axes Affected:** None
 
 **Level:** None
+---
+entry_id: "CRUCIBLE-2026-05-17-004"
+schema_version: "2.0"
+timestamp: "2026-05-17T12:00:00Z"
+title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect comprehension"
+---
+## 2026-05-17 - Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect comprehension
+
+**Learning:** Replaced check-then-act with  to fix a TOCTOU race condition (PATTERN-008). Added  to  to enforce error handling (PATTERN-007). Eliminated a side-effecting list comprehension.
+
+**Action:** Addressed the vulnerabilities in  in ,  and .
+
+**Defect Pattern ID:** PATTERN-008, PATTERN-007
+
+**Related Entries:** []
+
+**Axes Affected:** II (Semantic), III (Structural), IV (Operational)
+
+**Level:** L2, L3
+
+---
+---
+entry_id: "CRUCIBLE-2026-05-17-004"
+schema_version: "2.0"
+timestamp: "2026-05-17T12:00:00Z"
+title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect comprehension"
+---
+## 2026-05-17 - Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect comprehension
+
+**Learning:** Replaced check-then-act with `unlink(missing_ok=True)` to fix a TOCTOU race condition (PATTERN-008). Added `check=True` to `subprocess.run` to enforce error handling (PATTERN-007). Eliminated a side-effecting list comprehension.
+
+**Action:** Addressed the vulnerabilities in `wrapper.py` in `PackageDBResource.patch_build_time`, `_resolve_runtime_paths` and `_ghc_pkg_recache`.
+
+**Defect Pattern ID:** PATTERN-008, PATTERN-007
+
+**Related Entries:** []
+
+**Axes Affected:** II (Semantic), III (Structural), IV (Operational)
+
+**Level:** L2, L3
+
+---
