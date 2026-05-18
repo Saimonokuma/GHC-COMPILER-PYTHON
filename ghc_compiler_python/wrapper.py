@@ -64,8 +64,8 @@ def _is_text_file(filepath: Path) -> bool:
         return False
 
 
-def _resolve_binary(name: str) -> str:
-    """Resolve the absolute path to a bundled native binary."""
+def _try_resolve_binary(name: str) -> Optional[str]:
+    """Resolve the absolute path to a bundled native binary without dying."""
     binary_name = f"{name}.exe" if sys.platform == "win32" else name
     bin_dir = "Scripts" if sys.platform == "win32" else "bin"
 
@@ -77,7 +77,11 @@ def _resolve_binary(name: str) -> str:
     return next(
         (str(p) for p in candidates if p.exists()),
         shutil.which(binary_name)
-    ) or _die(f"FATAL ERROR: Bundled compiler binary '{binary_name}' could not be located.")
+    )
+
+def _resolve_binary(name: str) -> str:
+    """Resolve the absolute path to a bundled native binary."""
+    return _try_resolve_binary(name) or _die(f"FATAL ERROR: Bundled compiler binary '{name}' could not be located.")
 
 
 def _validate_c_linker() -> None:
@@ -299,11 +303,17 @@ class PackageDBResource(BaseResource):
 
     @classmethod
     def validate(cls, path: Path) -> bool:
-        return any(f.name.endswith(".conf") for f in path.iterdir())
+        try:
+            return any(f.name.endswith(".conf") for f in path.iterdir())
+        except OSError:
+            return False
 
     @classmethod
     def extract_targets(cls, path: Path) -> List[str]:
-        return [str(f) for f in path.iterdir() if f.name.endswith(".conf") and not f.is_symlink()]
+        try:
+            return [str(f) for f in path.iterdir() if f.name.endswith(".conf") and not f.is_symlink()]
+        except OSError:
+            return []
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
@@ -351,10 +361,13 @@ class BinWrappersResource(BaseResource):
 
     @classmethod
     def extract_targets(cls, path: Path) -> List[str]:
-        return [
-            str(f) for f in path.iterdir()
-            if f.is_file() and not f.is_symlink() and not f.name.endswith(".exe") and _is_text_file(f)
-        ]
+        try:
+            return [
+                str(f) for f in path.iterdir()
+                if f.is_file() and not f.is_symlink() and not f.name.endswith(".exe") and _is_text_file(f)
+            ]
+        except OSError:
+            return []
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
@@ -417,9 +430,12 @@ def _resolve_runtime_paths(env: dict) -> None:
                         if m.find(b"@GHC_PREFIX@") != -1:
                             f.seek(0)
                             content_to_write = f.read()
-                except ValueError:
-                    # mmap throws ValueError for empty files
-                    pass
+                except (ValueError, OSError):
+                    # mmap throws ValueError for empty files, OSError for unmappable ones
+                    f.seek(0)
+                    content_to_write = f.read()
+                    if b"@GHC_PREFIX@" not in content_to_write:
+                        content_to_write = None
 
             if content_to_write is not None:
                 # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
@@ -447,7 +463,7 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
             pkg_db_dir: Path to the package.conf.d directory.
             env: The sterilized environment dict with proper LD_LIBRARY_PATH set.
     """
-    ghc_pkg = _resolve_binary("ghc-pkg")
+    ghc_pkg = _try_resolve_binary("ghc-pkg")
     if not ghc_pkg:
         return  # Can't recache without ghc-pkg
 
