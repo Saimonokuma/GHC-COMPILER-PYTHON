@@ -74,10 +74,7 @@ def _try_resolve_binary(name: str) -> Optional[str]:
         Path(__file__).resolve().parent.parent / bin_dir / binary_name
     ]
 
-    return next(
-        (str(p) for p in candidates if p.exists()),
-        shutil.which(binary_name)
-    )
+    return next((str(p) for p in candidates if p.exists()), None) or shutil.which(binary_name)
 
 def _resolve_binary(name: str) -> str:
     """Resolve the absolute path to a bundled native binary."""
@@ -213,16 +210,10 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                # 🧪 Alchemist: Walrus operator (:=) consolidates path assignment and validation check.
+                if (cls.name in (dirs if cls.is_dir else files)) and cls.validate(p := Path(root) / cls.name):
+                    found.append(p)
+
         return found
 
     @classmethod
@@ -304,14 +295,14 @@ class PackageDBResource(BaseResource):
     @classmethod
     def validate(cls, path: Path) -> bool:
         try:
-            return any(f.name.endswith(".conf") for f in path.iterdir())
+            return next(path.glob("*.conf"), None) is not None
         except OSError:
             return False
 
     @classmethod
     def extract_targets(cls, path: Path) -> List[str]:
         try:
-            return [str(f) for f in path.iterdir() if f.name.endswith(".conf") and not f.is_symlink()]
+            return [str(f) for f in path.glob("*.conf") if not f.is_symlink()]
         except OSError:
             return []
 
@@ -425,17 +416,17 @@ def _resolve_runtime_paths(env: dict) -> None:
         pass
 
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
-    # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
-    targets = [
+    # 🧪 Alchemist: Set comprehension directly extracts and deduplicates in a single O(N) pass
+    targets = {
         target for resource_cls in BaseResource.registry
         for resource_path in resource_cls.locate()
         for target in resource_cls.extract_targets(resource_path)
-    ]
+    }
 
     # Replace @GHC_PREFIX@ in all target files
     prefix_clean_bytes = prefix_clean.encode("utf-8")
     patched_any_conf = False
-    for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
+    for target in targets:
         target_path = Path(target)
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
@@ -465,12 +456,10 @@ def _resolve_runtime_paths(env: dict) -> None:
         except OSError as e:
             sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
 
-    # 🧪 Alchemist: any() replaces manual flag variables and loops for succinct boolean reduction
-    if patched_any_conf or any(
-        not (pkg_db / "package.cache").exists()
-        for pkg_db in PackageDBResource.locate()
-    ):
-        for pkg_db in PackageDBResource.locate():
+    # 🧪 Alchemist: Cache the locate() result to eliminate redundant filesystem traversal
+    package_dbs = PackageDBResource.locate()
+    if patched_any_conf or any(not (pkg_db / "package.cache").exists() for pkg_db in package_dbs):
+        for pkg_db in package_dbs:
             _ghc_pkg_recache(str(pkg_db), env)
 
     # ⚡ Bolt: Write marker file to indicate this prefix has been successfully patched
