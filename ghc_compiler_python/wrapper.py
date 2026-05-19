@@ -21,6 +21,7 @@ import tempfile
 import functools
 import mmap
 import re
+import concurrent.futures
 from pathlib import Path
 from typing import Any, List, NoReturn, Optional, Type
 
@@ -58,8 +59,7 @@ def _is_text_file(filepath: Path) -> bool:
     """Check if a file is a text file by looking for null bytes in the first 1024 bytes."""
     try:
         with filepath.open("rb") as f:
-            chunk = f.read(1024)
-            return b"\0" not in chunk
+            return b"\0" not in f.read(1024)
     except OSError:
         return False
 
@@ -213,16 +213,10 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                # 🧪 Alchemist: Combine redundant branching and leverage walrus operator
+                if cls.name in (dirs if cls.is_dir else files) and cls.validate(p := Path(root) / cls.name):
+                    found.append(p)
+
         return found
 
     @classmethod
@@ -280,8 +274,8 @@ class SettingsResource(BaseResource):
                     return placeholder
                 return f"{placeholder}/lib/ghc-{version}"
 
-            new_content = pattern.sub(repl, content)
-            if new_content != content:
+            # 🧪 Alchemist: Collapse variable assignments and != original checks into single line walrus operator expressions
+            if (new_content := pattern.sub(repl, content)) != content:
                 path.write_text(new_content, encoding="utf-8")
                 return 1
         except OSError as e:
@@ -332,9 +326,8 @@ class PackageDBResource(BaseResource):
                         return f"{g1}{placeholder}/lib/ghc-{version}{'/include' if 'include' in g1 else ''}"
                     return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
 
-                content = pattern.sub(repl, original)
-
-                if content != original:
+                # 🧪 Alchemist: Collapse variable assignments and != original checks into single line walrus operator expressions
+                if (content := pattern.sub(repl, original)) != original:
                     conf_file.write_text(content, encoding="utf-8")
                     patched_count += 1
             except OSError as e:
@@ -382,8 +375,7 @@ class BinWrappersResource(BaseResource):
             if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
                 continue
             try:
-                content = script.read_text(encoding="utf-8", errors="replace")
-                original = content
+                original = script.read_text(encoding="utf-8", errors="replace")
 
                 staging_dir = path.parent.parent if path.parent.name == f"ghc-{version}" else path.parent
                 abs_staging = staging_dir.absolute().as_posix()
@@ -398,9 +390,8 @@ class BinWrappersResource(BaseResource):
                 def repl(m: re.Match) -> str:
                     return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
 
-                content = pattern.sub(repl, content)
-
-                if content != original:
+                # 🧪 Alchemist: Collapse variable assignments and != original checks into single line walrus operator expressions
+                if (content := pattern.sub(repl, original)) != original:
                     script.write_text(content, encoding="utf-8")
                     patched += 1
             except OSError as e:
@@ -434,12 +425,11 @@ def _resolve_runtime_paths(env: dict) -> None:
 
     # Replace @GHC_PREFIX@ in all target files
     prefix_clean_bytes = prefix_clean.encode("utf-8")
-    patched_any_conf = False
-    for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
+
+    # 🧪 Alchemist: Parallelize the heavy I/O operations of reading, mmap searching, and re substitutions
+    def _patch_target(target: str) -> bool:
         target_path = Path(target)
         try:
-            # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
-            # the entire binary into memory. Drastically reduces I/O latency for large binaries.
             content_to_write = None
             with target_path.open("rb") as f:
                 try:
@@ -448,22 +438,23 @@ def _resolve_runtime_paths(env: dict) -> None:
                             f.seek(0)
                             content_to_write = f.read()
                 except (ValueError, OSError):
-                    # mmap throws ValueError for empty files, OSError for unmappable ones
                     f.seek(0)
                     content_to_write = f.read()
                     if b"@GHC_PREFIX@" not in content_to_write:
                         content_to_write = None
 
             if content_to_write is not None:
-                # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
                 if b" " in prefix_clean_bytes and b"\0" not in content_to_write:
                     content_to_write = re.sub(rb'(?<!")(@GHC_PREFIX@[^\s"]+)', rb'"\1"', content_to_write)
                 with target_path.open("wb") as out:
                     out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
-                if target.endswith(".conf"):
-                    patched_any_conf = True
+                return target.endswith(".conf")
         except OSError as e:
             sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
+        return False
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        patched_any_conf = any(list(executor.map(_patch_target, set(targets))))
 
     # 🧪 Alchemist: any() replaces manual flag variables and loops for succinct boolean reduction
     if patched_any_conf or any(
