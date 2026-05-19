@@ -49,6 +49,35 @@ HASKELL_POLLUTION_VARS = frozenset(
 _HOME_ORIGINAL: Optional[str] = None
 
 
+
+def _is_dir_safe(path: Path) -> bool:
+    try:
+        return path.is_dir()
+    except OSError:
+        return False
+
+def _is_file_safe(path: Path) -> bool:
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+def _exists_safe(path: Path) -> bool:
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
+def _walk_safe(top):
+    yield from os.walk(top, onerror=lambda e: None)
+
+def _iterdir_safe(path: Path):
+    try:
+        yield from path.iterdir()
+    except OSError:
+        pass
+
 def _die(msg: str) -> NoReturn:
     sys.stderr.write(f"{msg}\n")
     sys.exit(1)
@@ -75,7 +104,7 @@ def _try_resolve_binary(name: str) -> Optional[str]:
     ]
 
     return next(
-        (str(p) for p in candidates if p.exists()),
+        (str(p) for p in candidates if _exists_safe(p)),
         shutil.which(binary_name)
     )
 
@@ -98,11 +127,11 @@ def _find_platform_lib_subdir() -> str:
     On Windows: Does not exist (DLLs are in mingw/bin/)
     """
     ghc_lib_dir = Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib"
-    if not ghc_lib_dir.is_dir():
+    if not _is_dir_safe(ghc_lib_dir):
         return ""
 
     # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
-    return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    return next((str(c) for c in _iterdir_safe(ghc_lib_dir) if _is_dir_safe(c) and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
 
 
 def _sterilize_environment() -> dict:
@@ -162,7 +191,7 @@ def _sterilize_environment() -> dict:
             candidates, vars_to_update = [], []
 
     if lib_dirs_str := os.pathsep.join(
-        str(p) for p in candidates if p.is_dir() and str(p) != "."
+        str(p) for p in candidates if _is_dir_safe(p) and str(p) != "."
     ):
         for var in vars_to_update:
             env[var] = (
@@ -195,16 +224,16 @@ class BaseResource:
         # Check explicit candidates first
         for c in candidates:
             # 🧪 Alchemist: Ternary conditional combines file and directory checks
-            if (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c):
+            if (_is_dir_safe(c) if cls.is_dir else _is_file_safe(c)) and cls.validate(c):
                 return [c]
 
         # Dynamic fallback
         found = []
-        if base_path.exists():
+        if _exists_safe(base_path):
             lib_dir = base_path / "lib"
-            search_dir = lib_dir if lib_dir.exists() else base_path
+            search_dir = lib_dir if _exists_safe(lib_dir) else base_path
 
-            for root, dirs, files in os.walk(search_dir):
+            for root, dirs, files in _walk_safe(search_dir):
                 # ⚡ Bolt: Prune os.walk to prevent recursion into massive Python directories.
                 # Modifying `dirs` in place avoids walking into these branches entirely.
                 dirs[:] = [
@@ -304,14 +333,14 @@ class PackageDBResource(BaseResource):
     @classmethod
     def validate(cls, path: Path) -> bool:
         try:
-            return any(f.name.endswith(".conf") for f in path.iterdir())
+            return any(f.name.endswith(".conf") for f in _iterdir_safe(path))
         except OSError:
             return False
 
     @classmethod
     def extract_targets(cls, path: Path) -> List[str]:
         try:
-            return [str(f) for f in path.iterdir() if f.name.endswith(".conf") and not f.is_symlink()]
+            return [str(f) for f in _iterdir_safe(path) if f.name.endswith(".conf") and not f.is_symlink()]
         except OSError:
             return []
 
@@ -369,8 +398,8 @@ class BinWrappersResource(BaseResource):
     def extract_targets(cls, path: Path) -> List[str]:
         try:
             return [
-                str(f) for f in path.iterdir()
-                if f.is_file() and not f.is_symlink() and not f.name.endswith(".exe") and _is_text_file(f)
+                str(f) for f in _iterdir_safe(path)
+                if _is_file_safe(f) and not f.is_symlink() and not f.name.endswith(".exe") and _is_text_file(f)
             ]
         except OSError:
             return []
@@ -378,8 +407,8 @@ class BinWrappersResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched = 0
-        for script in path.iterdir():
-            if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
+        for script in _iterdir_safe(path):
+            if not _is_file_safe(script) or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
                 continue
             try:
                 content = script.read_text(encoding="utf-8", errors="replace")
@@ -419,7 +448,7 @@ def _resolve_runtime_paths(env: dict) -> None:
     # If the marker file exists and contains the current prefix, we are already patched.
     marker_file = Path(sys.prefix) / "lib" / f".ghc_patched_{GHC_VERSION}.txt"
     try:
-        if marker_file.is_file() and marker_file.read_text(encoding="utf-8") == prefix_clean:
+        if _is_file_safe(marker_file) and marker_file.read_text(encoding="utf-8") == prefix_clean:
             return
     except OSError:
         pass
@@ -467,7 +496,7 @@ def _resolve_runtime_paths(env: dict) -> None:
 
     # 🧪 Alchemist: any() replaces manual flag variables and loops for succinct boolean reduction
     if patched_any_conf or any(
-        not (pkg_db / "package.cache").exists()
+        not _exists_safe(pkg_db / "package.cache")
         for pkg_db in PackageDBResource.locate()
     ):
         for pkg_db in PackageDBResource.locate():
