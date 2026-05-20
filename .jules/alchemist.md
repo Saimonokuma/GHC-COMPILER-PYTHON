@@ -37,3 +37,11 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2025-05-20 - Walrus operator in `BaseResource.locate`
+**Transformation:**
+- Consolidated the verbose `if cls.is_dir:` block that duplicated file/directory validation logic in `ghc_compiler_python/wrapper.py`'s `BaseResource.locate` by using an inline ternary operator and the walrus operator (`:=`).
+
+**Result:** Code size reduced, removing duplicated append and path instantiation logic. Unit tests pass successfully.
+
+**Lesson:** The walrus operator (`:=`) inside conditional branches is a great tool for combining the instantiation of objects with their immediate validation. Combining it with a ternary operation (`(dirs if cls.is_dir else files)`) eliminates redundant control flow structures.
