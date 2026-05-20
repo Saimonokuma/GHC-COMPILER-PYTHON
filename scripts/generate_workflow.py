@@ -193,7 +193,7 @@ jobs:"""
         lines.append(f"  {job_name}:")
         lines.append(f"    name: Build on {pdata['os']}")
         lines.append(f"    runs-on: {pdata['os']}")
-        lines.append(f"    steps:")
+        lines.append("    steps:")
 
         steps = generate_job(pk, pdata)
         for step in steps:
