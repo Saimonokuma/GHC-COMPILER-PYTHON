@@ -1,0 +1,9 @@
+Fix Syntactic Defects (L1) in `wrapper.py` that broke Python 3.8 compatibility. The `requires-python = ">=3.8"` declaration conflicts with `match sys.platform` (Python 3.10) and dictionary merge operator `|` (Python 3.9). These were replaced with `if/elif` and `dict.copy()` assignment. Also applied `ruff check --fix` for cleanups across the repo.
+
+| Axis | Status | Finding |
+|------|--------|---------|
+| I · Syntactic | FAIL -> PASS | Python 3.10 and 3.9 syntax removed for 3.8 compatibility |
+| II · Semantic | WARN -> PASS | Unused imports removed via Ruff |
+| III · Structural | PASS | No changes |
+| IV · Operational | PASS | No changes |
+| V · Temporal | PASS | No changes |

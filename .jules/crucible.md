@@ -101,3 +101,24 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+---
+entry_id: "CRUCIBLE-2026-05-20-005"
+schema_version: "2.0"
+timestamp: "2026-05-20T16:27:28Z"
+title: "Fix Python Syntax Defect: Python 3.10 and 3.9 syntax used in Python 3.8 environment"
+---
+## 2026-05-20 - Fix Python Syntax Defect: Python 3.10 and 3.9 syntax used in Python 3.8 environment
+
+**Learning:** Alchemist agent introduced Python 3.10 (`match sys.platform:`) and Python 3.9 (`|` dictionary merge operator) syntax into `ghc_compiler_python/wrapper.py`. However, `pyproject.toml` declares `requires-python = ">=3.8"`. This mismatch caused syntax parsing and import failures on Python 3.8 environments. I replaced `match/case` with an `if/elif/else` chain and the `|` operator with dictionary copy/assignment to restore backward compatibility to the declared minimum version. Also ran Ruff formatting.
+
+**Action:** Replaced unsupported syntax in `ghc_compiler_python/wrapper.py` with Python 3.8 compatible equivalents.
+
+**Defect Pattern ID:** None
+
+**Related Entries:** []
+
+**Axes Affected:** I (Syntactic)
+
+**Level:** L1
+
+---
