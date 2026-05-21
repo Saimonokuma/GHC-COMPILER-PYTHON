@@ -37,3 +37,14 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2025-05-21 - Additional Python Wrapper Optimizations
+**Transformation:**
+- Replaced the verbose list appends, loops, and variable declarations in `CustomMetadataHook.update` in `hatch_build.py` with a compact `core_tools` set initialization and `metadata["scripts"]` dictionary merge.
+- Condensed the redundant `if cls.is_dir:` and `else:` conditional branches using a ternary operator: `if cls.name in (dirs if cls.is_dir else files):` in `BaseResource.locate`.
+- Optimized `PackageDBResource.extract_targets` in `wrapper.py` using generator-based globbing, replacing the slower `[str(f) for f in path.iterdir() if f.name.endswith(".conf")]` with the native, more concise `path.glob("*.conf")`.
+- Condensed target deduplication in `_resolve_runtime_paths` in `wrapper.py` using a set comprehension instead of a list comprehension followed by `set()`.
+
+**Result:** Code size remains compact, readability improved, and execution speed nominally improved by eliminating redundant passes and unnecessary function call overhead. All tests pass.
+
+**Lesson:** Python 3.9+ features such as dictionary merge (`|`) and set comprehensions are excellent for reducing boilerplate code. Generator-based globbing (`path.glob`) is faster and cleaner than manual filtering over `path.iterdir()`. Ternary operators can effectively collapse redundant conditional branches when logic is largely shared.

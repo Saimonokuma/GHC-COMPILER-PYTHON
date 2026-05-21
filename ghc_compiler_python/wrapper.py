@@ -213,16 +213,11 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                # 🧪 Alchemist: Ternary operator collapses redundant branch blocks
+                if cls.name in (dirs if cls.is_dir else files):
+                    p = Path(root) / cls.name
+                    if cls.validate(p):
+                        found.append(p)
         return found
 
     @classmethod
@@ -311,7 +306,8 @@ class PackageDBResource(BaseResource):
     @classmethod
     def extract_targets(cls, path: Path) -> List[str]:
         try:
-            return [str(f) for f in path.iterdir() if f.name.endswith(".conf") and not f.is_symlink()]
+            # 🧪 Alchemist: Native globbing generator expressions are faster than iterdir + suffix check
+            return [str(f) for f in path.glob("*.conf") if not f.is_symlink()]
         except OSError:
             return []
 
@@ -425,17 +421,17 @@ def _resolve_runtime_paths(env: dict) -> None:
         pass
 
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
-    # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
-    targets = [
+    # 🧪 Alchemist: Set comprehension condenses extraction and deduplication directly
+    targets = {
         target for resource_cls in BaseResource.registry
         for resource_path in resource_cls.locate()
         for target in resource_cls.extract_targets(resource_path)
-    ]
+    }
 
     # Replace @GHC_PREFIX@ in all target files
     prefix_clean_bytes = prefix_clean.encode("utf-8")
     patched_any_conf = False
-    for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
+    for target in targets:
         target_path = Path(target)
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
