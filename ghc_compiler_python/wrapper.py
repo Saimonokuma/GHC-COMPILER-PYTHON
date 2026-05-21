@@ -101,8 +101,11 @@ def _find_platform_lib_subdir() -> str:
     if not ghc_lib_dir.is_dir():
         return ""
 
-    # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
-    return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    try:
+        # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
+        return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    except OSError:
+        return ""
 
 
 def _sterilize_environment() -> dict:
@@ -378,7 +381,13 @@ class BinWrappersResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched = 0
-        for script in path.iterdir():
+        try:
+            # 🧪 Alchemist: list comprehension ensures generator is consumed immediately
+            scripts = list(path.iterdir())
+        except OSError:
+            return 0
+
+        for script in scripts:
             if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
                 continue
             try:
