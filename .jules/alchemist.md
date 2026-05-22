@@ -37,3 +37,14 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2026-05-22 - Additional Python Wrapper Optimizations
+**Transformation:**
+- Used the walrus operator (`:=`) in `BaseResource.locate` to combine `cls.validate` assignment and check in a single step along with a ternary for `dirs` vs `files` filtering.
+- Replaced redundant variables and multi-line assignments with concise inline string formatting for updating `PATH` inside `_sterilize_environment`.
+- Replaced multi-line intermediate assignments with the walrus operator (`:=`) for regex sub matching checks across `SettingsResource`, `PackageDBResource`, and `BinWrappersResource` `.patch_build_time` methods.
+- Simplified `_is_text_file` by returning the check on `f.read(1024)` directly.
+
+**Result:** Code size reduced, removing intermediate variables and manual if/else checks, while all logic maintains exact equivalency. Tests fully pass.
+
+**Lesson:** In many situations, Python's walrus operator (`:=`) provides cleaner handling of truthy/existence checks where the assignment is otherwise only needed strictly within the scope of the conditional block, saving visual overhead.
