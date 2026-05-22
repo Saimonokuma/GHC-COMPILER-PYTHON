@@ -21,6 +21,7 @@ import tempfile
 import functools
 import mmap
 import re
+import uuid
 from pathlib import Path
 from typing import Any, List, NoReturn, Optional, Type
 
@@ -458,8 +459,22 @@ def _resolve_runtime_paths(env: dict) -> None:
                 # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
                 if b" " in prefix_clean_bytes and b"\0" not in content_to_write:
                     content_to_write = re.sub(rb'(?<!")(@GHC_PREFIX@[^\s"]+)', rb'"\1"', content_to_write)
-                with target_path.open("wb") as out:
-                    out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
+
+                # 🔨 Forge: Write to a unique temporary file and atomically replace to avoid race conditions
+                tmp_target = target_path.with_name(f"{target_path.name}.{uuid.uuid4().hex}.tmp")
+                try:
+                    with tmp_target.open("wb") as out:
+                        out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
+                    try:
+                        shutil.copymode(target_path, tmp_target)
+                    except FileNotFoundError:
+                        pass
+                    os.replace(tmp_target, target_path)
+                finally:
+                    # Clean up the temporary file if atomic replacement failed
+                    if tmp_target.exists():
+                        tmp_target.unlink(missing_ok=True)
+
                 if target.endswith(".conf"):
                     patched_any_conf = True
         except OSError as e:
@@ -476,7 +491,14 @@ def _resolve_runtime_paths(env: dict) -> None:
     # ⚡ Bolt: Write marker file to indicate this prefix has been successfully patched
     try:
         marker_file.parent.mkdir(parents=True, exist_ok=True)
-        marker_file.write_text(prefix_clean, encoding="utf-8")
+        # 🔨 Forge: Write to a unique temporary file and atomically replace to avoid race conditions
+        tmp_marker = marker_file.with_name(f"{marker_file.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            tmp_marker.write_text(prefix_clean, encoding="utf-8")
+            os.replace(tmp_marker, marker_file)
+        finally:
+            if tmp_marker.exists():
+                tmp_marker.unlink(missing_ok=True)
     except OSError:
         pass
 
