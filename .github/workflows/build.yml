@@ -65,7 +65,7 @@ jobs:
         shell: bash
         run: python scripts/patch_ghc_paths.py
       - name: Build PEP 427 Python Wheel
-        run: uvx build --wheel
+        run: uv build --wheel
       - name: Vendor Dynamic Libraries (Linux)
         shell: bash
         run: |
@@ -161,7 +161,7 @@ jobs:
         shell: bash
         run: bash scripts/fix_macos_rpaths.sh
       - name: Build PEP 427 Python Wheel
-        run: uvx build --wheel
+        run: uv build --wheel
       - name: Vendor Dynamic Libraries (macOS)
         shell: bash
         run: |
@@ -245,7 +245,7 @@ jobs:
         shell: bash
         run: python scripts/patch_ghc_paths.py
       - name: Build PEP 427 Python Wheel
-        run: uvx build --wheel
+        run: uv build --wheel
       - name: End-to-End Compilation Validation
         shell: bash
         run: |

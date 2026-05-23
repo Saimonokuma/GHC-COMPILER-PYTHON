@@ -111,7 +111,7 @@ fi""")
     if platform_key == "macos":
         add_step(name="Fix macOS Dynamic Library Paths", shell="bash", run="bash scripts/fix_macos_rpaths.sh")
 
-    add_step(name="Build PEP 427 Python Wheel", run="uvx build --wheel")
+    add_step(name="Build PEP 427 Python Wheel", run="uv build --wheel")
 
     if platform_key == "linux":
         add_step(name="Vendor Dynamic Libraries (Linux)", shell="bash", run="""# Find the exact directory where the nested .so files are located inside ghc-bindist/lib/
