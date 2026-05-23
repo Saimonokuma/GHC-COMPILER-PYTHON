@@ -130,6 +130,16 @@ class TestExceptionHandling:
                     _execute_tool("ghc")
                 assert exc.value.code == 1
 
+class TestPlatformLibSubdir:
+    """Tests for _find_platform_lib_subdir."""
+
+    @patch("ghc_compiler_python.wrapper.Path.is_dir", return_value=True)
+    @patch("ghc_compiler_python.wrapper.Path.iterdir", side_effect=PermissionError("Permission denied"))
+    def test_handles_permission_error(self, mock_iterdir, mock_is_dir):
+        from ghc_compiler_python.wrapper import _find_platform_lib_subdir
+        assert _find_platform_lib_subdir() == ""
+
+
 class TestBinWrappersResource:
     """Tests for BinWrappersResource binary filtering."""
 
@@ -181,6 +191,13 @@ class TestBinWrappersResource:
 
         # Binary should remain untouched
         assert binary.read_bytes() == binary_content
+
+    @patch("pathlib.Path.iterdir", side_effect=PermissionError("Permission denied"))
+    def test_patch_build_time_handles_permission_error(self, mock_iterdir):
+        from ghc_compiler_python.wrapper import BinWrappersResource
+        from pathlib import Path
+        patched_count = BinWrappersResource.patch_build_time(Path("/fake"), "9.4.8", "@GHC_PREFIX@")
+        assert patched_count == 0
 
 
 class TestDynamicGetattr:

@@ -12,3 +12,5 @@ Deleted test script files that I added during my debugging phase.
 - Unhandled `PermissionError` (a subclass of `OSError`) caused crashes during path resolution when `iterdir()` was called on unreadable directories in `wrapper.py`. Added proper `try...except OSError` fallback.
 - Prevented a fatal crash (`sys.exit(1)`) triggered by missing `ghc-pkg` during recache by splitting binary resolution into a safe `_try_resolve_binary` method.
 - Replaced a stubbed verification string with proper `otool -l` execution checks inside `scripts/fix_macos_rpaths.sh`. Ensured to use `grep -E` (Extended Regular Expressions) for BSD `grep` compatibility on macOS when alternating values.
+### Critical Learnings (2025-02-27):
+- Handled `OSError`s specifically `PermissionError` when calling `pathlib.Path.iterdir()` in `_find_platform_lib_subdir` and `BinWrappersResource.patch_build_time` inside `ghc_compiler_python/wrapper.py`. This fallback avoids unhandled exceptions crashing the wrapper during edge case file permissions. Added unit tests for these error handling blocks. Ensure that testing files created during debugging are properly removed before final commit.
