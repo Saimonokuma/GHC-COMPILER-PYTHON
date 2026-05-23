@@ -70,8 +70,8 @@ curl --fail --silent --show-error --location "${CABAL_URL}" -o "${CABAL_TAR}"
 echo "[4/5] Validating cryptographic hashes..."
 
 sha256_check() {
-	local expected_hash=$1
-	local filepath=$2
+	local expected_hash="$1"
+	local filepath="$2"
 
 	if [[ "$OS" == "Darwin" ]] && command -v shasum >/dev/null 2>&1; then
 		echo "${expected_hash}  ${filepath}" | shasum -a 256 -c

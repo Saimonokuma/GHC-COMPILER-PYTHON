@@ -101,3 +101,24 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+---
+entry_id: "CRUCIBLE-2026-05-18-005"
+schema_version: "2.0"
+timestamp: "2026-05-18T12:00:00Z"
+title: "Multiple Hardening Fixes: unquoted vars, ignored exit code, temporal pip to uv"
+---
+## 2026-05-18 - Multiple Hardening Fixes: unquoted vars, ignored exit code, temporal pip to uv
+
+**Learning:** Fixed unquoted variables in Bash scripts to prevent word-splitting bugs (PATTERN-004). Added `check=True` to `subprocess.run` to enforce error handling (PATTERN-007). Migrated from `pip` to `uv/uvx` for faster, more reliable and idiomatic Python package management and tool execution.
+
+**Action:** Quoted variables in `fetch_binaries.sh` and `fix_macos_rpaths.sh`. Updated `subprocess.run` calls in `test_e2e.py` and `wrapper.py` to use `check=True`. Updated `generate_workflow.py` to use `uv pip` and `uvx build`.
+
+**Defect Pattern ID:** PATTERN-004, PATTERN-007
+
+**Related Entries:** []
+
+**Axes Affected:** I (Syntactic), II (Semantic), III (Idiomatic), V (Temporal)
+
+**Level:** L1, L2, L3
+
+---
