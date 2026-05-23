@@ -190,39 +190,32 @@ class BaseResource:
     def locate(cls, base: str = sys.prefix, version: str = GHC_VERSION) -> List[Path]:
         """Locate all instances of this resource relative to a base directory."""
         base_path = Path(base)
-        candidates = cls.get_candidates(base_path, version)
 
-        # Check explicit candidates first
-        for c in candidates:
-            # 🧪 Alchemist: Ternary conditional combines file and directory checks
-            if (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c):
-                return [c]
+        # 🧪 Alchemist: next() replaces explicit loop, returning first valid candidate
+        if valid := next(
+            (c for c in cls.get_candidates(base_path, version)
+             if (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c)), None
+        ):
+            return [valid]
 
         # Dynamic fallback
         found = []
         if base_path.exists():
-            lib_dir = base_path / "lib"
-            search_dir = lib_dir if lib_dir.exists() else base_path
+            # 🧪 Alchemist: Walrus operator combines assignment and check
+            search_dir = lib_dir if (lib_dir := base_path / "lib").exists() else base_path
 
             for root, dirs, files in os.walk(search_dir):
                 # ⚡ Bolt: Prune os.walk to prevent recursion into massive Python directories.
-                # Modifying `dirs` in place avoids walking into these branches entirely.
                 dirs[:] = [
                     d for d in dirs
                     if d not in {"site-packages", "dist-packages"}
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                # 🧪 Alchemist: Consolidate directory and file checks
+                if cls.name in (dirs if cls.is_dir else files):
+                    if cls.validate(p := Path(root) / cls.name):
+                        found.append(p)
         return found
 
     @classmethod
@@ -275,13 +268,10 @@ class SettingsResource(BaseResource):
             )
 
             def repl(m: re.Match) -> str:
-                match = m.group(0)
-                if match == "/ghc-prefix":
-                    return placeholder
-                return f"{placeholder}/lib/ghc-{version}"
+                return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
 
-            new_content = pattern.sub(repl, content)
-            if new_content != content:
+            # 🧪 Alchemist: Walrus operator tests for modification while assigning
+            if (new_content := pattern.sub(repl, content)) != content:
                 path.write_text(new_content, encoding="utf-8")
                 return 1
         except OSError as e:
@@ -318,29 +308,28 @@ class PackageDBResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched_count = 0
+        # 🧪 Alchemist: Extract the regex compilation out of the loop
+        pattern = re.compile(
+            r"(dynamic-library-dirs:\s*|library-dirs:\s*|include-dirs:\s*)/[^\s]+|/ghc-prefix/lib/ghc-" + re.escape(version) + r"|/ghc-prefix"
+        )
+
+        def repl(m: re.Match) -> str:
+            # 🧪 Alchemist: Walrus operator inside the callback
+            if g1 := m.group(1):
+                return f"{g1}{placeholder}/lib/ghc-{version}{'/include' if 'include' in g1 else ''}"
+            return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
+
         for conf_file in path.glob("*.conf"):
             try:
                 original = conf_file.read_text(encoding="utf-8", errors="replace")
-                # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
-                pattern = re.compile(
-                    r"(dynamic-library-dirs:\s*|library-dirs:\s*|include-dirs:\s*)/[^\s]+|/ghc-prefix/lib/ghc-" + re.escape(version) + r"|/ghc-prefix"
-                )
 
-                def repl(m: re.Match) -> str:
-                    g1 = m.group(1)
-                    if g1:
-                        return f"{g1}{placeholder}/lib/ghc-{version}{'/include' if 'include' in g1 else ''}"
-                    return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
-
-                content = pattern.sub(repl, original)
-
-                if content != original:
+                # 🧪 Alchemist: Walrus operator to check for content change
+                if (content := pattern.sub(repl, original)) != original:
                     conf_file.write_text(content, encoding="utf-8")
                     patched_count += 1
             except OSError as e:
                 sys.stderr.write(f"WARNING: Failed to patch {conf_file}: {e}\n")
 
-        # 🧪 Alchemist: Walrus operator (:=) consolidates variable assignment and existence check
         try:
             (path / "package.cache").unlink(missing_ok=True)
         except OSError as e:
@@ -378,29 +367,28 @@ class BinWrappersResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched = 0
+
+        staging_dir = path.parent.parent if path.parent.name == f"ghc-{version}" else path.parent
+        abs_staging = staging_dir.absolute().as_posix()
+        abs_staging_win = str(staging_dir.absolute()).replace("/", "\\")
+
+        # 🧪 Alchemist: Extract regex compilation out of the loop
+        pattern = re.compile(
+            r"/usr/local/lib/ghc-" + re.escape(version) + r"|/ghc-prefix|" +
+            re.escape(abs_staging) + r"|" + re.escape(abs_staging_win)
+        )
+
+        def repl(m: re.Match) -> str:
+            return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
+
         for script in path.iterdir():
             if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
                 continue
             try:
-                content = script.read_text(encoding="utf-8", errors="replace")
-                original = content
+                original = script.read_text(encoding="utf-8", errors="replace")
 
-                staging_dir = path.parent.parent if path.parent.name == f"ghc-{version}" else path.parent
-                abs_staging = staging_dir.absolute().as_posix()
-                abs_staging_win = str(staging_dir.absolute()).replace("/", "\\")
-
-                # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
-                pattern = re.compile(
-                    r"/usr/local/lib/ghc-" + re.escape(version) + r"|/ghc-prefix|" +
-                    re.escape(abs_staging) + r"|" + re.escape(abs_staging_win)
-                )
-
-                def repl(m: re.Match) -> str:
-                    return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
-
-                content = pattern.sub(repl, content)
-
-                if content != original:
+                # 🧪 Alchemist: Walrus operator to verify change during assignment
+                if (content := pattern.sub(repl, original)) != original:
                     script.write_text(content, encoding="utf-8")
                     patched += 1
             except OSError as e:
@@ -425,17 +413,17 @@ def _resolve_runtime_paths(env: dict) -> None:
         pass
 
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
-    # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
-    targets = [
+    # 🧪 Alchemist: Set comprehension natively deduplicates targets, eliminating `set(targets)` cast later
+    targets = {
         target for resource_cls in BaseResource.registry
         for resource_path in resource_cls.locate()
         for target in resource_cls.extract_targets(resource_path)
-    ]
+    }
 
     # Replace @GHC_PREFIX@ in all target files
     prefix_clean_bytes = prefix_clean.encode("utf-8")
     patched_any_conf = False
-    for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
+    for target in targets:
         target_path = Path(target)
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
@@ -450,18 +438,21 @@ def _resolve_runtime_paths(env: dict) -> None:
                 except (ValueError, OSError):
                     # mmap throws ValueError for empty files, OSError for unmappable ones
                     f.seek(0)
-                    content_to_write = f.read()
-                    if b"@GHC_PREFIX@" not in content_to_write:
-                        content_to_write = None
+                    # 🧪 Alchemist: Walrus operator conditionally assigns and checks
+                    if b"@GHC_PREFIX@" in (content := f.read()):
+                        content_to_write = content
 
             if content_to_write is not None:
                 # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
                 if b" " in prefix_clean_bytes and b"\0" not in content_to_write:
                     content_to_write = re.sub(rb'(?<!")(@GHC_PREFIX@[^\s"]+)', rb'"\1"', content_to_write)
-                with target_path.open("wb") as out:
-                    out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
-                if target.endswith(".conf"):
-                    patched_any_conf = True
+
+                # 🧪 Alchemist: Replace and assign natively via walrus operator
+                if (new_content := content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes)) != content_to_write:
+                    with target_path.open("wb") as out:
+                        out.write(new_content)
+                    if target.endswith(".conf"):
+                        patched_any_conf = True
         except OSError as e:
             sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
 
@@ -514,10 +505,8 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
     _resolve_runtime_paths(env)
     binary_path = _resolve_binary(tool_name)
 
-    cmd = [binary_path]
-    if extra_args:
-        cmd.extend(extra_args)
-    cmd.extend(sys.argv[1:])
+    # 🧪 Alchemist: List unpacking replaces sequential extends for dynamic command generation
+    cmd = [binary_path, *(extra_args or []), *sys.argv[1:]]
 
     try:
         # 🧪 Alchemist: On POSIX systems, os.execve replaces the Python interpreter entirely.
