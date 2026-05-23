@@ -21,7 +21,7 @@ OS=$(uname -s)
 if [[ "${OS}" != "Darwin" ]]; then
 	echo "Not macOS — rpath fix skipped."
 	exit_code=0
-	exit $exit_code
+	exit "$exit_code"
 fi
 
 LIB_DIR="${STAGING_DIR}/lib/ghc-${GHC_VERSION}"
@@ -43,7 +43,7 @@ fi
 if [ -z "${DEEP_LIB_DIR}" ] || [ "${DEEP_LIB_DIR}" = "." ]; then
 	echo "FATAL: Could not find any .dylib files in ${LIB_DIR}" >&2
 	exit_code=1
-	exit $exit_code
+	exit "$exit_code"
 fi
 
 echo "Found dylibs in: ${DEEP_LIB_DIR}"
