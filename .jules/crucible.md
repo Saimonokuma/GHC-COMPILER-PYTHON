@@ -101,3 +101,25 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+
+---
+entry_id: "CRUCIBLE-2026-05-21-005"
+schema_version: "2.0"
+timestamp: "2026-05-21T12:00:00Z"
+title: "Replace pip with uv pip in CI workflow"
+---
+## 2026-05-21 - Replace pip with uv pip in CI workflow
+
+**Learning:** `pip` usage in scripts is outdated per language rules and poses temporal reproducibility issues compared to `uv`. Replacing `pip` with `uv pip` directly in the generator tool ensures that all dynamically generated CI files strictly abide by the new standards.
+
+**Action:** Removed pip cache instructions and substituted all `pip install` commands with `uv pip install --system` in `scripts/generate_workflow.py`. Added a curl script to inject `uv` ahead of installation steps. Regenerated `.github/workflows/build.yml`.
+
+**Defect Pattern ID:** PATTERN-012
+
+**Related Entries:** []
+
+**Axes Affected:** V (Temporal)
+
+**Level:** L2, L3
+
+---
