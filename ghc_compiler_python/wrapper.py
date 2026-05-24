@@ -98,11 +98,14 @@ def _find_platform_lib_subdir() -> str:
     On Windows: Does not exist (DLLs are in mingw/bin/)
     """
     ghc_lib_dir = Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib"
-    if not ghc_lib_dir.is_dir():
-        return ""
+    try:
+        if not ghc_lib_dir.is_dir():
+            return ""
 
-    # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
-    return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+        # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
+        return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    except OSError:
+        return ""
 
 
 def _sterilize_environment() -> dict:
@@ -161,8 +164,14 @@ def _sterilize_environment() -> dict:
         case _:
             candidates, vars_to_update = [], []
 
+    def safe_is_dir(p):
+        try:
+            return p.is_dir()
+        except OSError:
+            return False
+
     if lib_dirs_str := os.pathsep.join(
-        str(p) for p in candidates if p.is_dir() and str(p) != "."
+        str(p) for p in candidates if safe_is_dir(p) and str(p) != "."
     ):
         for var in vars_to_update:
             env[var] = (
@@ -193,16 +202,29 @@ class BaseResource:
         candidates = cls.get_candidates(base_path, version)
 
         # Check explicit candidates first
+        def safe_check(c):
+            try:
+                return (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c)
+            except OSError:
+                return False
+
         for c in candidates:
-            # 🧪 Alchemist: Ternary conditional combines file and directory checks
-            if (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c):
+            if safe_check(c):
                 return [c]
 
         # Dynamic fallback
         found = []
-        if base_path.exists():
+        try:
+            base_exists = base_path.exists()
+        except OSError:
+            base_exists = False
+
+        if base_exists:
             lib_dir = base_path / "lib"
-            search_dir = lib_dir if lib_dir.exists() else base_path
+            try:
+                search_dir = lib_dir if lib_dir.exists() else base_path
+            except OSError:
+                search_dir = base_path
 
             for root, dirs, files in os.walk(search_dir):
                 # ⚡ Bolt: Prune os.walk to prevent recursion into massive Python directories.
@@ -216,13 +238,19 @@ class BaseResource:
                 if cls.is_dir:
                     if cls.name in dirs:
                         p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                        try:
+                            if cls.validate(p):
+                                found.append(p)
+                        except OSError:
+                            pass
                 else:
                     if cls.name in files:
                         p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                        try:
+                            if cls.validate(p):
+                                found.append(p)
+                        except OSError:
+                            pass
         return found
 
     @classmethod
@@ -311,14 +339,27 @@ class PackageDBResource(BaseResource):
     @classmethod
     def extract_targets(cls, path: Path) -> List[str]:
         try:
-            return [str(f) for f in path.iterdir() if f.name.endswith(".conf") and not f.is_symlink()]
+            files = list(path.iterdir())
         except OSError:
             return []
+
+        def safe_valid(f):
+            try:
+                return f.name.endswith(".conf") and not f.is_symlink()
+            except OSError:
+                return False
+
+        return [str(f) for f in files if safe_valid(f)]
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched_count = 0
-        for conf_file in path.glob("*.conf"):
+        try:
+            conf_files = list(path.glob("*.conf"))
+        except OSError:
+            conf_files = []
+
+        for conf_file in conf_files:
             try:
                 original = conf_file.read_text(encoding="utf-8", errors="replace")
                 # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
@@ -368,18 +409,31 @@ class BinWrappersResource(BaseResource):
     @classmethod
     def extract_targets(cls, path: Path) -> List[str]:
         try:
-            return [
-                str(f) for f in path.iterdir()
-                if f.is_file() and not f.is_symlink() and not f.name.endswith(".exe") and _is_text_file(f)
-            ]
+            files = list(path.iterdir())
         except OSError:
             return []
+
+        def safe_valid(f):
+            try:
+                return f.is_file() and not f.is_symlink() and not f.name.endswith(".exe") and _is_text_file(f)
+            except OSError:
+                return False
+
+        return [str(f) for f in files if safe_valid(f)]
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched = 0
-        for script in path.iterdir():
-            if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
+        try:
+            scripts = list(path.iterdir())
+        except OSError:
+            return patched
+
+        for script in scripts:
+            try:
+                if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
+                    continue
+            except OSError:
                 continue
             try:
                 content = script.read_text(encoding="utf-8", errors="replace")
@@ -466,10 +520,13 @@ def _resolve_runtime_paths(env: dict) -> None:
             sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
 
     # 🧪 Alchemist: any() replaces manual flag variables and loops for succinct boolean reduction
-    if patched_any_conf or any(
-        not (pkg_db / "package.cache").exists()
-        for pkg_db in PackageDBResource.locate()
-    ):
+    def cache_missing(pkg_db):
+        try:
+            return not (pkg_db / "package.cache").exists()
+        except OSError:
+            return False
+
+    if patched_any_conf or any(cache_missing(pkg_db) for pkg_db in PackageDBResource.locate()):
         for pkg_db in PackageDBResource.locate():
             _ghc_pkg_recache(str(pkg_db), env)
 
