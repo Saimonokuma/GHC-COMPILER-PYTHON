@@ -1,3 +1,11 @@
+## REPO CONTEXT (Last updated: 2026-05-24)
+**Project:** ghc-compiler-python
+**Languages:** Python, Bash, C
+**Build:** hatchling, python -m build
+**Expand Macros:** python -m ast
+**Key Boilerplate Zones:** None identified in current review. Pipeline, pathing, and wrappers are fully dynamic.
+**Generators Already Built:** hatch_build.py (dynamic entry points), generate_workflow.py (yaml generation), ResourceMeta (dynamic path locators), __getattr__ proxy generation.
+
 ## 2024-05-18 - The Entry Point Attribute Resolution
 **The Glitch:** Three statically written subprocess proxy entry points (`execute_ghc`, `execute_ghci`, `execute_cabal`) were implemented manually. If we added `runhaskell`, `haddock`, or `ghc-pkg`, we would have had to keep extending this list in `wrapper.py` and `pyproject.toml`.
 **The Bend:** Python 3.7's PEP 562 allows defining `__getattr__` and `__dir__` on the module level. Furthermore, Python's `importlib.metadata` and console scripts perfectly invoke `__getattr__` when looking for the target function defined in `pyproject.toml` (e.g. `ghc-wrapper = "ghc_compiler_python.wrapper:execute_ghc"`).
