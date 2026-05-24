@@ -37,3 +37,15 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2026-05-18 - Additional Python Wrapper Optimizations (Batch 2)
+**Transformation:**
+- Compressed the branching `os.walk` in `BaseResource.locate` down to a single concise line by employing the walrus operator `:=` and ternary conditional expressions for the lookup targets.
+- Further condensed `patch_build_time` in all subclasses using the walrus operator to merge regex replacement variable assignments with their equivalence checks (`if (new_content := pattern.sub(...)) != content:`).
+- Optimized `_resolve_runtime_paths` by deduplicating elements natively utilizing Python set comprehensions instead of wrapping a list comprehension with `set()`. Furthermore, eliminated the verbose `open("wb")` boilerplate in favor of the much cleaner `Path.write_bytes()` API.
+- Replaced multiple `cmd.extend()` calls in `_execute_tool` with one clean list construction concatenating the binary path and arguments using the `+` operator combined with an inline `(extra_args or [])` short circuit.
+- Eliminated redundant variables and return branches in minor helper functions `_is_text_file`, `_try_resolve_binary` and `extract_targets` via inline evaluations and ternary returns.
+
+**Result:** Significant lines of code reduction. Execution performance slightly augmented by stripping redundant iterations in loops and favoring optimized C-implemented standard library operations. All wrapper tests continue to pass correctly.
+
+**Lesson:** Python's inline evaluation tools like the walrus operator, ternary operators, sets and list concatenation provide massive leverage for reducing multi-line imperative code into clean, expression-oriented data transformations.
