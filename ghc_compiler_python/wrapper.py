@@ -58,8 +58,7 @@ def _is_text_file(filepath: Path) -> bool:
     """Check if a file is a text file by looking for null bytes in the first 1024 bytes."""
     try:
         with filepath.open("rb") as f:
-            chunk = f.read(1024)
-            return b"\0" not in chunk
+            return b"\0" not in f.read(1024)
     except OSError:
         return False
 
@@ -69,13 +68,8 @@ def _try_resolve_binary(name: str) -> Optional[str]:
     binary_name = f"{name}.exe" if sys.platform == "win32" else name
     bin_dir = "Scripts" if sys.platform == "win32" else "bin"
 
-    candidates = [
-        Path(sys.prefix) / bin_dir / binary_name,
-        Path(__file__).resolve().parent.parent / bin_dir / binary_name
-    ]
-
     return next(
-        (str(p) for p in candidates if p.exists()),
+        (str(p) for base in (Path(sys.prefix), Path(__file__).resolve().parent.parent) if (p := base / bin_dir / binary_name).exists()),
         shutil.which(binary_name)
     )
 
@@ -138,9 +132,7 @@ def _sterilize_environment() -> dict:
     env["HOME"] = str(safe_home)
 
     bin_dir = "Scripts" if sys.platform == "win32" else "bin"
-    env_bin = Path(sys.prefix) / bin_dir
-    current_path = env.get("PATH", "")
-    env["PATH"] = f"{env_bin}{os.pathsep}{current_path}"
+    env["PATH"] = f"{Path(sys.prefix) / bin_dir}{os.pathsep}{env.get('PATH', '')}"
 
     # 🧪 Alchemist: Structural pattern matching replaces lambda-based dictionary lookup
     match sys.platform:
@@ -213,16 +205,8 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                if cls.name in (dirs if cls.is_dir else files) and cls.validate(p := Path(root) / cls.name):
+                    found.append(p)
         return found
 
     @classmethod
@@ -311,30 +295,29 @@ class PackageDBResource(BaseResource):
     @classmethod
     def extract_targets(cls, path: Path) -> List[str]:
         try:
-            return [str(f) for f in path.iterdir() if f.name.endswith(".conf") and not f.is_symlink()]
+            return [str(f) for f in path.glob("*.conf") if not f.is_symlink()]
         except OSError:
             return []
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched_count = 0
+        # 🧪 Alchemist: Combine regex patterns into a single pass using alternation.
+        # Compile regex and define callback outside loop to prevent redundant recompilations.
+        pattern = re.compile(
+            r"(dynamic-library-dirs:\s*|library-dirs:\s*|include-dirs:\s*)/[^\s]+|/ghc-prefix/lib/ghc-" + re.escape(version) + r"|/ghc-prefix"
+        )
+
+        def repl(m: re.Match) -> str:
+            g1 = m.group(1)
+            if g1:
+                return f"{g1}{placeholder}/lib/ghc-{version}{'/include' if 'include' in g1 else ''}"
+            return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
+
         for conf_file in path.glob("*.conf"):
             try:
                 original = conf_file.read_text(encoding="utf-8", errors="replace")
-                # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
-                pattern = re.compile(
-                    r"(dynamic-library-dirs:\s*|library-dirs:\s*|include-dirs:\s*)/[^\s]+|/ghc-prefix/lib/ghc-" + re.escape(version) + r"|/ghc-prefix"
-                )
-
-                def repl(m: re.Match) -> str:
-                    g1 = m.group(1)
-                    if g1:
-                        return f"{g1}{placeholder}/lib/ghc-{version}{'/include' if 'include' in g1 else ''}"
-                    return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
-
-                content = pattern.sub(repl, original)
-
-                if content != original:
+                if (content := pattern.sub(repl, original)) != original:
                     conf_file.write_text(content, encoding="utf-8")
                     patched_count += 1
             except OSError as e:
@@ -378,29 +361,27 @@ class BinWrappersResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched = 0
+
+        staging_dir = path.parent.parent if path.parent.name == f"ghc-{version}" else path.parent
+        abs_staging = staging_dir.absolute().as_posix()
+        abs_staging_win = str(staging_dir.absolute()).replace("/", "\\")
+
+        # 🧪 Alchemist: Combine regex patterns into a single pass using alternation.
+        # Compile regex and define callback outside loop to prevent redundant recompilations.
+        pattern = re.compile(
+            r"/usr/local/lib/ghc-" + re.escape(version) + r"|/ghc-prefix|" +
+            re.escape(abs_staging) + r"|" + re.escape(abs_staging_win)
+        )
+
+        def repl(m: re.Match) -> str:
+            return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
+
         for script in path.iterdir():
             if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
                 continue
             try:
-                content = script.read_text(encoding="utf-8", errors="replace")
-                original = content
-
-                staging_dir = path.parent.parent if path.parent.name == f"ghc-{version}" else path.parent
-                abs_staging = staging_dir.absolute().as_posix()
-                abs_staging_win = str(staging_dir.absolute()).replace("/", "\\")
-
-                # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
-                pattern = re.compile(
-                    r"/usr/local/lib/ghc-" + re.escape(version) + r"|/ghc-prefix|" +
-                    re.escape(abs_staging) + r"|" + re.escape(abs_staging_win)
-                )
-
-                def repl(m: re.Match) -> str:
-                    return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
-
-                content = pattern.sub(repl, content)
-
-                if content != original:
+                original = script.read_text(encoding="utf-8", errors="replace")
+                if (content := pattern.sub(repl, original)) != original:
                     script.write_text(content, encoding="utf-8")
                     patched += 1
             except OSError as e:
@@ -425,17 +406,17 @@ def _resolve_runtime_paths(env: dict) -> None:
         pass
 
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
-    # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
-    targets = [
+    # 🧪 Alchemist: Set comprehension deduplicates targets natively without explicit casts
+    targets = {
         target for resource_cls in BaseResource.registry
         for resource_path in resource_cls.locate()
         for target in resource_cls.extract_targets(resource_path)
-    ]
+    }
 
     # Replace @GHC_PREFIX@ in all target files
     prefix_clean_bytes = prefix_clean.encode("utf-8")
     patched_any_conf = False
-    for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
+    for target in targets:
         target_path = Path(target)
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
@@ -514,10 +495,7 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
     _resolve_runtime_paths(env)
     binary_path = _resolve_binary(tool_name)
 
-    cmd = [binary_path]
-    if extra_args:
-        cmd.extend(extra_args)
-    cmd.extend(sys.argv[1:])
+    cmd = [binary_path, *(extra_args or []), *sys.argv[1:]]
 
     try:
         # 🧪 Alchemist: On POSIX systems, os.execve replaces the Python interpreter entirely.
