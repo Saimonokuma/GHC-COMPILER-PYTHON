@@ -101,3 +101,22 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+---
+entry_id: "CRUCIBLE-2026-05-25-005"
+schema_version: "2.0"
+timestamp: "2026-05-25T16:00:00Z"
+title: "Fix unquoted standalone path regex parsing"
+---
+## 2026-05-25 - Fix unquoted standalone path regex parsing
+
+**Learning:** When matching and quoting placeholders with a regex that ensures trailing text is included (e.g. `(@GHC_PREFIX@[^\s"]+)`), the `+` quantifier incorrectly requires at least one character to follow the placeholder. If the placeholder is completely standalone, it won't be matched and therefore won't be quoted. This can lead to unquoted paths when the prefix contains spaces, causing shell and parsing errors downstream.
+
+**Action:** Changed the quantifier from `+` to `*` (`[^\s"]*`) in the regex replacement logic inside `_resolve_runtime_paths` to properly match and quote standalone `@GHC_PREFIX@` markers.
+
+**Defect Pattern ID:** PATTERN-004
+
+**Related Entries:** []
+
+**Axes Affected:** II (Semantic), IV (Operational)
+
+**Level:** L2
