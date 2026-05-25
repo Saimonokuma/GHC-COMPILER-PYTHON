@@ -101,8 +101,11 @@ def _find_platform_lib_subdir() -> str:
     if not ghc_lib_dir.is_dir():
         return ""
 
-    # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
-    return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    try:
+        # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
+        return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    except OSError:
+        return ""
 
 
 def _sterilize_environment() -> dict:
@@ -142,24 +145,23 @@ def _sterilize_environment() -> dict:
     current_path = env.get("PATH", "")
     env["PATH"] = f"{env_bin}{os.pathsep}{current_path}"
 
-    # 🧪 Alchemist: Structural pattern matching replaces lambda-based dictionary lookup
-    match sys.platform:
-        case "darwin":
-            candidates = [
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
-                Path(sys.prefix) / "lib",
-            ]
-            vars_to_update = ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"]
-        case "linux":
-            candidates = [
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}",
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
-                Path(_find_platform_lib_subdir() or "."),
-                Path(__file__).resolve().parent.parent / "ghc_compiler_python.libs",
-            ]
-            vars_to_update = ["LD_LIBRARY_PATH"]
-        case _:
-            candidates, vars_to_update = [], []
+    # 🧪 Alchemist: Python 3.8 compatible dictionary lookup or if/elif fallback
+    if sys.platform == "darwin":
+        candidates = [
+            Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
+            Path(sys.prefix) / "lib",
+        ]
+        vars_to_update = ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"]
+    elif sys.platform == "linux":
+        candidates = [
+            Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}",
+            Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
+            Path(_find_platform_lib_subdir() or "."),
+            Path(__file__).resolve().parent.parent / "ghc_compiler_python.libs",
+        ]
+        vars_to_update = ["LD_LIBRARY_PATH"]
+    else:
+        candidates, vars_to_update = [], []
 
     if lib_dirs_str := os.pathsep.join(
         str(p) for p in candidates if p.is_dir() and str(p) != "."
@@ -494,10 +496,11 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
 
     try:
         # Use the sterilized environment which has LD_LIBRARY_PATH properly set
-        # 🧪 Alchemist: Dictionary merge operator (|) replaces unpacking
+        # Python 3.8 compatible dictionary unpacking
+        recache_env = {**env, "GHC_PACKAGE_PATH": pkg_db_dir}
         subprocess.run(
             [ghc_pkg, "recache", "--package-db", pkg_db_dir],
-            env=env | {"GHC_PACKAGE_PATH": pkg_db_dir},
+            env=recache_env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=30,
