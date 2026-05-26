@@ -14,7 +14,7 @@ trap cleanup EXIT
 trap '' PIPE
 
 # Handle SIGINT (Ctrl+C)
-trap 'echo "Interrupted"; exit 130' INT
+trap 'printf "%s\n" "Interrupted"; exit 130' INT
 
 GHC_VERSION="9.4.8"
 CABAL_VERSION="3.10.3.0"
@@ -27,10 +27,10 @@ CABAL_BASE_URL="https://downloads.haskell.org/~cabal/cabal-install-${CABAL_VERSI
 OS=$(uname -s)
 ARCH=$(uname -m)
 
-echo "============================================"
-echo " GHC/Cabal Binary Acquisition System"
-echo " Platform: ${OS}/${ARCH}"
-echo "============================================"
+printf "%s\n" "============================================"
+printf "%s\n" " GHC/Cabal Binary Acquisition System"
+printf "%s\n" " Platform: ${OS}/${ARCH}"
+printf "%s\n" "============================================"
 
 if [[ "${OS}" == "Linux" && "${ARCH}" == "x86_64" ]]; then
 	GHC_TAR="ghc-${GHC_VERSION}-x86_64-centos7-linux.tar.xz"
@@ -45,7 +45,7 @@ elif [[ "${OS}" == MINGW* || "${OS}" == MSYS* || "${OS}" == CYGWIN* ]] && [[ "${
 	GHC_TAR="ghc-${GHC_VERSION}-x86_64-unknown-mingw32.tar.xz"
 	CABAL_TAR="cabal-install-${CABAL_VERSION}-x86_64-windows.zip"
 else
-	echo "FATAL: Unsupported OS/Architecture combination: ${OS}/${ARCH}" >&2
+	printf "%s\n" "FATAL: Unsupported OS/Architecture combination: ${OS}/${ARCH}" >&2
 	exit 1
 fi
 
@@ -57,28 +57,28 @@ CABAL_SHA_URL="${CABAL_BASE_URL}/SHA256SUMS"
 mkdir -p "${BUILD_DIR}"
 cd "${BUILD_DIR}"
 
-echo "[1/5] Fetching SHA256 checksum indices..."
+printf "%s\n" "[1/5] Fetching SHA256 checksum indices..."
 curl --fail --silent --show-error --location "${GHC_SHA_URL}" -o ghc_sha256.txt
 curl --fail --silent --show-error --location "${CABAL_SHA_URL}" -o cabal_sha256.txt
 
-echo "[2/5] Downloading GHC ${GHC_VERSION}..."
+printf "%s\n" "[2/5] Downloading GHC ${GHC_VERSION}..."
 curl --fail --silent --show-error --location "${GHC_URL}" -o "${GHC_TAR}"
 
-echo "[3/5] Downloading Cabal ${CABAL_VERSION}..."
+printf "%s\n" "[3/5] Downloading Cabal ${CABAL_VERSION}..."
 curl --fail --silent --show-error --location "${CABAL_URL}" -o "${CABAL_TAR}"
 
-echo "[4/5] Validating cryptographic hashes..."
+printf "%s\n" "[4/5] Validating cryptographic hashes..."
 
 sha256_check() {
 	local expected_hash=$1
 	local filepath=$2
 
-	if [[ "$OS" == "Darwin" ]] && command -v shasum >/dev/null 2>&1; then
-		echo "${expected_hash}  ${filepath}" | shasum -a 256 -c
+	if [[ "${OS}" == "Darwin" ]] && command -v shasum >/dev/null 2>&1; then
+		printf "%s\n" "${expected_hash}  ${filepath}" | shasum -a 256 -c
 	elif command -v sha256sum >/dev/null 2>&1; then
-		echo "${expected_hash}  ${filepath}" | sha256sum --check --status
+		printf "%s\n" "${expected_hash}  ${filepath}" | sha256sum --check --status
 	else
-		echo "FATAL: No SHA-256 tool found (sha256sum, shasum)" >&2
+		printf "%s\n" "FATAL: No SHA-256 tool found (sha256sum, shasum)" >&2
 		exit 3
 	fi
 }
@@ -87,16 +87,16 @@ GHC_EXPECTED=$(grep "${GHC_TAR}" ghc_sha256.txt | awk '{print $1}')
 CABAL_EXPECTED=$(grep "${CABAL_TAR}" cabal_sha256.txt | awk '{print $1}')
 
 if ! sha256_check "${GHC_EXPECTED}" "${GHC_TAR}"; then
-	echo "FATAL: GHC SHA-256 validation failed!" >&2
+	printf "%s\n" "FATAL: GHC SHA-256 validation failed!" >&2
 	exit 3
 fi
 
 if ! sha256_check "${CABAL_EXPECTED}" "${CABAL_TAR}"; then
-	echo "FATAL: Cabal SHA-256 validation failed!" >&2
+	printf "%s\n" "FATAL: Cabal SHA-256 validation failed!" >&2
 	exit 3
 fi
 
-echo "[5/5] Unpacking archives into staging directory..."
+printf "%s\n" "[5/5] Unpacking archives into staging directory..."
 mkdir -p "../${STAGING_DIR}/bin"
 mkdir -p "../${STAGING_DIR}/lib"
 mkdir -p "../${STAGING_DIR}/share"
@@ -109,7 +109,7 @@ set -o pipefail
 
 # FIX v2: Unix requires ./configure && make install for proper library layout
 if [[ "${OS}" == "Linux" || "${OS}" == "Darwin" ]]; then
-	echo "Unix detected: Running GHC configure and make install..."
+	printf "%s\n" "Unix detected: Running GHC configure and make install..."
 	cd "${GHC_EXTRACTED_DIR}"
 
 	# FIX v2: Use absolute path for DESTDIR to avoid path resolution issues
@@ -127,7 +127,7 @@ if [[ "${OS}" == "Linux" || "${OS}" == "Darwin" ]]; then
 	if [ -d "${DESTDIR_ABS}/ghc-prefix" ]; then
 		cp -a "${DESTDIR_ABS}/ghc-prefix/." "../${STAGING_DIR}/"
 	else
-		echo "WARNING: Expected DESTDIR structure not found, attempting alternative layout..."
+		printf "%s\n" "WARNING: Expected DESTDIR structure not found, attempting alternative layout..."
 		# Try to find the installed files regardless of structure
 		find "${DESTDIR_ABS}" -mindepth 1 -maxdepth 1 -exec cp -a {} "../${STAGING_DIR}/" \;
 	fi
@@ -139,7 +139,7 @@ if [[ "${OS}" == "Linux" || "${OS}" == "Darwin" ]]; then
 	cp cabal "../${STAGING_DIR}/bin/" 2>/dev/null || true
 else
 	# Windows: Relocatable by default, simple copy
-	echo "Windows detected: Performing native extraction..."
+	printf "%s\n" "Windows detected: Performing native extraction..."
 	cp -a "${GHC_EXTRACTED_DIR}/bin/"* "../${STAGING_DIR}/bin/" 2>/dev/null || true
 	cp -a "${GHC_EXTRACTED_DIR}/lib/"* "../${STAGING_DIR}/lib/" 2>/dev/null || true
 	cp -a "${GHC_EXTRACTED_DIR}/share/"* "../${STAGING_DIR}/share/" 2>/dev/null || true
@@ -158,10 +158,10 @@ fi
 cd ..
 
 # FIX v2: Verify critical directories exist after extraction
-echo "Verifying staging directory structure..."
+printf "%s\n" "Verifying staging directory structure..."
 for dir in bin lib; do
 	if [ ! -d "${STAGING_DIR}/${dir}" ]; then
-		echo "FATAL: Staging directory ${STAGING_DIR}/${dir} is missing!" >&2
+		printf "%s\n" "FATAL: Staging directory ${STAGING_DIR}/${dir} is missing!" >&2
 		exit 4
 	fi
 done
@@ -169,14 +169,14 @@ done
 # Verify GHC lib directory has expected content
 GHC_LIB_DIR="${STAGING_DIR}/lib/ghc-${GHC_VERSION}"
 if [ -d "${GHC_LIB_DIR}" ]; then
-	DYLIB_COUNT=$(find "${GHC_LIB_DIR}" -name "*.dylib" 2>/dev/null | wc -l || echo "0")
-	SO_COUNT=$(find "${GHC_LIB_DIR}" -name "*.so" 2>/dev/null | wc -l || echo "0")
-	echo "GHC lib directory: ${GHC_LIB_DIR}"
-	echo "	Dynamic libraries found: ${DYLIB_COUNT} dylibs, ${SO_COUNT} shared objects"
+	DYLIB_COUNT=$(find "${GHC_LIB_DIR}" -name "*.dylib" 2>/dev/null | wc -l || printf "%s\n" "0")
+	SO_COUNT=$(find "${GHC_LIB_DIR}" -name "*.so" 2>/dev/null | wc -l || printf "%s\n" "0")
+	printf "%s\n" "GHC lib directory: ${GHC_LIB_DIR}"
+	printf "%s\n" "	Dynamic libraries found: ${DYLIB_COUNT} dylibs, ${SO_COUNT} shared objects"
 else
-	echo "WARNING: Expected GHC lib directory not found at ${GHC_LIB_DIR}"
-	echo "Available directories in ${STAGING_DIR}/lib/:"
-	ls -la "${STAGING_DIR}/lib/" 2>/dev/null || echo "	(lib directory empty or missing)"
+	printf "%s\n" "WARNING: Expected GHC lib directory not found at ${GHC_LIB_DIR}"
+	printf "%s\n" "Available directories in ${STAGING_DIR}/lib/:"
+	ls -la "${STAGING_DIR}/lib/" 2>/dev/null || printf "%s\n" "	(lib directory empty or missing)"
 fi
 
-echo "Binary acquisition complete."
+printf "%s\n" "Binary acquisition complete."
