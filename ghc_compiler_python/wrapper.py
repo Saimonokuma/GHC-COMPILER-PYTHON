@@ -47,6 +47,7 @@ HASKELL_POLLUTION_VARS = frozenset(
 )
 
 _HOME_ORIGINAL: Optional[str] = None
+_MODULE_BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 def _die(msg: str) -> NoReturn:
@@ -71,7 +72,7 @@ def _try_resolve_binary(name: str) -> Optional[str]:
 
     candidates = [
         Path(sys.prefix) / bin_dir / binary_name,
-        Path(__file__).resolve().parent.parent / bin_dir / binary_name
+        _MODULE_BASE_DIR / bin_dir / binary_name
     ]
 
     return next(
@@ -86,8 +87,11 @@ def _resolve_binary(name: str) -> str:
 
 def _validate_c_linker() -> None:
     """Pre-flight validation: assert the existence of a host C-linker."""
+    if os.environ.get("_GHC_COMPILER_PYTHON_LINKER_VALIDATED") == "1":
+        return
     if not shutil.which("gcc") and not shutil.which("clang"):
         _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
+    os.environ["_GHC_COMPILER_PYTHON_LINKER_VALIDATED"] = "1"
 
 
 def _find_platform_lib_subdir() -> str:
@@ -110,6 +114,10 @@ def _sterilize_environment() -> dict:
     global _HOME_ORIGINAL
     env = {k: v for k, v in os.environ.items() if k not in HASKELL_POLLUTION_VARS}
 
+    if os.environ.get("_GHC_COMPILER_PYTHON_ENV_READY") == "1":
+        _HOME_ORIGINAL = os.environ.get("_GHC_COMPILER_PYTHON_HOME_ORIGINAL", "")
+        return env
+
     _HOME_ORIGINAL = os.environ.get("HOME", os.environ.get("USERPROFILE", ""))
 
     def _get_home_path() -> Path:
@@ -121,7 +129,8 @@ def _sterilize_environment() -> dict:
     def _try_mkdir(path: Path) -> Optional[Path]:
         try:
             if str(path) != ".":
-                path.mkdir(parents=True, exist_ok=True)
+                if not path.is_dir():
+                    path.mkdir(parents=True, exist_ok=True)
                 return path
         except (OSError, RuntimeError):
             pass
@@ -171,6 +180,8 @@ def _sterilize_environment() -> dict:
                 else lib_dirs_str
             )
 
+    env["_GHC_COMPILER_PYTHON_ENV_READY"] = "1"
+    env["_GHC_COMPILER_PYTHON_HOME_ORIGINAL"] = _HOME_ORIGINAL or ""
     return env
 
 
@@ -413,6 +424,9 @@ def _resolve_runtime_paths(env: dict) -> None:
     Args:
             env: The sterilized environment dict with proper LD_LIBRARY_PATH set.
     """
+    if os.environ.get("_GHC_COMPILER_PYTHON_ENV_READY") == "1":
+        return
+
     prefix_clean = sys.prefix.replace("\\", "/")
 
     # ⚡ Bolt: Fast-path to avoid scanning and patching on every invocation.
