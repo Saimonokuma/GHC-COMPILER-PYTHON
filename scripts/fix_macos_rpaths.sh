@@ -12,14 +12,14 @@ trap cleanup EXIT
 trap '' PIPE
 
 # Handle SIGINT (Ctrl+C)
-trap 'echo "Interrupted"; exit 130' INT
+trap 'printf "%s\n" "Interrupted"; exit 130' INT
 
 GHC_VERSION="9.4.8"
 STAGING_DIR="ghc-bindist"
 OS=$(uname -s)
 
 if [[ "${OS}" != "Darwin" ]]; then
-	echo "Not macOS — rpath fix skipped."
+	printf "%s\n" "Not macOS — rpath fix skipped."
 	exit_code=0
 	exit $exit_code
 fi
@@ -27,10 +27,10 @@ fi
 LIB_DIR="${STAGING_DIR}/lib/ghc-${GHC_VERSION}"
 BIN_DIR="${STAGING_DIR}/bin"
 
-echo "============================================"
-echo " macOS @rpath Repair System"
-echo " GHC Version: ${GHC_VERSION}"
-echo "============================================"
+printf "%s\n" "============================================"
+printf "%s\n" " macOS @rpath Repair System"
+printf "%s\n" " GHC Version: ${GHC_VERSION}"
+printf "%s\n" "============================================"
 
 # Find the actual subdirectory containing the dylibs (e.g. lib/ghc-9.4.8/lib/aarch64-osx-ghc-9.4.8)
 DYLIB_FIRST=$(find "${LIB_DIR}" -name "*.dylib" 2>/dev/null | head -n 1 || true)
@@ -41,25 +41,25 @@ else
 fi
 
 if [ -z "${DEEP_LIB_DIR}" ] || [ "${DEEP_LIB_DIR}" = "." ]; then
-	echo "FATAL: Could not find any .dylib files in ${LIB_DIR}" >&2
+	printf "%s\n" "FATAL: Could not find any .dylib files in ${LIB_DIR}" >&2
 	exit_code=1
 	exit $exit_code
 fi
 
-echo "Found dylibs in: ${DEEP_LIB_DIR}"
+printf "%s\n" "Found dylibs in: ${DEEP_LIB_DIR}"
 
 # Calculate relative path from bin/ to the deep lib dir
 REL_LIB_DIR="${DEEP_LIB_DIR//${STAGING_DIR}\//}"
 REL_LIB_DIR=${REL_LIB_DIR#/}
 RPATH_STRING="@loader_path/../${REL_LIB_DIR}"
 
-echo "New @rpath for binaries will be: ${RPATH_STRING}"
+printf "%s\n" "New @rpath for binaries will be: ${RPATH_STRING}"
 
 OLD_RPATH="/ghc-prefix/lib/ghc-${GHC_VERSION}"
 OLD_RPATH2="/ghc-prefix/lib/ghc-${GHC_VERSION}/lib/aarch64-osx-ghc-9.4.8"
 OLD_RPATH3="/ghc-prefix/lib/ghc-${GHC_VERSION}/lib/x86_64-osx-ghc-9.4.8"
 
-echo "[1/3] Fixing @rpath in dynamic libraries..."
+printf "%s\n" "[1/3] Fixing @rpath in dynamic libraries..."
 DYLIB_COUNT=0
 find "${LIB_DIR}" -name "*.dylib" -type f | while read -r dylib; do
     dylib_name=$(basename "$dylib")
@@ -70,9 +70,9 @@ find "${LIB_DIR}" -name "*.dylib" -type f | while read -r dylib; do
     install_name_tool -add_rpath "@loader_path" "$dylib" >/dev/null 2>&1 || true
 done
 DYLIB_COUNT=$(find "${LIB_DIR}" -name "*.dylib" -type f | wc -l)
-echo "	Fixed ${DYLIB_COUNT} dynamic libraries."
+printf "%s\n" "	Fixed ${DYLIB_COUNT} dynamic libraries."
 
-echo "[2/3] Fixing @rpath in executables..."
+printf "%s\n" "[2/3] Fixing @rpath in executables..."
 BIN_COUNT=0
 for binary in "${BIN_DIR}"/*; do
 	if [ -f "$binary" ] && file "$binary" | grep -q "Mach-O"; then
@@ -98,14 +98,14 @@ if [ -d "${LIB_DIR}/bin" ]; then
     done
 fi
 
-echo "	Fixed ${BIN_COUNT} executables."
+printf "%s\n" "	Fixed ${BIN_COUNT} executables."
 
-echo "[3/3] Verifying @rpath repairs..."
+printf "%s\n" "[3/3] Verifying @rpath repairs..."
 VERIFY_FAIL=0
 for binary in "${BIN_DIR}"/*; do
 	if [ -f "$binary" ] && file "$binary" | grep -q "Mach-O"; then
 		if otool -l "$binary" | grep -Eq "${OLD_RPATH}|${OLD_RPATH2}|${OLD_RPATH3}"; then
-			echo "	WARNING: Old rpath still present in $(basename "$binary")" >&2
+			printf "%s\n" "	WARNING: Old rpath still present in $(basename "$binary")" >&2
 			VERIFY_FAIL=$((VERIFY_FAIL + 1))
 		fi
 	fi
@@ -115,7 +115,7 @@ if [ -d "${LIB_DIR}/bin" ]; then
     for binary in "${LIB_DIR}/bin"/*; do
         if [ -f "$binary" ] && file "$binary" | grep -q "Mach-O"; then
             if otool -l "$binary" | grep -Eq "${OLD_RPATH}|${OLD_RPATH2}|${OLD_RPATH3}"; then
-                echo "	WARNING: Old rpath still present in $(basename "$binary")" >&2
+                printf "%s\n" "	WARNING: Old rpath still present in $(basename "$binary")" >&2
                 VERIFY_FAIL=$((VERIFY_FAIL + 1))
             fi
         fi
@@ -123,8 +123,8 @@ if [ -d "${LIB_DIR}/bin" ]; then
 fi
 
 if [ ${VERIFY_FAIL} -gt 0 ]; then
-    echo "WARNING: ${VERIFY_FAIL} verification checks failed."
+    printf "%s\n" "WARNING: ${VERIFY_FAIL} verification checks failed."
 else
-    echo "	All @rpath repairs verified successfully."
+    printf "%s\n" "	All @rpath repairs verified successfully."
 fi
-echo "macOS @rpath repair complete."
+printf "%s\n" "macOS @rpath repair complete."

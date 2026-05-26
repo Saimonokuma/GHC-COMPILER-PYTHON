@@ -101,3 +101,10 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+## 2026-05-18 - Replacing pip with uv and echo with printf
+**Learning:** Hardening build scripts using `uv` instead of standard `pip` guarantees significantly faster module installs and reproducibility. Furthermore, replacing `echo` with `printf` across bash scripts conforms to POSIX safety standards, protecting against unescaped parameter injection and variable evaluation across standard `bash`.
+**Action:** Replaced `echo` with `printf "%s\n"` in all bash scripts, and patched the CI workflow to execute `uv pip install` instead of `python -m pip install`.
+**Defect Pattern ID:** PATTERN-004, PATTERN-007
+**Related Entries:** []
+**Axes Affected:** I (Syntactic), II (Semantic)
+**Level:** L1, L2
