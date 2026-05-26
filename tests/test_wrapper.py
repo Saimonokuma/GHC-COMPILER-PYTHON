@@ -54,6 +54,8 @@ class TestValidateCLinker:
 
     @patch("ghc_compiler_python.wrapper.shutil.which", return_value=None)
     def test_exits_without_linker(self, mock_which):
+        if "_GHC_COMPILER_PYTHON_LINKER_VALIDATED" in os.environ:
+            del os.environ["_GHC_COMPILER_PYTHON_LINKER_VALIDATED"]
         with pytest.raises(SystemExit):
             _validate_c_linker()
 
