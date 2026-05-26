@@ -220,3 +220,22 @@ class TestDynamicGetattr:
 
         with pytest.raises(AttributeError, match="has no attribute 'invalid_attr'"):
             wrapper.__getattr__("invalid_attr")
+
+
+class TestIterdirExceptionHandling:
+    """Tests for defensive handling of iterdir() PermissionErrors."""
+
+    def test_find_platform_lib_subdir_iterdir_oserror(self):
+        from ghc_compiler_python.wrapper import _find_platform_lib_subdir
+
+        with patch("pathlib.Path.iterdir", side_effect=PermissionError("Mocked PermissionError")):
+            with patch("pathlib.Path.is_dir", return_value=True):
+                result = _find_platform_lib_subdir()
+                assert result == ""
+
+    def test_bin_wrappers_resource_iterdir_oserror(self, tmp_path):
+        from ghc_compiler_python.wrapper import BinWrappersResource
+
+        with patch("pathlib.Path.iterdir", side_effect=PermissionError("Mocked PermissionError")):
+            patched = BinWrappersResource.patch_build_time(tmp_path, "9.4.8", "@GHC_PREFIX@")
+            assert patched == 0

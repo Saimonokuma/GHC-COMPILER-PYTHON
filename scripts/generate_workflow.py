@@ -68,7 +68,7 @@ def generate_job(platform_key, platform_data):
     def add_step(name=None, uses=None, run=None, shell=None, with_args=None):
         steps.append(Step(name=name, uses=uses, run=run, shell=shell, with_args=with_args))
 
-    add_step(uses="actions/checkout@v4")
+    add_step(uses="actions/checkout@v4", with_args={"persist-credentials": "false"})
 
     if platform_key == "linux":
         add_step(name="Free disk space (Linux)", run="sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc\nsudo apt-get clean\ndf -h")
