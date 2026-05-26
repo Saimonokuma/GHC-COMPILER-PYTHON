@@ -115,6 +115,7 @@ def _sterilize_environment() -> dict:
     env = {k: v for k, v in os.environ.items() if k not in HASKELL_POLLUTION_VARS}
 
     if os.environ.get("_GHC_COMPILER_PYTHON_ENV_READY") == "1":
+        _HOME_ORIGINAL = os.environ.get("_GHC_COMPILER_PYTHON_HOME_ORIGINAL", "")
         return env
 
     _HOME_ORIGINAL = os.environ.get("HOME", os.environ.get("USERPROFILE", ""))
@@ -180,6 +181,7 @@ def _sterilize_environment() -> dict:
             )
 
     env["_GHC_COMPILER_PYTHON_ENV_READY"] = "1"
+    env["_GHC_COMPILER_PYTHON_HOME_ORIGINAL"] = _HOME_ORIGINAL or ""
     return env
 
 
@@ -422,7 +424,7 @@ def _resolve_runtime_paths(env: dict) -> None:
     Args:
             env: The sterilized environment dict with proper LD_LIBRARY_PATH set.
     """
-    if env.get("_GHC_COMPILER_PYTHON_ENV_READY") == "1":
+    if os.environ.get("_GHC_COMPILER_PYTHON_ENV_READY") == "1":
         return
 
     prefix_clean = sys.prefix.replace("\\", "/")

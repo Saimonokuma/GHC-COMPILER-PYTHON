@@ -53,11 +53,22 @@ class TestValidateCLinker:
         _validate_c_linker()  # Should not exit
 
     @patch("ghc_compiler_python.wrapper.shutil.which", return_value=None)
+    @patch.dict(os.environ, {}, clear=True)
     def test_exits_without_linker(self, mock_which):
-        if "_GHC_COMPILER_PYTHON_LINKER_VALIDATED" in os.environ:
-            del os.environ["_GHC_COMPILER_PYTHON_LINKER_VALIDATED"]
         with pytest.raises(SystemExit):
             _validate_c_linker()
+
+    @patch("ghc_compiler_python.wrapper.shutil.which")
+    @patch.dict(os.environ, {}, clear=True)
+    def test_passes_with_gcc(self, mock_which):
+        mock_which.side_effect = lambda x: "/usr/bin/gcc" if x == "gcc" else None
+        _validate_c_linker()  # Should not exit
+
+    @patch("ghc_compiler_python.wrapper.shutil.which")
+    @patch.dict(os.environ, {}, clear=True)
+    def test_passes_with_clang(self, mock_which):
+        mock_which.side_effect = lambda x: "/usr/bin/clang" if x == "clang" else None
+        _validate_c_linker()  # Should not exit
 
 
 class TestResolveBinary:
