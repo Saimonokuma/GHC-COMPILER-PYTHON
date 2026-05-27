@@ -108,6 +108,7 @@ def _find_platform_lib_subdir() -> str:
 def _sterilize_environment() -> dict:
     """Create a sterilized subprocess environment with proper library paths."""
     global _HOME_ORIGINAL
+    # 🧪 Alchemist: dict comprehension with single inclusion check
     env = {k: v for k, v in os.environ.items() if k not in HASKELL_POLLUTION_VARS}
 
     _HOME_ORIGINAL = os.environ.get("HOME", os.environ.get("USERPROFILE", ""))
@@ -164,12 +165,11 @@ def _sterilize_environment() -> dict:
     if lib_dirs_str := os.pathsep.join(
         str(p) for p in candidates if p.is_dir() and str(p) != "."
     ):
-        for var in vars_to_update:
-            env[var] = (
-                f"{lib_dirs_str}{os.pathsep}{env[var]}"
-                if env.get(var)
-                else lib_dirs_str
-            )
+        # 🧪 Alchemist: dict merge operator transforms multiple assignments into one map
+        env |= {
+            var: f"{lib_dirs_str}{os.pathsep}{env[var]}" if env.get(var) else lib_dirs_str
+            for var in vars_to_update
+        }
 
     return env
 
@@ -190,39 +190,23 @@ class BaseResource:
     def locate(cls, base: str = sys.prefix, version: str = GHC_VERSION) -> List[Path]:
         """Locate all instances of this resource relative to a base directory."""
         base_path = Path(base)
-        candidates = cls.get_candidates(base_path, version)
 
-        # Check explicit candidates first
-        for c in candidates:
-            # 🧪 Alchemist: Ternary conditional combines file and directory checks
-            if (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c):
-                return [c]
+        # 🧪 Alchemist: Walrus operator extracts and returns the first valid candidate immediately
+        if explicit := next((c for c in cls.get_candidates(base_path, version) if (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c)), None):
+            return [explicit]
 
-        # Dynamic fallback
+        if not base_path.exists():
+            return []
+
+        search_dir = lib_dir if (lib_dir := base_path / "lib").exists() else base_path
+
         found = []
-        if base_path.exists():
-            lib_dir = base_path / "lib"
-            search_dir = lib_dir if lib_dir.exists() else base_path
-
-            for root, dirs, files in os.walk(search_dir):
-                # ⚡ Bolt: Prune os.walk to prevent recursion into massive Python directories.
-                # Modifying `dirs` in place avoids walking into these branches entirely.
-                dirs[:] = [
-                    d for d in dirs
-                    if d not in {"site-packages", "dist-packages"}
-                    and not d.startswith(("python", "pypy"))
-                ]
-
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+        for root, dirs, files in os.walk(search_dir):
+            # ⚡ Bolt: Prune os.walk to prevent recursion into massive Python directories.
+            dirs[:] = [d for d in dirs if d not in {"site-packages", "dist-packages"} and not d.startswith(("python", "pypy"))]
+            # 🧪 Alchemist: Inline condition selection and walrus operator eliminate nested logic
+            if cls.name in (dirs if cls.is_dir else files) and cls.validate(p := Path(root) / cls.name):
+                found.append(p)
         return found
 
     @classmethod
@@ -275,13 +259,10 @@ class SettingsResource(BaseResource):
             )
 
             def repl(m: re.Match) -> str:
-                match = m.group(0)
-                if match == "/ghc-prefix":
-                    return placeholder
-                return f"{placeholder}/lib/ghc-{version}"
+                # 🧪 Alchemist: Single-line conditional return replaces manual block
+                return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
 
-            new_content = pattern.sub(repl, content)
-            if new_content != content:
+            if (new_content := pattern.sub(repl, content)) != content:
                 path.write_text(new_content, encoding="utf-8")
                 return 1
         except OSError as e:
@@ -326,21 +307,18 @@ class PackageDBResource(BaseResource):
                     r"(dynamic-library-dirs:\s*|library-dirs:\s*|include-dirs:\s*)/[^\s]+|/ghc-prefix/lib/ghc-" + re.escape(version) + r"|/ghc-prefix"
                 )
 
+                # 🧪 Alchemist: Use walrus and inline ternary logic for regex substitution
                 def repl(m: re.Match) -> str:
-                    g1 = m.group(1)
-                    if g1:
+                    if g1 := m.group(1):
                         return f"{g1}{placeholder}/lib/ghc-{version}{'/include' if 'include' in g1 else ''}"
                     return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
 
-                content = pattern.sub(repl, original)
-
-                if content != original:
+                if (content := pattern.sub(repl, original)) != original:
                     conf_file.write_text(content, encoding="utf-8")
                     patched_count += 1
             except OSError as e:
                 sys.stderr.write(f"WARNING: Failed to patch {conf_file}: {e}\n")
 
-        # 🧪 Alchemist: Walrus operator (:=) consolidates variable assignment and existence check
         try:
             (path / "package.cache").unlink(missing_ok=True)
         except OSError as e:
@@ -382,8 +360,7 @@ class BinWrappersResource(BaseResource):
             if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
                 continue
             try:
-                content = script.read_text(encoding="utf-8", errors="replace")
-                original = content
+                original = script.read_text(encoding="utf-8", errors="replace")
 
                 staging_dir = path.parent.parent if path.parent.name == f"ghc-{version}" else path.parent
                 abs_staging = staging_dir.absolute().as_posix()
@@ -398,9 +375,8 @@ class BinWrappersResource(BaseResource):
                 def repl(m: re.Match) -> str:
                     return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
 
-                content = pattern.sub(repl, content)
-
-                if content != original:
+                # 🧪 Alchemist: Walrus operator inline content conditional check
+                if (content := pattern.sub(repl, original)) != original:
                     script.write_text(content, encoding="utf-8")
                     patched += 1
             except OSError as e:
@@ -440,28 +416,18 @@ def _resolve_runtime_paths(env: dict) -> None:
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
             # the entire binary into memory. Drastically reduces I/O latency for large binaries.
-            content_to_write = None
-            with target_path.open("rb") as f:
-                try:
-                    with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
-                        if m.find(b"@GHC_PREFIX@") != -1:
-                            f.seek(0)
-                            content_to_write = f.read()
-                except (ValueError, OSError):
-                    # mmap throws ValueError for empty files, OSError for unmappable ones
-                    f.seek(0)
-                    content_to_write = f.read()
-                    if b"@GHC_PREFIX@" not in content_to_write:
-                        content_to_write = None
+            content = target_path.read_bytes()
+            if b"@GHC_PREFIX@" not in content:
+                continue
 
-            if content_to_write is not None:
-                # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
-                if b" " in prefix_clean_bytes and b"\0" not in content_to_write:
-                    content_to_write = re.sub(rb'(?<!")(@GHC_PREFIX@[^\s"]+)', rb'"\1"', content_to_write)
-                with target_path.open("wb") as out:
-                    out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
-                if target.endswith(".conf"):
-                    patched_any_conf = True
+            # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
+            if b" " in prefix_clean_bytes and b"\0" not in content:
+                content = re.sub(rb'(?<!")(@GHC_PREFIX@[^\s"]+)', rb'"\1"', content)
+
+            target_path.write_bytes(content.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
+
+            # 🧪 Alchemist: inline assignment logic
+            patched_any_conf = patched_any_conf or target.endswith(".conf")
         except OSError as e:
             sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
 
