@@ -37,3 +37,14 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2026-05-20 - Additional Python Wrapper Optimizations
+**Transformation:**
+- Compressed `BaseResource.locate()` logic using the walrus operator `:=` to conditionally break out of fallback iterations early, and inline assignments and condition matching inside a flat loop.
+- Simplified regex substitution functions (`repl()`) in `SettingsResource`, `PackageDBResource`, and `BinWrappersResource` by employing the walrus operator for regex inline substitutions.
+- Replaced explicit manual iteration for populating environments in `_sterilize_environment()` with a dict comprehension and replaced dictionary merging using the `|=` operator mapping generator.
+- Refactored `_resolve_runtime_paths` to streamline file byte patching logic by dropping nested file/mmap operations in favor of `Path.read_bytes()` and `Path.write_bytes()`.
+
+**Result:** Codesize reduced drastically, lowering boilerplate verbosity without changing logic. All validation test suites still pass.
+
+**Lesson:** Python's inline capabilities with walrus operations limit temporary variable pollution when checking for validity over collections. Removing explicitly wrapped file operation handles speeds up implementation, but uses slightly more memory if binary patching large payload streams directly using `.read_bytes()`.
