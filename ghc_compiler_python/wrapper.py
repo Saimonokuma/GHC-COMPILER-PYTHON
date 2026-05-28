@@ -187,8 +187,10 @@ class BaseResource:
 
     @classmethod
     @functools.lru_cache(maxsize=None)
-    def locate(cls, base: str = sys.prefix, version: str = GHC_VERSION) -> List[Path]:
+    def locate(cls, base: Optional[str] = None, version: str = GHC_VERSION) -> List[Path]:
         """Locate all instances of this resource relative to a base directory."""
+        if base is None:
+            base = sys.prefix
         base_path = Path(base)
         candidates = cls.get_candidates(base_path, version)
 
