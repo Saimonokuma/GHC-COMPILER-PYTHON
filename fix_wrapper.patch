@@ -1,0 +1,11 @@
+--- ghc_compiler_python/wrapper.py
++++ ghc_compiler_python/wrapper.py
+@@ -187,7 +187,7 @@
+
+     @classmethod
+     @functools.lru_cache(maxsize=None)
+-    def locate(cls, base: str = None, version: str = GHC_VERSION) -> List[Path]:
++    def locate(cls, base: Optional[str] = None, version: str = GHC_VERSION) -> List[Path]:
+         """Locate all instances of this resource relative to a base directory."""
+         if base is None:
+             base = sys.prefix
