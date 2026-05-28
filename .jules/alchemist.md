@@ -37,3 +37,12 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## REPO CONTEXT (Last updated: 2025-05-18)
+**Project:** ghc-compiler-python | **Languages:** Python, Bash, Haskell | **Build/Test/Lint:** hatchling, pytest
+**Transmutation Opportunities Identified:** Redundant multiple `os.walk` path validation loops and iterations, sequential list extends, inefficient generator handling.
+**Completed Transmutations:**
+- Compressed redundant file validity checks via structural item selections and `:=`
+- Replaced manual iteration loops with generator expressions
+- Grouped file checks and caching into lazy generators to avoid redundant I/O passes
+- Refactored multiple `.extend` list operations to simple concatenation expressions
