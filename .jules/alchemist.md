@@ -37,3 +37,15 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2025-05-18 - Language-Idiomatic Syntax Optimizations
+**Transformation:**
+- Applied the `next()` generator expression with default `None` instead of manual `for` loops in `BaseResource.locate` in `ghc_compiler_python/wrapper.py`.
+- Replaced iterative list comprehension nested in a `set()` with a single set comprehension `{... for ... for ...}` in `_resolve_runtime_paths`.
+- Simplified the `cmd` building process by using list unpacking `[binary_path, *(extra_args or []), *sys.argv[1:]]` in `_execute_tool` instead of consecutive `cmd.extend()` calls.
+- Simplified assignments inside `if` conditionals using the walrus operator `:=` to eliminate redundant variable allocations in `scripts/patch_ghc_paths.py` and `wrapper.py` (specifically in `BaseResource.locate` and regex `.sub()` checks).
+- Condensed `f.read(1024)` check directly into the `return b"\0" not in f.read(1024)` statement.
+
+**Result:** Code size remains compact and performance improves slightly due to using built-in C-level implementations like `next()` and list unpacking compared to python-level loop operations. All verification test suites pass successfully.
+
+**Lesson:** Python's modern syntaxes (like unpacking inside list declarations `[*iter]`, walrus operators `:=`, and set comprehensions) can effectively replace procedural logic to yield highly optimized, concise and expressive single-line statements without reducing execution performance.
