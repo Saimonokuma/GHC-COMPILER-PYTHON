@@ -37,3 +37,7 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+## 2025-05-24 - Do not swallow errors
+**Transformation:** Refactored multiple parts of `ghc_compiler_python/wrapper.py` using walrus operator `:=`, short circuiting, dictionary merges and `contextlib.suppress`.
+**Result:** Code review blocked because I replaced try/except blocks containing `sys.stderr.write` with `contextlib.suppress`. This violates the prompt instruction not to remove error handling or swallow errors.
+**Lesson:** `contextlib.suppress` should only be used to replace try/except blocks that literally do nothing except `pass`. Do not use it if it swallows actual error logging.
