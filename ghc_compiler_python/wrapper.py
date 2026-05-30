@@ -21,6 +21,7 @@ import tempfile
 import functools
 import mmap
 import re
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, List, NoReturn, Optional, Type
 
@@ -86,8 +87,7 @@ def _resolve_binary(name: str) -> str:
 
 def _validate_c_linker() -> None:
     """Pre-flight validation: assert the existence of a host C-linker."""
-    if not shutil.which("gcc") and not shutil.which("clang"):
-        _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
+    shutil.which("gcc") or shutil.which("clang") or _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
 
 
 def _find_platform_lib_subdir() -> str:
@@ -119,13 +119,10 @@ def _sterilize_environment() -> dict:
             return Path()
 
     def _try_mkdir(path: Path) -> Optional[Path]:
-        try:
+        with suppress(OSError, RuntimeError):
             if str(path) != ".":
                 path.mkdir(parents=True, exist_ok=True)
                 return path
-        except (OSError, RuntimeError):
-            pass
-        return None
 
     # 🧪 Alchemist: Declarative fallback chain replaces nested try-except blocks.
     # Lazily evaluate Path.home() to prevent premature RuntimeError.
@@ -213,16 +210,8 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                if cls.name in (dirs if cls.is_dir else files) and cls.validate(p := Path(root) / cls.name):
+                    found.append(p)
         return found
 
     @classmethod
@@ -274,14 +263,7 @@ class SettingsResource(BaseResource):
                 r"/(?:usr/local/lib|usr/lib|opt|ghc-prefix)/ghc(?:-|/)" + re.escape(version) + r"|/ghc-prefix"
             )
 
-            def repl(m: re.Match) -> str:
-                match = m.group(0)
-                if match == "/ghc-prefix":
-                    return placeholder
-                return f"{placeholder}/lib/ghc-{version}"
-
-            new_content = pattern.sub(repl, content)
-            if new_content != content:
+            if (new_content := pattern.sub(lambda m: placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}", content)) != content:
                 path.write_text(new_content, encoding="utf-8")
                 return 1
         except OSError as e:
@@ -326,15 +308,7 @@ class PackageDBResource(BaseResource):
                     r"(dynamic-library-dirs:\s*|library-dirs:\s*|include-dirs:\s*)/[^\s]+|/ghc-prefix/lib/ghc-" + re.escape(version) + r"|/ghc-prefix"
                 )
 
-                def repl(m: re.Match) -> str:
-                    g1 = m.group(1)
-                    if g1:
-                        return f"{g1}{placeholder}/lib/ghc-{version}{'/include' if 'include' in g1 else ''}"
-                    return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
-
-                content = pattern.sub(repl, original)
-
-                if content != original:
+                if (content := pattern.sub(lambda m: f"{m.group(1)}{placeholder}/lib/ghc-{version}{'/include' if 'include' in m.group(1) else ''}" if m.group(1) else (placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"), original)) != original:
                     conf_file.write_text(content, encoding="utf-8")
                     patched_count += 1
             except OSError as e:
@@ -395,12 +369,7 @@ class BinWrappersResource(BaseResource):
                     re.escape(abs_staging) + r"|" + re.escape(abs_staging_win)
                 )
 
-                def repl(m: re.Match) -> str:
-                    return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
-
-                content = pattern.sub(repl, content)
-
-                if content != original:
+                if (content := pattern.sub(lambda m: f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder, content)) != original:
                     script.write_text(content, encoding="utf-8")
                     patched += 1
             except OSError as e:
@@ -474,11 +443,9 @@ def _resolve_runtime_paths(env: dict) -> None:
             _ghc_pkg_recache(str(pkg_db), env)
 
     # ⚡ Bolt: Write marker file to indicate this prefix has been successfully patched
-    try:
+    with suppress(OSError):
         marker_file.parent.mkdir(parents=True, exist_ok=True)
         marker_file.write_text(prefix_clean, encoding="utf-8")
-    except OSError:
-        pass
 
 
 def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
@@ -488,23 +455,20 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
             pkg_db_dir: Path to the package.conf.d directory.
             env: The sterilized environment dict with proper LD_LIBRARY_PATH set.
     """
-    ghc_pkg = _try_resolve_binary("ghc-pkg")
-    if not ghc_pkg:
-        return  # Can't recache without ghc-pkg
-
-    try:
-        # Use the sterilized environment which has LD_LIBRARY_PATH properly set
-        # 🧪 Alchemist: Dictionary merge operator (|) replaces unpacking
-        subprocess.run(
-            [ghc_pkg, "recache", "--package-db", pkg_db_dir],
-            env=env | {"GHC_PACKAGE_PATH": pkg_db_dir},
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=30,
-            check=True,
-        )
-    except (subprocess.SubprocessError, OSError) as e:
-        sys.stderr.write(f"WARNING: ghc-pkg recache failed for {pkg_db_dir}: {e}\n")
+    if ghc_pkg := _try_resolve_binary("ghc-pkg"):
+        try:
+            # Use the sterilized environment which has LD_LIBRARY_PATH properly set
+            # 🧪 Alchemist: Dictionary merge operator (|) replaces unpacking
+            subprocess.run(
+                [ghc_pkg, "recache", "--package-db", pkg_db_dir],
+                env=env | {"GHC_PACKAGE_PATH": pkg_db_dir},
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=30,
+                check=True,
+            )
+        except (subprocess.SubprocessError, OSError) as e:
+            sys.stderr.write(f"WARNING: ghc-pkg recache failed for {pkg_db_dir}: {e}\n")
 
 
 def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoReturn:
@@ -547,10 +511,7 @@ def __getattr__(name: str) -> Any:
         tool_name = name[8:].replace("_", "-")
         extra_args = ["-v0"] if tool_name == "ghc" else None
 
-        def executor() -> NoReturn:
-            _execute_tool(tool_name, extra_args=extra_args)
-
-        executor.__name__ = name
+        (executor := lambda: _execute_tool(tool_name, extra_args=extra_args)).__name__ = name
         return executor
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
