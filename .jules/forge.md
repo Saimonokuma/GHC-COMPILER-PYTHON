@@ -12,3 +12,6 @@ Deleted test script files that I added during my debugging phase.
 - Unhandled `PermissionError` (a subclass of `OSError`) caused crashes during path resolution when `iterdir()` was called on unreadable directories in `wrapper.py`. Added proper `try...except OSError` fallback.
 - Prevented a fatal crash (`sys.exit(1)`) triggered by missing `ghc-pkg` during recache by splitting binary resolution into a safe `_try_resolve_binary` method.
 - Replaced a stubbed verification string with proper `otool -l` execution checks inside `scripts/fix_macos_rpaths.sh`. Ensured to use `grep -E` (Extended Regular Expressions) for BSD `grep` compatibility on macOS when alternating values.
+### Critical Learnings (2025-05-30):
+- Filesystem iteration functions `Path.iterdir()` and `Path.glob()` can raise `OSError` (e.g. `PermissionError`) if the target directory lacks read permissions. This can cause fatal crashes when processing unknown environments during `_resolve_runtime_paths` and `patch_build_time`.
+- Fixed multiple unprotected path iteration calls in `ghc_compiler_python/wrapper.py` (specifically `_find_platform_lib_subdir`, `PackageDBResource.patch_build_time`, and `BinWrappersResource.patch_build_time`) by wrapping them in `try...except OSError` blocks and evaluating generators early using `list()`.
