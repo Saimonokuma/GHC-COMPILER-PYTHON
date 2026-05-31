@@ -58,8 +58,7 @@ def _is_text_file(filepath: Path) -> bool:
     """Check if a file is a text file by looking for null bytes in the first 1024 bytes."""
     try:
         with filepath.open("rb") as f:
-            chunk = f.read(1024)
-            return b"\0" not in chunk
+            return b"\0" not in f.read(1024)
     except OSError:
         return False
 
@@ -164,12 +163,8 @@ def _sterilize_environment() -> dict:
     if lib_dirs_str := os.pathsep.join(
         str(p) for p in candidates if p.is_dir() and str(p) != "."
     ):
-        for var in vars_to_update:
-            env[var] = (
-                f"{lib_dirs_str}{os.pathsep}{env[var]}"
-                if env.get(var)
-                else lib_dirs_str
-            )
+        # 🧪 Alchemist: Dictionary update with comprehension replaces explicit for loop
+        env.update({var: f"{lib_dirs_str}{os.pathsep}{env[var]}" if env.get(var) else lib_dirs_str for var in vars_to_update})
 
     return env
 
@@ -190,13 +185,10 @@ class BaseResource:
     def locate(cls, base: str = sys.prefix, version: str = GHC_VERSION) -> List[Path]:
         """Locate all instances of this resource relative to a base directory."""
         base_path = Path(base)
-        candidates = cls.get_candidates(base_path, version)
 
-        # Check explicit candidates first
-        for c in candidates:
-            # 🧪 Alchemist: Ternary conditional combines file and directory checks
-            if (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c):
-                return [c]
+        # 🧪 Alchemist: next() replaces explicit for loop
+        if match := next((c for c in cls.get_candidates(base_path, version) if (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c)), None):
+            return [match]
 
         # Dynamic fallback
         found = []
@@ -213,16 +205,9 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                # 🧪 Alchemist: Condense redundant if branches using ternary operator
+                if cls.name in (dirs if cls.is_dir else files) and cls.validate(p := Path(root) / cls.name):
+                    found.append(p)
         return found
 
     @classmethod
@@ -450,9 +435,8 @@ def _resolve_runtime_paths(env: dict) -> None:
                 except (ValueError, OSError):
                     # mmap throws ValueError for empty files, OSError for unmappable ones
                     f.seek(0)
-                    content_to_write = f.read()
-                    if b"@GHC_PREFIX@" not in content_to_write:
-                        content_to_write = None
+                    c = f.read()
+                    content_to_write = c if b"@GHC_PREFIX@" in c else None
 
             if content_to_write is not None:
                 # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
@@ -488,8 +472,7 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
             pkg_db_dir: Path to the package.conf.d directory.
             env: The sterilized environment dict with proper LD_LIBRARY_PATH set.
     """
-    ghc_pkg = _try_resolve_binary("ghc-pkg")
-    if not ghc_pkg:
+    if not (ghc_pkg := _try_resolve_binary("ghc-pkg")):
         return  # Can't recache without ghc-pkg
 
     try:
