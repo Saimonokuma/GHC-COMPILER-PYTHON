@@ -37,3 +37,15 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2025-05-25 - Redundant Variable and Reused Target Extraction Fix
+**Transformation:**
+- Eliminated redundant `chunk` variable in `_is_text_file`.
+- Combined collection target conditional and walrus assignment `p := Path(root) / cls.name` in `locate` to eliminate duplicate path construction blocks.
+- Rewrote `PackageDBResource.extract_targets` using `pathlib.Path.glob` to avoid string checking `.endswith(".conf")`.
+- Reused `cls.extract_targets` in `PackageDBResource.patch_build_time` and `BinWrappersResource.patch_build_time` to avoid redundant iteration, symlink checks and regex operations.
+- Combined loops in `_resolve_runtime_paths` into a single set comprehension instead of manual deduplication over a list.
+
+**Result:** Code size reduced, eliminated logic replication between extracting targets and patching them, combined operations natively into expressions. Tests all pass.
+
+**Lesson:** Relying on generators, globs, comprehensions and standard class methods reduces loop boilerplate and manual type-checks significantly. Reusing a class method (`extract_targets`) within another (`patch_build_time`) is much safer than re-implementing file exclusion logic twice.

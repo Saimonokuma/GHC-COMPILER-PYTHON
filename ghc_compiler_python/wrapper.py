@@ -58,8 +58,7 @@ def _is_text_file(filepath: Path) -> bool:
     """Check if a file is a text file by looking for null bytes in the first 1024 bytes."""
     try:
         with filepath.open("rb") as f:
-            chunk = f.read(1024)
-            return b"\0" not in chunk
+            return b"\0" not in f.read(1024)
     except OSError:
         return False
 
@@ -213,16 +212,9 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                # 🧪 Alchemist: Combine collection targets and walrus operator to eliminate duplicate blocks
+                if cls.name in (dirs if cls.is_dir else files) and cls.validate(p := Path(root) / cls.name):
+                    found.append(p)
         return found
 
     @classmethod
@@ -311,14 +303,17 @@ class PackageDBResource(BaseResource):
     @classmethod
     def extract_targets(cls, path: Path) -> List[str]:
         try:
-            return [str(f) for f in path.iterdir() if f.name.endswith(".conf") and not f.is_symlink()]
+            # 🧪 Alchemist: pathlib.glob reduces manual iterdir and string checks
+            return [str(f) for f in path.glob("*.conf") if not f.is_symlink()]
         except OSError:
             return []
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched_count = 0
-        for conf_file in path.glob("*.conf"):
+        # 🧪 Alchemist: Reuse extract_targets to eliminate redundant iteration and filtering logic
+        for conf_path in cls.extract_targets(path):
+            conf_file = Path(conf_path)
             try:
                 original = conf_file.read_text(encoding="utf-8", errors="replace")
                 # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
@@ -378,9 +373,9 @@ class BinWrappersResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched = 0
-        for script in path.iterdir():
-            if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
-                continue
+        # 🧪 Alchemist: Reuse extract_targets to eliminate redundant iteration and filtering logic
+        for script_path in cls.extract_targets(path):
+            script = Path(script_path)
             try:
                 content = script.read_text(encoding="utf-8", errors="replace")
                 original = content
@@ -425,17 +420,17 @@ def _resolve_runtime_paths(env: dict) -> None:
         pass
 
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
-    # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
-    targets = [
+    # 🧪 Alchemist: Set comprehension condenses nested loops and inherently deduplicates
+    targets = {
         target for resource_cls in BaseResource.registry
         for resource_path in resource_cls.locate()
         for target in resource_cls.extract_targets(resource_path)
-    ]
+    }
 
     # Replace @GHC_PREFIX@ in all target files
     prefix_clean_bytes = prefix_clean.encode("utf-8")
     patched_any_conf = False
-    for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
+    for target in targets:
         target_path = Path(target)
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
