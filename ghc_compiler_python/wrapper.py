@@ -12,17 +12,17 @@ FIX v4: Added ghc-pkg recache after @GHC_PREFIX@ replacement to regenerate packa
 FIX v3: Fixed platform-specific path detection for settings and package.conf.d.
 FIX v2: Added DYLD_LIBRARY_PATH for macOS runtime library resolution.
 """
+from __future__ import annotations
 
 import os
 import sys
 import shutil
-import subprocess
-import tempfile
 import functools
-import mmap
-import re
 from pathlib import Path
-from typing import Any, List, NoReturn, Optional, Type
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from typing import Any, List, NoReturn, Optional, Type
 
 
 GHC_VERSION = "9.4.8"
@@ -108,6 +108,8 @@ def _find_platform_lib_subdir() -> str:
 def _sterilize_environment() -> dict:
     """Create a sterilized subprocess environment with proper library paths."""
     global _HOME_ORIGINAL
+    import tempfile
+
     env = {k: v for k, v in os.environ.items() if k not in HASKELL_POLLUTION_VARS}
 
     _HOME_ORIGINAL = os.environ.get("HOME", os.environ.get("USERPROFILE", ""))
@@ -267,6 +269,7 @@ class SettingsResource(BaseResource):
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
+        import re
         try:
             content = path.read_text(encoding="utf-8", errors="replace")
             # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
@@ -317,6 +320,7 @@ class PackageDBResource(BaseResource):
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
+        import re
         patched_count = 0
         for conf_file in path.glob("*.conf"):
             try:
@@ -377,6 +381,7 @@ class BinWrappersResource(BaseResource):
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
+        import re
         patched = 0
         for script in path.iterdir():
             if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
@@ -413,6 +418,8 @@ def _resolve_runtime_paths(env: dict) -> None:
     Args:
             env: The sterilized environment dict with proper LD_LIBRARY_PATH set.
     """
+    import mmap
+    import re
     prefix_clean = sys.prefix.replace("\\", "/")
 
     # ⚡ Bolt: Fast-path to avoid scanning and patching on every invocation.
@@ -488,6 +495,8 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
             pkg_db_dir: Path to the package.conf.d directory.
             env: The sterilized environment dict with proper LD_LIBRARY_PATH set.
     """
+    import subprocess
+
     ghc_pkg = _try_resolve_binary("ghc-pkg")
     if not ghc_pkg:
         return  # Can't recache without ghc-pkg
@@ -509,6 +518,8 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
 
 def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoReturn:
     """Generic subprocess proxy for bundled Haskell tooling."""
+    import subprocess
+
     _validate_c_linker()
     env = _sterilize_environment()
     _resolve_runtime_paths(env)
