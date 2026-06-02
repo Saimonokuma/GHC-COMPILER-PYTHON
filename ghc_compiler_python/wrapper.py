@@ -58,8 +58,7 @@ def _is_text_file(filepath: Path) -> bool:
     """Check if a file is a text file by looking for null bytes in the first 1024 bytes."""
     try:
         with filepath.open("rb") as f:
-            chunk = f.read(1024)
-            return b"\0" not in chunk
+            return b"\0" not in f.read(1024)
     except OSError:
         return False
 
@@ -69,13 +68,11 @@ def _try_resolve_binary(name: str) -> Optional[str]:
     binary_name = f"{name}.exe" if sys.platform == "win32" else name
     bin_dir = "Scripts" if sys.platform == "win32" else "bin"
 
-    candidates = [
-        Path(sys.prefix) / bin_dir / binary_name,
-        Path(__file__).resolve().parent.parent / bin_dir / binary_name
-    ]
-
     return next(
-        (str(p) for p in candidates if p.exists()),
+        (str(p) for p in [
+            Path(sys.prefix) / bin_dir / binary_name,
+            Path(__file__).resolve().parent.parent / bin_dir / binary_name
+        ] if p.exists()),
         shutil.which(binary_name)
     )
 
@@ -213,16 +210,11 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                items = dirs if cls.is_dir else files
+                if cls.name in items:
+                    p = Path(root) / cls.name
+                    if cls.validate(p):
+                        found.append(p)
         return found
 
     @classmethod
@@ -514,10 +506,7 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
     _resolve_runtime_paths(env)
     binary_path = _resolve_binary(tool_name)
 
-    cmd = [binary_path]
-    if extra_args:
-        cmd.extend(extra_args)
-    cmd.extend(sys.argv[1:])
+    cmd = [binary_path] + (extra_args or []) + sys.argv[1:]
 
     try:
         # 🧪 Alchemist: On POSIX systems, os.execve replaces the Python interpreter entirely.

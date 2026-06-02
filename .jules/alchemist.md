@@ -37,3 +37,12 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2026-06-02 - Inline variables and remove duplications
+**Transformation:**
+- Refactored `_is_text_file` to directly return the boolean check without a temporary variable.
+- Refactored `_try_resolve_binary` to inline the `candidates` list directly into the generator expression, skipping an intermediate variable.
+- Refactored `BaseResource.locate` to conditionally assign the target search list (`dirs` vs `files`) and then perform a single check, removing duplicate logic blocks.
+- Refactored `_execute_tool` to combine multiple `.extend` operations into a single list concatenation line.
+**Result:** Code size reduced and logic flow simplified without breaking correctness. Tests pass.
+**Lesson:** Temporary variables and duplicate condition bodies add unnecessary bloat. Inlining and conditionally assigning variables early allows the main logic to remain concise and easier to follow.
