@@ -20,6 +20,7 @@ from ghc_compiler_python.wrapper import BaseResource, GHC_VERSION
 PLACEHOLDER_PREFIX = "@GHC_PREFIX@"
 STAGING_DIR = Path("ghc-bindist")
 
+
 def main():
     if not STAGING_DIR.exists():
         print("Staging directory not found, skipping path patching.")
@@ -35,21 +36,28 @@ def main():
         found_paths = resource_cls.locate(base=str(STAGING_DIR), version=GHC_VERSION)
 
         if not found_paths:
-            print(f"WARNING: Resource '{resource_cls.name}' not found in expected locations.")
+            print(
+                f"WARNING: Resource '{resource_cls.name}' not found in expected locations."
+            )
             continue
 
         for path in found_paths:
             print(f"Found {resource_cls.name} at: {path}")
-            patched_count = resource_cls.patch_build_time(path, GHC_VERSION, PLACEHOLDER_PREFIX)
+            patched_count = resource_cls.patch_build_time(
+                path, GHC_VERSION, PLACEHOLDER_PREFIX
+            )
 
             if patched_count > 0:
-                print(f"Successfully patched {patched_count} items in {resource_cls.name}")
+                print(
+                    f"Successfully patched {patched_count} items in {resource_cls.name}"
+                )
                 total_patched += patched_count
             else:
                 print(f"No patching required for {resource_cls.name} at {path}")
 
     print(f"\nTotal resources patched: {total_patched}")
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())
