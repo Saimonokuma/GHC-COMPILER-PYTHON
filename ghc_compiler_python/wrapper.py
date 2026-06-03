@@ -15,9 +15,6 @@ FIX v2: Added DYLD_LIBRARY_PATH for macOS runtime library resolution.
 
 import os
 import sys
-import shutil
-import subprocess
-import tempfile
 import functools
 import mmap
 import re
@@ -54,6 +51,35 @@ def _die(msg: str) -> NoReturn:
     sys.exit(1)
 
 
+def _which(cmd: str) -> Optional[str]:
+    """Fast replacement for shutil.which avoiding heavy imports."""
+    if os.path.dirname(cmd):
+        if os.access(cmd, os.X_OK) and not os.path.isdir(cmd):
+            return cmd
+        return None
+
+    path = os.environ.get("PATH", os.defpath)
+
+    if sys.platform == "win32":
+        pathext = os.environ.get("PATHEXT", "").split(os.pathsep)
+        if any(cmd.lower().endswith(ext.lower()) for ext in pathext if ext):
+            files = [cmd]
+        else:
+            files = [cmd + ext for ext in pathext] + [cmd]
+    else:
+        files = [cmd]
+
+    for p in path.split(os.pathsep):
+        p = p.strip('"')
+        if not p:
+            continue
+        for f in files:
+            exe = os.path.join(p, f)
+            if os.access(exe, os.X_OK) and not os.path.isdir(exe):
+                return exe
+    return None
+
+
 def _is_text_file(filepath: Path) -> bool:
     """Check if a file is a text file by looking for null bytes in the first 1024 bytes."""
     try:
@@ -76,7 +102,7 @@ def _try_resolve_binary(name: str) -> Optional[str]:
 
     return next(
         (str(p) for p in candidates if p.exists()),
-        shutil.which(binary_name)
+        _which(binary_name)
     )
 
 def _resolve_binary(name: str) -> str:
@@ -86,7 +112,7 @@ def _resolve_binary(name: str) -> str:
 
 def _validate_c_linker() -> None:
     """Pre-flight validation: assert the existence of a host C-linker."""
-    if not shutil.which("gcc") and not shutil.which("clang"):
+    if not _which("gcc") and not _which("clang"):
         _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
 
 
@@ -127,12 +153,16 @@ def _sterilize_environment() -> dict:
             pass
         return None
 
+    def _get_temp_home() -> Path:
+        import tempfile
+        return Path(tempfile.mkdtemp(prefix="ghc-compiler-python-home-"))
+
     # 🧪 Alchemist: Declarative fallback chain replaces nested try-except blocks.
     # Lazily evaluate Path.home() to prevent premature RuntimeError.
     safe_home = (
         _try_mkdir(Path(sys.prefix) / ".ghc-compiler-python-home") or
         _try_mkdir(_get_home_path()) or
-        Path(tempfile.mkdtemp(prefix="ghc-compiler-python-home-"))
+        _get_temp_home()
     )
 
     env["HOME"] = str(safe_home)
@@ -492,6 +522,7 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
     if not ghc_pkg:
         return  # Can't recache without ghc-pkg
 
+    import subprocess
     try:
         # Use the sterilized environment which has LD_LIBRARY_PATH properly set
         # 🧪 Alchemist: Dictionary merge operator (|) replaces unpacking
@@ -528,12 +559,15 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
         if sys.platform != "win32":
             os.execve(binary_path, cmd, env)
         else:
+            import subprocess
             sys.exit(subprocess.run(cmd, env=env).returncode)
     except FileNotFoundError:
         _die(f"FATAL ERROR: Binary not found at '{binary_path}'.")
     except KeyboardInterrupt:
         sys.exit(130)
-    except (subprocess.SubprocessError, OSError) as e:
+    except OSError as e:
+        _die(f"FATAL ERROR: Execution failed: {e}")
+    except Exception as e:
         _die(f"FATAL ERROR: Execution failed: {e}")
 
 
