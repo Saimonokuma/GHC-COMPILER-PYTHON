@@ -118,29 +118,24 @@ def _sterilize_environment() -> dict:
         except RuntimeError:
             return Path()
 
-    def _try_mkdir(path: Path) -> Optional[Path]:
-        try:
-            if str(path) != ".":
-                path.mkdir(parents=True, exist_ok=True)
-                return path
-        except (OSError, RuntimeError):
-            pass
-        return None
-
-    # 🧪 Alchemist: Declarative fallback chain replaces nested try-except blocks.
-    # Lazily evaluate Path.home() to prevent premature RuntimeError.
-    safe_home = (
-        _try_mkdir(Path(sys.prefix) / ".ghc-compiler-python-home") or
-        _try_mkdir(_get_home_path()) or
-        Path(tempfile.mkdtemp(prefix="ghc-compiler-python-home-"))
-    )
+    # 🧪 Alchemist: Contextlib suppress and next() cleanly replace verbose try/except wrapper functions
+    from contextlib import suppress
+    for home_path in [Path(sys.prefix) / ".ghc-compiler-python-home", _get_home_path()]:
+        with suppress(OSError, RuntimeError):
+            if str(home_path) != ".":
+                home_path.mkdir(parents=True, exist_ok=True)
+                safe_home = home_path
+                break
+    else:
+        safe_home = Path(tempfile.mkdtemp(prefix="ghc-compiler-python-home-"))
 
     env["HOME"] = str(safe_home)
 
-    bin_dir = "Scripts" if sys.platform == "win32" else "bin"
-    env_bin = Path(sys.prefix) / bin_dir
-    current_path = env.get("PATH", "")
-    env["PATH"] = f"{env_bin}{os.pathsep}{current_path}"
+    # 🧪 Alchemist: os.pathsep.join and filter() cleanly eliminates empty trailing path variables
+    env["PATH"] = os.pathsep.join(filter(None, [
+        str(Path(sys.prefix) / ("Scripts" if sys.platform == "win32" else "bin")),
+        env.get("PATH")
+    ]))
 
     # 🧪 Alchemist: Structural pattern matching replaces lambda-based dictionary lookup
     match sys.platform:
@@ -165,11 +160,7 @@ def _sterilize_environment() -> dict:
         str(p) for p in candidates if p.is_dir() and str(p) != "."
     ):
         for var in vars_to_update:
-            env[var] = (
-                f"{lib_dirs_str}{os.pathsep}{env[var]}"
-                if env.get(var)
-                else lib_dirs_str
-            )
+            env[var] = os.pathsep.join(filter(None, [lib_dirs_str, env.get(var)]))
 
     return env
 
@@ -213,16 +204,10 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                # 🧪 Alchemist: Walrus operator (:=) and ternary conditional replace verbose type-checking logic
+                targets = dirs if cls.is_dir else files
+                if cls.name in targets and cls.validate(p := Path(root) / cls.name):
+                    found.append(p)
         return found
 
     @classmethod
@@ -236,9 +221,8 @@ class BaseResource:
     @classmethod
     def extract_targets(cls, path: Path) -> List[str]:
         """Extract actual file targets to be patched at runtime from the located resource."""
-        if not cls.is_dir:
-            return [str(path)]
-        return []
+        # 🧪 Alchemist: Ternary replaces multiline if/return block
+        return [] if cls.is_dir else [str(path)]
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
@@ -280,8 +264,9 @@ class SettingsResource(BaseResource):
                     return placeholder
                 return f"{placeholder}/lib/ghc-{version}"
 
-            new_content = pattern.sub(repl, content)
-            if new_content != content:
+            # 🧪 Alchemist: subn returns tuple of (new_string, count), skipping string comparison
+            new_content, count = pattern.subn(repl, content)
+            if count:
                 path.write_text(new_content, encoding="utf-8")
                 return 1
         except OSError as e:
@@ -332,9 +317,9 @@ class PackageDBResource(BaseResource):
                         return f"{g1}{placeholder}/lib/ghc-{version}{'/include' if 'include' in g1 else ''}"
                     return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
 
-                content = pattern.sub(repl, original)
-
-                if content != original:
+                # 🧪 Alchemist: subn skips expensive string comparisons for large text content
+                content, count = pattern.subn(repl, original)
+                if count:
                     conf_file.write_text(content, encoding="utf-8")
                     patched_count += 1
             except OSError as e:
@@ -398,9 +383,9 @@ class BinWrappersResource(BaseResource):
                 def repl(m: re.Match) -> str:
                     return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
 
-                content = pattern.sub(repl, content)
-
-                if content != original:
+                # 🧪 Alchemist: subn skips expensive string comparisons
+                content, count = pattern.subn(repl, content)
+                if count:
                     script.write_text(content, encoding="utf-8")
                     patched += 1
             except OSError as e:
@@ -465,13 +450,12 @@ def _resolve_runtime_paths(env: dict) -> None:
         except OSError as e:
             sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
 
-    # 🧪 Alchemist: any() replaces manual flag variables and loops for succinct boolean reduction
-    if patched_any_conf or any(
-        not (pkg_db / "package.cache").exists()
-        for pkg_db in PackageDBResource.locate()
-    ):
-        for pkg_db in PackageDBResource.locate():
-            _ghc_pkg_recache(str(pkg_db), env)
+    # 🧪 Alchemist: any() replaces manual flag variables and loops for succinct boolean reduction.
+    # Assigning to a local variable prevents duplicate logic.
+    pkg_dbs = PackageDBResource.locate()
+    if patched_any_conf or any(not (db / "package.cache").exists() for db in pkg_dbs):
+        for db in pkg_dbs:
+            _ghc_pkg_recache(str(db), env)
 
     # ⚡ Bolt: Write marker file to indicate this prefix has been successfully patched
     try:
@@ -514,10 +498,8 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
     _resolve_runtime_paths(env)
     binary_path = _resolve_binary(tool_name)
 
-    cmd = [binary_path]
-    if extra_args:
-        cmd.extend(extra_args)
-    cmd.extend(sys.argv[1:])
+    # 🧪 Alchemist: List concatenation replaces sequential mutations
+    cmd = [binary_path] + (extra_args or []) + sys.argv[1:]
 
     try:
         # 🧪 Alchemist: On POSIX systems, os.execve replaces the Python interpreter entirely.
