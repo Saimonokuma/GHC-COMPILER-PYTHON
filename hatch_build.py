@@ -1,6 +1,7 @@
 from hatchling.metadata.plugin.interface import MetadataHookInterface
 from pathlib import Path
 
+
 class CustomMetadataHook(MetadataHookInterface):
     def update(self, metadata: dict) -> None:
         """
@@ -12,8 +13,16 @@ class CustomMetadataHook(MetadataHookInterface):
 
         # Base tools that are standard for GHC/Cabal
         core_tools = [
-            "ghc", "ghci", "cabal", "runghc", "runhaskell",
-            "haddock", "ghc-pkg", "hsc2hs", "hp2ps", "hpc"
+            "ghc",
+            "ghci",
+            "cabal",
+            "runghc",
+            "runhaskell",
+            "haddock",
+            "ghc-pkg",
+            "hsc2hs",
+            "hp2ps",
+            "hpc",
         ]
 
         # In case we have downloaded binaries locally during build

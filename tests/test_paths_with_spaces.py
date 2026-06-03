@@ -1,8 +1,6 @@
-import os
-import sys
 from unittest.mock import patch
-from pathlib import Path
 from ghc_compiler_python.wrapper import _resolve_runtime_paths
+
 
 def test_resolve_runtime_paths_with_spaces(tmp_path):
     # create a mock package.conf.d
@@ -16,9 +14,17 @@ def test_resolve_runtime_paths_with_spaces(tmp_path):
 
     # mock sys.prefix to something with spaces
     with patch("sys.prefix", str(tmp_path / "prefix with spaces")):
-        with patch("ghc_compiler_python.wrapper.SettingsResource.locate", return_value=[]):
-            with patch("ghc_compiler_python.wrapper.PackageDBResource.locate", return_value=[conf_d]):
-                with patch("ghc_compiler_python.wrapper.BinWrappersResource.locate", return_value=[]):
+        with patch(
+            "ghc_compiler_python.wrapper.SettingsResource.locate", return_value=[]
+        ):
+            with patch(
+                "ghc_compiler_python.wrapper.PackageDBResource.locate",
+                return_value=[conf_d],
+            ):
+                with patch(
+                    "ghc_compiler_python.wrapper.BinWrappersResource.locate",
+                    return_value=[],
+                ):
                     with patch("ghc_compiler_python.wrapper._ghc_pkg_recache"):
                         _resolve_runtime_paths({})
 

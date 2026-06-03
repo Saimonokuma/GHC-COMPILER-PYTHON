@@ -130,11 +130,13 @@ class TestExceptionHandling:
                     _execute_tool("ghc")
                 assert exc.value.code == 1
 
+
 class TestBinWrappersResource:
     """Tests for BinWrappersResource binary filtering."""
 
     def test_extract_targets_ignores_binaries(self, tmp_path):
         from ghc_compiler_python.wrapper import BinWrappersResource
+
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
 
@@ -163,6 +165,7 @@ class TestBinWrappersResource:
 
     def test_patch_build_time_ignores_binaries(self, tmp_path):
         from ghc_compiler_python.wrapper import BinWrappersResource
+
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
 
@@ -173,7 +176,9 @@ class TestBinWrappersResource:
         binary = bin_dir / "ghc-pkg"
         binary.write_bytes(binary_content)
 
-        patched_count = BinWrappersResource.patch_build_time(bin_dir, "9.4.8", "@GHC_PREFIX@")
+        patched_count = BinWrappersResource.patch_build_time(
+            bin_dir, "9.4.8", "@GHC_PREFIX@"
+        )
 
         # Only the script should be patched
         assert patched_count == 1

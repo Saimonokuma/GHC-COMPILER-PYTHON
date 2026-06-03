@@ -7,8 +7,11 @@ by compiling a Python-based pipeline definition into a static, unrolled YAML wor
 
 from pathlib import Path
 
+
 class Step:
-    def __init__(self, name=None, uses=None, run=None, shell=None, with_args=None, env=None):
+    def __init__(
+        self, name=None, uses=None, run=None, shell=None, with_args=None, env=None
+    ):
         self.name = name
         self.uses = uses
         self.run = run
@@ -48,6 +51,7 @@ class Step:
                     lines.append(f"{ind}  run: {self.run}")
         return "\n".join(lines)
 
+
 PLATFORMS = {
     "linux": {
         "os": "ubuntu-latest",
@@ -60,41 +64,71 @@ PLATFORMS = {
     "windows": {
         "os": "windows-latest",
         "platform": "win_amd64",
-    }
+    },
 }
+
 
 def generate_job(platform_key, platform_data):
     steps = []
+
     def add_step(name=None, uses=None, run=None, shell=None, with_args=None):
-        steps.append(Step(name=name, uses=uses, run=run, shell=shell, with_args=with_args))
+        steps.append(
+            Step(name=name, uses=uses, run=run, shell=shell, with_args=with_args)
+        )
 
     add_step(uses="actions/checkout@v4")
 
     if platform_key == "linux":
-        add_step(name="Free disk space (Linux)", run="sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc\nsudo apt-get clean\ndf -h")
+        add_step(
+            name="Free disk space (Linux)",
+            run="sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc\nsudo apt-get clean\ndf -h",
+        )
 
-    add_step(uses="actions/setup-python@v5", with_args={"python-version": "'3.10'", "cache": "'pip'"})
+    add_step(
+        uses="actions/setup-python@v5",
+        with_args={"python-version": "'3.10'", "cache": "'pip'"},
+    )
 
     if platform_key == "linux":
-        add_step(name="Install System C-Linker (Linux)", run="""sudo apt-get update
+        add_step(
+            name="Install System C-Linker (Linux)",
+            run="""sudo apt-get update
 sudo apt-get install -y gcc binutils patchelf
 # GHC 9.4.8 needs libtinfo5/libncurses5 which aren't on Ubuntu 24.04 natively
 sudo apt-get install -y libtinfo5 libncurses5 libffi7 || \\
   (sudo apt-get install -y libtinfo6 libncursesw6 libffi8 libgmp10 && \\
    sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5 && \\
    sudo ln -sf /usr/lib/x86_64-linux-gnu/libncursesw.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5 && \\
-   sudo ln -sf /usr/lib/x86_64-linux-gnu/libffi.so.8 /usr/lib/x86_64-linux-gnu/libffi.so.7)""")
+   sudo ln -sf /usr/lib/x86_64-linux-gnu/libffi.so.8 /usr/lib/x86_64-linux-gnu/libffi.so.7)""",
+        )
         add_step(name="Install Vendoring Tools (Linux)", run="pip install auditwheel")
     elif platform_key == "macos":
-        add_step(name="Install System C-Linker (macOS)", run="xcode-select -p || xcode-select --install")
+        add_step(
+            name="Install System C-Linker (macOS)",
+            run="xcode-select -p || xcode-select --install",
+        )
         add_step(name="Install Vendoring Tools (macOS)", run="pip install delocate")
     elif platform_key == "windows":
-        add_step(name="Install System C-Linker (Windows)", shell="pwsh", run="""choco install mingw -y
-echo "C:\\msys64\\mingw64\\bin" | Out-File -FilePath $env:GITHUB_PATH -Append""")
+        add_step(
+            name="Install System C-Linker (Windows)",
+            shell="pwsh",
+            run="""choco install mingw -y
+echo "C:\\msys64\\mingw64\\bin" | Out-File -FilePath $env:GITHUB_PATH -Append""",
+        )
 
-    add_step(name="Install Python Build Dependencies", run="python -m pip install --upgrade pip\npip install build hatchling")
-    add_step(name="Fetch and Verify GHC/Cabal Binaries", shell="bash", run="bash scripts/fetch_binaries.sh")
-    add_step(name="Verify Shared Libraries", shell="bash", run="""echo "=== Checking for required .so files ==="
+    add_step(
+        name="Install Python Build Dependencies",
+        run="python -m pip install --upgrade pip\npip install build hatchling",
+    )
+    add_step(
+        name="Fetch and Verify GHC/Cabal Binaries",
+        shell="bash",
+        run="bash scripts/fetch_binaries.sh",
+    )
+    add_step(
+        name="Verify Shared Libraries",
+        shell="bash",
+        run="""echo "=== Checking for required .so files ==="
 find ghc-bindist -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" -o -name "libgmp*" || true
 echo "=== Full lib directory ==="
 ls -la ghc-bindist/lib/ghc-9.4.8/*.so* 2>/dev/null || true
@@ -102,18 +136,34 @@ ls -la ghc-bindist/lib/ghc-9.4.8/*.so* 2>/dev/null || true
 # Check if internal libraries actually extracted properly
 if [ -z "$(find ghc-bindist -name "libtinfo*.so.*")" ]; then
     echo "WARNING: libtinfo internal library not found in bindist, falling back to system symlinks."
-fi""")
+fi""",
+    )
 
-    add_step(name="Optimize Binary Size", shell="bash", run="bash scripts/optimize_binaries.sh")
-    add_step(name="Patch GHC Paths for Relocatability", shell="bash", run="python scripts/patch_ghc_paths.py")
+    add_step(
+        name="Optimize Binary Size",
+        shell="bash",
+        run="bash scripts/optimize_binaries.sh",
+    )
+    add_step(
+        name="Patch GHC Paths for Relocatability",
+        shell="bash",
+        run="python scripts/patch_ghc_paths.py",
+    )
 
     if platform_key == "macos":
-        add_step(name="Fix macOS Dynamic Library Paths", shell="bash", run="bash scripts/fix_macos_rpaths.sh")
+        add_step(
+            name="Fix macOS Dynamic Library Paths",
+            shell="bash",
+            run="bash scripts/fix_macos_rpaths.sh",
+        )
 
     add_step(name="Build PEP 427 Python Wheel", run="python -m build --wheel")
 
     if platform_key == "linux":
-        add_step(name="Vendor Dynamic Libraries (Linux)", shell="bash", run="""# Find the exact directory where the nested .so files are located inside ghc-bindist/lib/
+        add_step(
+            name="Vendor Dynamic Libraries (Linux)",
+            shell="bash",
+            run="""# Find the exact directory where the nested .so files are located inside ghc-bindist/lib/
 LINUX_LIB_DIR=$(find ghc-bindist/lib -name "libHS*.so" | head -n 1 | xargs dirname)
 if [ -n "$LINUX_LIB_DIR" ]; then
     echo "Found Linux GHC libraries at $LINUX_LIB_DIR"
@@ -125,13 +175,21 @@ fi
 # Run auditwheel with the LD_LIBRARY_PATH so it can find the internal .so dependencies
 auditwheel repair dist/*.whl --plat manylinux_2_39_x86_64 -w wheelhouse/
 rm -rf dist/*
-mv wheelhouse/*.whl dist/""")
+mv wheelhouse/*.whl dist/""",
+        )
     elif platform_key == "macos":
-        add_step(name="Vendor Dynamic Libraries (macOS)", shell="bash", run="""echo "Running delocate-wheel to verify and bundle dependencies"
+        add_step(
+            name="Vendor Dynamic Libraries (macOS)",
+            shell="bash",
+            run="""echo "Running delocate-wheel to verify and bundle dependencies"
 # Our rpaths are already correctly pointing to the internal libs
-delocate-wheel -v dist/*.whl""")
+delocate-wheel -v dist/*.whl""",
+        )
 
-    add_step(name="End-to-End Compilation Validation", shell="bash", run="""python -m venv test-env
+    add_step(
+        name="End-to-End Compilation Validation",
+        shell="bash",
+        run="""python -m venv test-env
 if [ -f test-env/Scripts/activate ]; then
   source test-env/Scripts/activate
 else
@@ -159,11 +217,21 @@ else
 fi
 
 cabal-wrapper --version
-deactivate""")
+deactivate""",
+    )
 
-    add_step(name="Upload Artifacts", uses="actions/upload-artifact@v4", with_args={"name": f"ghc-wheels-{platform_data['platform']}", "path": "dist/*.whl", "retention-days": "30"})
+    add_step(
+        name="Upload Artifacts",
+        uses="actions/upload-artifact@v4",
+        with_args={
+            "name": f"ghc-wheels-{platform_data['platform']}",
+            "path": "dist/*.whl",
+            "retention-days": "30",
+        },
+    )
 
     return steps
+
 
 def generate_yaml():
     header = """# AUTO-GENERATED BY scripts/generate_workflow.py
@@ -193,7 +261,7 @@ jobs:"""
         lines.append(f"  {job_name}:")
         lines.append(f"    name: Build on {pdata['os']}")
         lines.append(f"    runs-on: {pdata['os']}")
-        lines.append(f"    steps:")
+        lines.append("    steps:")
 
         steps = generate_job(pk, pdata)
         for step in steps:
@@ -229,6 +297,7 @@ jobs:"""
     lines.append(publish_job)
 
     return "\n".join(lines) + "\n"
+
 
 if __name__ == "__main__":
     yaml_content = generate_yaml()

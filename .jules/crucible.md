@@ -101,3 +101,25 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+
+---
+entry_id: "CRUCIBLE-2026-06-03-005"
+schema_version: "2.0"
+timestamp: "2026-06-03T17:00:55Z"
+title: "Python 3.8 Compatibility & Resource Leak Hardening"
+---
+## 2026-06-03 - Python 3.8 Compatibility & Resource Leak Hardening
+
+**Learning:** Fixed Python 3.8 compatibility issues where `match` statement and `|` merge operator broke the syntax rules required by `pyproject.toml`. Also resolved a resource leak by switching to deterministic temporary paths instead of `tempfile.mkdtemp`, preventing disk exhaustion.
+
+**Action:** Replaced `match` with `if/elif/else`, used `**env` unpacking, and utilized standard `Path(tempfile.gettempdir())`.
+
+**Defect Pattern ID:** None
+
+**Related Entries:** []
+
+**Axes Affected:** I (Syntactic), V (Temporal), IV (Operational)
+
+**Level:** L2, L3
+
+---
