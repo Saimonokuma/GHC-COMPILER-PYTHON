@@ -22,7 +22,7 @@ import functools
 import mmap
 import re
 from pathlib import Path
-from typing import Any, List, NoReturn, Optional, Type
+from typing import Any, List, NoReturn, Optional
 
 
 GHC_VERSION = "9.4.8"
@@ -142,24 +142,23 @@ def _sterilize_environment() -> dict:
     current_path = env.get("PATH", "")
     env["PATH"] = f"{env_bin}{os.pathsep}{current_path}"
 
-    # 🧪 Alchemist: Structural pattern matching replaces lambda-based dictionary lookup
-    match sys.platform:
-        case "darwin":
-            candidates = [
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
-                Path(sys.prefix) / "lib",
-            ]
-            vars_to_update = ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"]
-        case "linux":
-            candidates = [
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}",
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
-                Path(_find_platform_lib_subdir() or "."),
-                Path(__file__).resolve().parent.parent / "ghc_compiler_python.libs",
-            ]
-            vars_to_update = ["LD_LIBRARY_PATH"]
-        case _:
-            candidates, vars_to_update = [], []
+    # 🧪 Alchemist: Structural pattern matching replaced for Python 3.8 compatibility
+    if sys.platform == "darwin":
+        candidates = [
+            Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
+            Path(sys.prefix) / "lib",
+        ]
+        vars_to_update = ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"]
+    elif sys.platform.startswith("linux"):
+        candidates = [
+            Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}",
+            Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
+            Path(_find_platform_lib_subdir() or "."),
+            Path(__file__).resolve().parent.parent / "ghc_compiler_python.libs",
+        ]
+        vars_to_update = ["LD_LIBRARY_PATH"]
+    else:
+        candidates, vars_to_update = [], []
 
     if lib_dirs_str := os.pathsep.join(
         str(p) for p in candidates if p.is_dir() and str(p) != "."
@@ -282,7 +281,13 @@ class SettingsResource(BaseResource):
 
             new_content = pattern.sub(repl, content)
             if new_content != content:
-                path.write_text(new_content, encoding="utf-8")
+                tmp_path = path.with_name(f".tmp.{os.getpid()}.{path.name}")
+                try:
+                    tmp_path.write_text(new_content, encoding="utf-8")
+                    tmp_path.replace(path)
+                except OSError as e:
+                    tmp_path.unlink(missing_ok=True)
+                    raise e
                 return 1
         except OSError as e:
             sys.stderr.write(f"WARNING: Failed to patch {path}: {e}\n")
@@ -335,7 +340,13 @@ class PackageDBResource(BaseResource):
                 content = pattern.sub(repl, original)
 
                 if content != original:
-                    conf_file.write_text(content, encoding="utf-8")
+                    tmp_path = conf_file.with_name(f".tmp.{os.getpid()}.{conf_file.name}")
+                    try:
+                        tmp_path.write_text(content, encoding="utf-8")
+                        tmp_path.replace(conf_file)
+                    except OSError as e:
+                        tmp_path.unlink(missing_ok=True)
+                        raise e
                     patched_count += 1
             except OSError as e:
                 sys.stderr.write(f"WARNING: Failed to patch {conf_file}: {e}\n")
@@ -401,7 +412,13 @@ class BinWrappersResource(BaseResource):
                 content = pattern.sub(repl, content)
 
                 if content != original:
-                    script.write_text(content, encoding="utf-8")
+                    tmp_path = script.with_name(f".tmp.{os.getpid()}.{script.name}")
+                    try:
+                        tmp_path.write_text(content, encoding="utf-8")
+                        tmp_path.replace(script)
+                    except OSError as e:
+                        tmp_path.unlink(missing_ok=True)
+                        raise e
                     patched += 1
             except OSError as e:
                 sys.stderr.write(f"WARNING: Failed to patch {script}: {e}\n")
@@ -458,8 +475,14 @@ def _resolve_runtime_paths(env: dict) -> None:
                 # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
                 if b" " in prefix_clean_bytes and b"\0" not in content_to_write:
                     content_to_write = re.sub(rb'(?<!")(@GHC_PREFIX@[^\s"]+)', rb'"\1"', content_to_write)
-                with target_path.open("wb") as out:
-                    out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
+                tmp_path = target_path.with_name(f".tmp.{os.getpid()}.{target_path.name}")
+                try:
+                    with tmp_path.open("wb") as out:
+                        out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
+                    tmp_path.replace(target_path)
+                except OSError as e:
+                    tmp_path.unlink(missing_ok=True)
+                    raise e
                 if target.endswith(".conf"):
                     patched_any_conf = True
         except OSError as e:
@@ -476,7 +499,13 @@ def _resolve_runtime_paths(env: dict) -> None:
     # ⚡ Bolt: Write marker file to indicate this prefix has been successfully patched
     try:
         marker_file.parent.mkdir(parents=True, exist_ok=True)
-        marker_file.write_text(prefix_clean, encoding="utf-8")
+        tmp_marker = marker_file.with_name(f".tmp.{os.getpid()}.{marker_file.name}")
+        try:
+            tmp_marker.write_text(prefix_clean, encoding="utf-8")
+            tmp_marker.replace(marker_file)
+        except OSError as e:
+            tmp_marker.unlink(missing_ok=True)
+            raise e
     except OSError:
         pass
 
