@@ -284,6 +284,7 @@ class SettingsResource(BaseResource):
                 tmp_path = path.with_name(f".tmp.{os.getpid()}.{path.name}")
                 try:
                     tmp_path.write_text(new_content, encoding="utf-8")
+                    tmp_path.chmod(path.stat().st_mode)
                     tmp_path.replace(path)
                 except OSError as e:
                     tmp_path.unlink(missing_ok=True)
@@ -343,6 +344,7 @@ class PackageDBResource(BaseResource):
                     tmp_path = conf_file.with_name(f".tmp.{os.getpid()}.{conf_file.name}")
                     try:
                         tmp_path.write_text(content, encoding="utf-8")
+                        tmp_path.chmod(conf_file.stat().st_mode)
                         tmp_path.replace(conf_file)
                     except OSError as e:
                         tmp_path.unlink(missing_ok=True)
@@ -415,6 +417,7 @@ class BinWrappersResource(BaseResource):
                     tmp_path = script.with_name(f".tmp.{os.getpid()}.{script.name}")
                     try:
                         tmp_path.write_text(content, encoding="utf-8")
+                        tmp_path.chmod(script.stat().st_mode)
                         tmp_path.replace(script)
                     except OSError as e:
                         tmp_path.unlink(missing_ok=True)
@@ -479,6 +482,7 @@ def _resolve_runtime_paths(env: dict) -> None:
                 try:
                     with tmp_path.open("wb") as out:
                         out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
+                    tmp_path.chmod(target_path.stat().st_mode)
                     tmp_path.replace(target_path)
                 except OSError as e:
                     tmp_path.unlink(missing_ok=True)
