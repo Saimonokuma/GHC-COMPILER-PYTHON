@@ -80,6 +80,26 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+entry_id: "CRUCIBLE-2026-06-05-005"
+schema_version: "2.0"
+timestamp: "2026-06-05T16:11:54Z"
+title: "Concurrency Safety and Python 3.8 Compatibility Fixes"
+---
+## 2026-06-05 - Concurrency Safety and Python 3.8 Compatibility Fixes
+
+**Learning:** Replaced in-place file writes during dynamic `@GHC_PREFIX@` resolution with atomic temporary file replacements (`tmp_path.replace(path)`) to prevent `PATTERN-008` TOCTOU race condition corruption when multiple tool instances initialize concurrently. Restored Python 3.8 syntax compliance by downgrading `match` to `if-elif-else` because `pyproject.toml` asserts `requires-python = ">=3.8"`.
+
+**Action:** Modified `ghc_compiler_python/wrapper.py` to use `tmp_path.replace` for `SettingsResource`, `PackageDBResource`, `BinWrappersResource`, target runtime resolution, and marker files. Replaced structural pattern matching.
+
+**Defect Pattern ID:** PATTERN-008
+
+**Related Entries:** []
+
+**Axes Affected:** I (Syntactic), II (Semantic), IV (Operational)
+
+**Level:** L1, L2
+
+---
 ---
 entry_id: "CRUCIBLE-2026-05-17-004"
 schema_version: "2.0"
