@@ -12,3 +12,7 @@ Deleted test script files that I added during my debugging phase.
 - Unhandled `PermissionError` (a subclass of `OSError`) caused crashes during path resolution when `iterdir()` was called on unreadable directories in `wrapper.py`. Added proper `try...except OSError` fallback.
 - Prevented a fatal crash (`sys.exit(1)`) triggered by missing `ghc-pkg` during recache by splitting binary resolution into a safe `_try_resolve_binary` method.
 - Replaced a stubbed verification string with proper `otool -l` execution checks inside `scripts/fix_macos_rpaths.sh`. Ensured to use `grep -E` (Extended Regular Expressions) for BSD `grep` compatibility on macOS when alternating values.
+
+### Critical Learnings (2025-02-23):
+- Replaced unhandled `iterdir()` in `_find_platform_lib_subdir` causing `PermissionError` with proper `try...except OSError` returning empty string.
+- Replaced `pass` statements with `sys.stderr.write` inside `_try_mkdir`, `BinWrappersResource.patch_build_time` directory listing, and `_resolve_runtime_paths` for `marker_file` reading/writing to ensure logging of `OSError` failures rather than silently swallowing them.
