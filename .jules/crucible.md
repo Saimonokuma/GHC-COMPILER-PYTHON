@@ -101,3 +101,24 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+---
+entry_id: "CRUCIBLE-2026-06-06-005"
+schema_version: "2.0"
+timestamp: "2026-06-06T16:00:00Z"
+title: "Python 3.8 Compatibility Hardening and Build Fix"
+---
+## 2026-06-06 - Python 3.8 Compatibility Hardening and Build Fix
+
+**Learning:** `match` syntax in Python 3.10 and dictionary merging with `|` in Python 3.9 caused syntax errors in Python 3.8, violating `pyproject.toml` requirement. Missing packages specification in `pyproject.toml` caused build failure. Addressed unused imports.
+
+**Action:** Replaced `match` with `if`/`elif`, replaced `env | {...}` with `{**env, ...}`, added `packages` definition to `pyproject.toml`, removed unused imports in `wrapper.py`, `generate_workflow.py` and `test_paths_with_spaces.py`.
+
+**Defect Pattern ID:** None
+
+**Related Entries:** []
+
+**Axes Affected:** I (Syntactic), V (Temporal)
+
+**Level:** L1, L5
+
+---

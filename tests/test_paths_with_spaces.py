@@ -1,7 +1,4 @@
-import os
-import sys
 from unittest.mock import patch
-from pathlib import Path
 from ghc_compiler_python.wrapper import _resolve_runtime_paths
 
 def test_resolve_runtime_paths_with_spaces(tmp_path):

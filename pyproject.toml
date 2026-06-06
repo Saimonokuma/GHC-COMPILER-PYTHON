@@ -34,6 +34,7 @@ dynamic = ["scripts"]
 path = "hatch_build.py"
 
 [tool.hatch.build.targets.wheel]
+packages = ["ghc_compiler_python"]
 strict-naming = true
 
 # Map executables to the Venv PATH (bin)
