@@ -32,17 +32,17 @@ def main():
     # and call its polymorphic patch_build_time method.
     for resource_cls in BaseResource.registry:
         print(f"\n--- Processing {resource_cls.name} ---")
-        found_paths = resource_cls.locate(base=str(STAGING_DIR), version=GHC_VERSION)
 
-        if not found_paths:
+        # 🧪 Alchemist: Walrus operator reduces list assignment and boolean check to one statement
+        if not (found_paths := resource_cls.locate(base=str(STAGING_DIR), version=GHC_VERSION)):
             print(f"WARNING: Resource '{resource_cls.name}' not found in expected locations.")
             continue
 
         for path in found_paths:
             print(f"Found {resource_cls.name} at: {path}")
-            patched_count = resource_cls.patch_build_time(path, GHC_VERSION, PLACEHOLDER_PREFIX)
 
-            if patched_count > 0:
+            # 🧪 Alchemist: Walrus operator reduces function return and conditional check to one statement
+            if patched_count := resource_cls.patch_build_time(path, GHC_VERSION, PLACEHOLDER_PREFIX):
                 print(f"Successfully patched {patched_count} items in {resource_cls.name}")
                 total_patched += patched_count
             else:

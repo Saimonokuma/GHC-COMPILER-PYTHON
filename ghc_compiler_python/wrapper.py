@@ -213,16 +213,8 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                if cls.name in (dirs if cls.is_dir else files) and cls.validate(p := Path(root) / cls.name):
+                    found.append(p)
         return found
 
     @classmethod
@@ -280,8 +272,7 @@ class SettingsResource(BaseResource):
                     return placeholder
                 return f"{placeholder}/lib/ghc-{version}"
 
-            new_content = pattern.sub(repl, content)
-            if new_content != content:
+            if (new_content := pattern.sub(repl, content)) != content:
                 path.write_text(new_content, encoding="utf-8")
                 return 1
         except OSError as e:
@@ -332,9 +323,7 @@ class PackageDBResource(BaseResource):
                         return f"{g1}{placeholder}/lib/ghc-{version}{'/include' if 'include' in g1 else ''}"
                     return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
 
-                content = pattern.sub(repl, original)
-
-                if content != original:
+                if (content := pattern.sub(repl, original)) != original:
                     conf_file.write_text(content, encoding="utf-8")
                     patched_count += 1
             except OSError as e:
@@ -398,9 +387,7 @@ class BinWrappersResource(BaseResource):
                 def repl(m: re.Match) -> str:
                     return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
 
-                content = pattern.sub(repl, content)
-
-                if content != original:
+                if (content := pattern.sub(repl, content)) != original:
                     script.write_text(content, encoding="utf-8")
                     patched += 1
             except OSError as e:
@@ -440,38 +427,32 @@ def _resolve_runtime_paths(env: dict) -> None:
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
             # the entire binary into memory. Drastically reduces I/O latency for large binaries.
-            content_to_write = None
             with target_path.open("rb") as f:
                 try:
                     with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
-                        if m.find(b"@GHC_PREFIX@") != -1:
-                            f.seek(0)
-                            content_to_write = f.read()
+                        if m.find(b"@GHC_PREFIX@") == -1:
+                            continue
                 except (ValueError, OSError):
-                    # mmap throws ValueError for empty files, OSError for unmappable ones
-                    f.seek(0)
-                    content_to_write = f.read()
-                    if b"@GHC_PREFIX@" not in content_to_write:
-                        content_to_write = None
+                    pass
+                f.seek(0)
+                if b"@GHC_PREFIX@" not in (content := f.read()):
+                    continue
 
-            if content_to_write is not None:
-                # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
-                if b" " in prefix_clean_bytes and b"\0" not in content_to_write:
-                    content_to_write = re.sub(rb'(?<!")(@GHC_PREFIX@[^\s"]+)', rb'"\1"', content_to_write)
-                with target_path.open("wb") as out:
-                    out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
-                if target.endswith(".conf"):
-                    patched_any_conf = True
+            # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
+            if b" " in prefix_clean_bytes and b"\0" not in content:
+                content = re.sub(rb'(?<!")(@GHC_PREFIX@[^\s"]+)', rb'"\1"', content)
+            with target_path.open("wb") as out:
+                out.write(content.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
+            if target.endswith(".conf"):
+                patched_any_conf = True
         except OSError as e:
             sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
 
     # 🧪 Alchemist: any() replaces manual flag variables and loops for succinct boolean reduction
-    if patched_any_conf or any(
-        not (pkg_db / "package.cache").exists()
-        for pkg_db in PackageDBResource.locate()
-    ):
-        for pkg_db in PackageDBResource.locate():
-            _ghc_pkg_recache(str(pkg_db), env)
+    pkg_dbs = PackageDBResource.locate()
+    if patched_any_conf or any(not (db / "package.cache").exists() for db in pkg_dbs):
+        for db in pkg_dbs:
+            _ghc_pkg_recache(str(db), env)
 
     # ⚡ Bolt: Write marker file to indicate this prefix has been successfully patched
     try:
