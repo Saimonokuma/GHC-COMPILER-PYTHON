@@ -22,7 +22,7 @@ import functools
 import mmap
 import re
 from pathlib import Path
-from typing import Any, List, NoReturn, Optional, Type
+from typing import Any, List, NoReturn, Optional
 
 
 GHC_VERSION = "9.4.8"
@@ -143,23 +143,22 @@ def _sterilize_environment() -> dict:
     env["PATH"] = f"{env_bin}{os.pathsep}{current_path}"
 
     # 🧪 Alchemist: Structural pattern matching replaces lambda-based dictionary lookup
-    match sys.platform:
-        case "darwin":
-            candidates = [
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
-                Path(sys.prefix) / "lib",
-            ]
-            vars_to_update = ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"]
-        case "linux":
-            candidates = [
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}",
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
-                Path(_find_platform_lib_subdir() or "."),
-                Path(__file__).resolve().parent.parent / "ghc_compiler_python.libs",
-            ]
-            vars_to_update = ["LD_LIBRARY_PATH"]
-        case _:
-            candidates, vars_to_update = [], []
+    if sys.platform == "darwin":
+        candidates = [
+            Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
+            Path(sys.prefix) / "lib",
+        ]
+        vars_to_update = ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"]
+    elif sys.platform == "linux":
+        candidates = [
+            Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}",
+            Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
+            Path(_find_platform_lib_subdir() or "."),
+            Path(__file__).resolve().parent.parent / "ghc_compiler_python.libs",
+        ]
+        vars_to_update = ["LD_LIBRARY_PATH"]
+    else:
+        candidates, vars_to_update = [], []
 
     if lib_dirs_str := os.pathsep.join(
         str(p) for p in candidates if p.is_dir() and str(p) != "."
@@ -497,7 +496,7 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
         # 🧪 Alchemist: Dictionary merge operator (|) replaces unpacking
         subprocess.run(
             [ghc_pkg, "recache", "--package-db", pkg_db_dir],
-            env=env | {"GHC_PACKAGE_PATH": pkg_db_dir},
+            env={**env, "GHC_PACKAGE_PATH": pkg_db_dir},
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=30,
