@@ -101,3 +101,22 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+---
+entry_id: "CRUCIBLE-2026-05-18-005"
+schema_version: "2.0"
+timestamp: "2026-05-18T12:00:00Z"
+title: "Cross-Language Defect: Python shutil.which resolving unsterilized PATH and TOCTOU vulnerabilities"
+---
+## 2026-05-18 - Cross-Language Defect: Python shutil.which resolving unsterilized PATH and TOCTOU vulnerabilities
+
+**Learning:** `shutil.which` without an explicit `path` argument will look at the global `os.environ["PATH"]`. When using a sterilized environment, passing this path is necessary. In addition, checking `is_file()` or `exists()` and then accessing a file can lead to TOCTOU bugs. Removing the checks and catching `OSError` directly or letting functions like `os.walk` handle missing paths implicitly is much safer.
+
+**Action:** Refactored `_try_resolve_binary` and `_resolve_binary` to accept an `env` dictionary and extract its `PATH` value when using `shutil.which`. Removed `is_file()` to avoid TOCTOU races in `_resolve_runtime_paths` and simplified folder existence checks in `BaseResource.locate`. Updated `BinWrappersResource.validate` to return `path.is_dir()`.
+
+**Defect Pattern ID:** PATTERN-008
+
+**Related Entries:** []
+
+**Axes Affected:** II (Semantic), III (Structural), IV (Operational)
+
+**Level:** L2, L3
