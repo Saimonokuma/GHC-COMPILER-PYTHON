@@ -37,3 +37,14 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2025-06-07 - Python Performance Optimizations via Dict Merging and Generators
+**Transformation:**
+- Replaced manual dictionary assignments within loops with dictionary merge and inline dictionary comprehension (`env |= {var: ... for var in vars_to_update}`).
+- Substituted `next(...)` with a generator for finding candidates, which short-circuits evaluation without iterating through everything in explicit checks.
+- Combined complex `os.walk` `cls.is_dir` branching into a single conditional statement making use of `:=` for assignment inside evaluation.
+- Exchanged list comprehension followed by `set()` for direct set comprehension when locating targets.
+- Merged multiple list appending steps (`cmd.extend(...)`) into a single list concatenation step (`cmd = [binary_path] + (extra_args or []) + sys.argv[1:]`).
+- Swapped nested logical negations for the shorter `not (X or Y)`.
+**Result:** Substantial syntactic reduction of loops into concise comprehensions. Code structure looks more functional and succinct, and the behavior is preserved intact as confirmed by passing unit tests.
+**Lesson:** Python's native operators (`|=`, list additions) and comprehensions (set comprehensions, generator expressions) reduce boilerplate massively and allow lazy-loading or single-pass logic execution over loops and multiple calls.

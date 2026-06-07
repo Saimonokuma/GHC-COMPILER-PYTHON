@@ -86,7 +86,8 @@ def _resolve_binary(name: str) -> str:
 
 def _validate_c_linker() -> None:
     """Pre-flight validation: assert the existence of a host C-linker."""
-    if not shutil.which("gcc") and not shutil.which("clang"):
+    # 🧪 Alchemist: Short-circuiting logical operator eliminates repeated `not`
+    if not (shutil.which("gcc") or shutil.which("clang")):
         _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
 
 
@@ -161,15 +162,9 @@ def _sterilize_environment() -> dict:
         case _:
             candidates, vars_to_update = [], []
 
-    if lib_dirs_str := os.pathsep.join(
-        str(p) for p in candidates if p.is_dir() and str(p) != "."
-    ):
-        for var in vars_to_update:
-            env[var] = (
-                f"{lib_dirs_str}{os.pathsep}{env[var]}"
-                if env.get(var)
-                else lib_dirs_str
-            )
+    if lib_dirs_str := os.pathsep.join(str(p) for p in candidates if p.is_dir() and str(p) != "."):
+        # 🧪 Alchemist: Dictionary merge logic inline replaces manual loop updates
+        env |= {var: f"{lib_dirs_str}{os.pathsep}{env[var]}" if env.get(var) else lib_dirs_str for var in vars_to_update}
 
     return env
 
@@ -193,10 +188,9 @@ class BaseResource:
         candidates = cls.get_candidates(base_path, version)
 
         # Check explicit candidates first
-        for c in candidates:
-            # 🧪 Alchemist: Ternary conditional combines file and directory checks
-            if (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c):
-                return [c]
+        # 🧪 Alchemist: Generator expression with next() efficiently short-circuits explicit candidate checks
+        if first := next((c for c in candidates if (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c)), None):
+            return [first]
 
         # Dynamic fallback
         found = []
@@ -213,16 +207,9 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                # 🧪 Alchemist: Condense directory/file targeting logic into single expression
+                if cls.name in (dirs if cls.is_dir else files) and cls.validate(p := Path(root) / cls.name):
+                    found.append(p)
         return found
 
     @classmethod
@@ -425,17 +412,17 @@ def _resolve_runtime_paths(env: dict) -> None:
         pass
 
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
-    # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
-    targets = [
+    # 🧪 Alchemist: Set comprehension directly extracts and deduplicates targets in a single pass
+    targets = {
         target for resource_cls in BaseResource.registry
         for resource_path in resource_cls.locate()
         for target in resource_cls.extract_targets(resource_path)
-    ]
+    }
 
     # Replace @GHC_PREFIX@ in all target files
     prefix_clean_bytes = prefix_clean.encode("utf-8")
     patched_any_conf = False
-    for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
+    for target in targets:
         target_path = Path(target)
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
@@ -466,11 +453,9 @@ def _resolve_runtime_paths(env: dict) -> None:
             sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
 
     # 🧪 Alchemist: any() replaces manual flag variables and loops for succinct boolean reduction
-    if patched_any_conf or any(
-        not (pkg_db / "package.cache").exists()
-        for pkg_db in PackageDBResource.locate()
-    ):
-        for pkg_db in PackageDBResource.locate():
+    pkg_dbs = PackageDBResource.locate()
+    if patched_any_conf or not all((p / "package.cache").exists() for p in pkg_dbs):
+        for pkg_db in pkg_dbs:
             _ghc_pkg_recache(str(pkg_db), env)
 
     # ⚡ Bolt: Write marker file to indicate this prefix has been successfully patched
@@ -514,10 +499,8 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
     _resolve_runtime_paths(env)
     binary_path = _resolve_binary(tool_name)
 
-    cmd = [binary_path]
-    if extra_args:
-        cmd.extend(extra_args)
-    cmd.extend(sys.argv[1:])
+    # 🧪 Alchemist: List concatenation replaces manual sequence extension
+    cmd = [binary_path] + (extra_args or []) + sys.argv[1:]
 
     try:
         # 🧪 Alchemist: On POSIX systems, os.execve replaces the Python interpreter entirely.
