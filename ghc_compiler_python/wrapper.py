@@ -46,12 +46,25 @@ HASKELL_POLLUTION_VARS = frozenset(
     }
 )
 
-_HOME_ORIGINAL: Optional[str] = None
-
 
 def _die(msg: str) -> NoReturn:
     sys.stderr.write(f"{msg}\n")
     sys.exit(1)
+
+
+def _atomic_write(path: Path, content: Any, binary: bool = False, encoding: str = "utf-8") -> None:
+    """Atomically write content to a file, preserving permissions and preventing TOCTOU races."""
+    mode = "wb" if binary else "w"
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, text=not binary)
+    try:
+        with os.fdopen(fd, mode, encoding=None if binary else encoding) as f:
+            f.write(content)
+        if path.exists():
+            shutil.copymode(path, tmp_name)
+        os.replace(tmp_name, path)
+    except Exception:
+        os.unlink(tmp_name)
+        raise
 
 
 def _is_text_file(filepath: Path) -> bool:
@@ -107,10 +120,7 @@ def _find_platform_lib_subdir() -> str:
 
 def _sterilize_environment() -> dict:
     """Create a sterilized subprocess environment with proper library paths."""
-    global _HOME_ORIGINAL
     env = {k: v for k, v in os.environ.items() if k not in HASKELL_POLLUTION_VARS}
-
-    _HOME_ORIGINAL = os.environ.get("HOME", os.environ.get("USERPROFILE", ""))
 
     def _get_home_path() -> Path:
         try:
@@ -132,7 +142,8 @@ def _sterilize_environment() -> dict:
     safe_home = (
         _try_mkdir(Path(sys.prefix) / ".ghc-compiler-python-home") or
         _try_mkdir(_get_home_path()) or
-        Path(tempfile.mkdtemp(prefix="ghc-compiler-python-home-"))
+        _try_mkdir(Path(tempfile.gettempdir()) / "ghc-compiler-python-home") or
+        Path(tempfile.gettempdir())
     )
 
     env["HOME"] = str(safe_home)
@@ -282,7 +293,7 @@ class SettingsResource(BaseResource):
 
             new_content = pattern.sub(repl, content)
             if new_content != content:
-                path.write_text(new_content, encoding="utf-8")
+                _atomic_write(path, new_content)
                 return 1
         except OSError as e:
             sys.stderr.write(f"WARNING: Failed to patch {path}: {e}\n")
@@ -335,7 +346,7 @@ class PackageDBResource(BaseResource):
                 content = pattern.sub(repl, original)
 
                 if content != original:
-                    conf_file.write_text(content, encoding="utf-8")
+                    _atomic_write(conf_file, content)
                     patched_count += 1
             except OSError as e:
                 sys.stderr.write(f"WARNING: Failed to patch {conf_file}: {e}\n")
@@ -401,7 +412,7 @@ class BinWrappersResource(BaseResource):
                 content = pattern.sub(repl, content)
 
                 if content != original:
-                    script.write_text(content, encoding="utf-8")
+                    _atomic_write(script, content)
                     patched += 1
             except OSError as e:
                 sys.stderr.write(f"WARNING: Failed to patch {script}: {e}\n")
@@ -458,8 +469,7 @@ def _resolve_runtime_paths(env: dict) -> None:
                 # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
                 if b" " in prefix_clean_bytes and b"\0" not in content_to_write:
                     content_to_write = re.sub(rb'(?<!")(@GHC_PREFIX@[^\s"]+)', rb'"\1"', content_to_write)
-                with target_path.open("wb") as out:
-                    out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
+                _atomic_write(target_path, content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes), binary=True)
                 if target.endswith(".conf"):
                     patched_any_conf = True
         except OSError as e:
@@ -476,7 +486,7 @@ def _resolve_runtime_paths(env: dict) -> None:
     # ⚡ Bolt: Write marker file to indicate this prefix has been successfully patched
     try:
         marker_file.parent.mkdir(parents=True, exist_ok=True)
-        marker_file.write_text(prefix_clean, encoding="utf-8")
+        _atomic_write(marker_file, prefix_clean)
     except OSError:
         pass
 
