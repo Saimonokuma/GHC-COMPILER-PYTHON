@@ -101,3 +101,28 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+---
+entry_id: "CRUCIBLE-2026-05-18-005"
+schema_version: "2.0"
+timestamp: "2026-05-18T12:00:00Z"
+title: "Fix TOCTOU Race Conditions and Unbounded Temp Directories in Wrapper"
+---
+## 2026-05-18 - Fix TOCTOU Race Conditions and Unbounded Temp Directories in Wrapper
+
+**Learning:** `wrapper.py` was directly writing files without atomicity, leading to potential TOCTOU race conditions and file corruption when multiple wrappers run concurrently. Furthermore, `tempfile.mkdtemp` was leaking per-execution without cleanup, leading to bounded resource exhaustion over time.
+
+**Action:**
+1. Added `_atomic_write` helper in `wrapper.py` that utilizes `tempfile.mkstemp`, `shutil.copymode`, and `os.replace` to atomically write data.
+2. Upgraded in-place modifications in `SettingsResource`, `PackageDBResource`, `BinWrappersResource`, and `_resolve_runtime_paths` to use `_atomic_write`.
+3. Replaced `tempfile.mkdtemp` with a static path (`tempfile.gettempdir() / "ghc-compiler-python-home"`) to avoid uncontrolled directory proliferation.
+4. Removed dead `_HOME_ORIGINAL` variable to address Semantic unused code.
+
+**Defect Pattern ID:** PATTERN-008
+
+**Related Entries:** []
+
+**Axes Affected:** II (Semantic), IV (Operational)
+
+**Level:** L2, L3
+
+---
