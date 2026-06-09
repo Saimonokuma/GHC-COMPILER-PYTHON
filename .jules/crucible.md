@@ -101,3 +101,23 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+
+---
+entry_id: "CRUCIBLE-2026-05-18-005"
+schema_version: "2.0"
+timestamp: "2026-05-18T12:00:00Z"
+title: "Crucible Hunt: Subprocess Explicit Exit Code Check and Typo Cleanups"
+---
+## 2026-05-18 - Crucible Hunt: Subprocess Explicit Exit Code Check and Typo Cleanups
+
+**Learning:** When using `subprocess.run` to proxy process executions, the exit code behavior should be made explicit to prevent Ignored Exit (PATTERN-007) vulnerabilities. In `wrapper.py`, explicitly passed `check=False` when calling `sys.exit(subprocess.run(...).returncode)`. Also cleaned up linter warnings.
+
+**Action:** Addressed `subprocess.run` on line 531 in `ghc_compiler_python/wrapper.py` and resolved unused imports.
+
+**Defect Pattern ID:** PATTERN-007
+
+**Related Entries:** []
+
+**Axes Affected:** IV (Operational)
+
+**Level:** L2 (Safety Hardening)
