@@ -37,3 +37,15 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2025-05-24 - Transmutations applied to hatch_build, patch_ghc_paths, and wrapper
+**Transformation:**
+- Transmuted manual loop in `hatch_build.py` into dictionary and set comprehensions using `|=` union operators and Python 3.9's `|` merge dictionaries feature.
+- Introduced walrus operators in `scripts/patch_ghc_paths.py` inside logical blocks (i.e., `if not (found_paths := ...):`) preventing the need for separate instantiation variables.
+- Compressed `_is_text_file` inside `ghc_compiler_python/wrapper.py` into a direct return value single-line statement.
+- Used walrus operator in `BaseResource.locate` mapping out directory or file structure variables directly into logical tests, trimming boilerplate.
+- Untangled deeply nested parsing loops and conditions inside `_resolve_runtime_paths` making use of `continue` blocks for simpler exit paths and assignment.
+**Result:**
+Code space effectively slimmed down. Fewer explicit loops and condition assignments are executed. Comprehension implementations drastically speed up code interpretation on Python. Pytest executes completely fine ensuring logic hasn't diminished.
+**Lesson:**
+Python's walrus operator (`:=`) is arguably the most efficient solution towards checking for boolean validity upon creation. This prevents instantiating dummy values, increasing readability drastically. Using Dictionary and Set comprehensions also replace tedious `.append` invocations which significantly reduces overhead time internally. Utilizing early continuation inside nested loops prevents unnecessary indentation and checks making Python script parse time marginally improved.

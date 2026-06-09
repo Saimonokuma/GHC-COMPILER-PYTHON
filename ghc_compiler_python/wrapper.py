@@ -57,9 +57,7 @@ def _die(msg: str) -> NoReturn:
 def _is_text_file(filepath: Path) -> bool:
     """Check if a file is a text file by looking for null bytes in the first 1024 bytes."""
     try:
-        with filepath.open("rb") as f:
-            chunk = f.read(1024)
-            return b"\0" not in chunk
+        return b"\0" not in filepath.open("rb").read(1024)
     except OSError:
         return False
 
@@ -213,16 +211,10 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                # 🧪 Alchemist: Condense directory/file check and assignment using walrus operator
+                if cls.name in (dirs if cls.is_dir else files) and cls.validate(p := Path(root) / cls.name):
+                    found.append(p)
+
         return found
 
     @classmethod
@@ -440,28 +432,25 @@ def _resolve_runtime_paths(env: dict) -> None:
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
             # the entire binary into memory. Drastically reduces I/O latency for large binaries.
-            content_to_write = None
             with target_path.open("rb") as f:
                 try:
                     with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
-                        if m.find(b"@GHC_PREFIX@") != -1:
-                            f.seek(0)
-                            content_to_write = f.read()
+                        if m.find(b"@GHC_PREFIX@") == -1:
+                            continue
                 except (ValueError, OSError):
-                    # mmap throws ValueError for empty files, OSError for unmappable ones
-                    f.seek(0)
-                    content_to_write = f.read()
-                    if b"@GHC_PREFIX@" not in content_to_write:
-                        content_to_write = None
+                    pass # mmap throws ValueError for empty files, OSError for unmappable ones
 
-            if content_to_write is not None:
-                # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
-                if b" " in prefix_clean_bytes and b"\0" not in content_to_write:
-                    content_to_write = re.sub(rb'(?<!")(@GHC_PREFIX@[^\s"]+)', rb'"\1"', content_to_write)
-                with target_path.open("wb") as out:
-                    out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
-                if target.endswith(".conf"):
-                    patched_any_conf = True
+                f.seek(0)
+                if b"@GHC_PREFIX@" not in (content_to_write := f.read()):
+                    continue
+
+            # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
+            if b" " in prefix_clean_bytes and b"\0" not in content_to_write:
+                content_to_write = re.sub(rb'(?<!")(@GHC_PREFIX@[^\s"]+)', rb'"\1"', content_to_write)
+            with target_path.open("wb") as out:
+                out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
+            if target.endswith(".conf"):
+                patched_any_conf = True
         except OSError as e:
             sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
 
