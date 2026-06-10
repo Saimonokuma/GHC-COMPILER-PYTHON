@@ -58,8 +58,8 @@ def _is_text_file(filepath: Path) -> bool:
     """Check if a file is a text file by looking for null bytes in the first 1024 bytes."""
     try:
         with filepath.open("rb") as f:
-            chunk = f.read(1024)
-            return b"\0" not in chunk
+            # 🧪 Alchemist: Inline read eliminates intermediate variable assignment
+            return b"\0" not in f.read(1024)
     except OSError:
         return False
 
@@ -86,8 +86,8 @@ def _resolve_binary(name: str) -> str:
 
 def _validate_c_linker() -> None:
     """Pre-flight validation: assert the existence of a host C-linker."""
-    if not shutil.which("gcc") and not shutil.which("clang"):
-        _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
+    # 🧪 Alchemist: Short-circuiting logical expression replaces verbose if statement
+    shutil.which("gcc") or shutil.which("clang") or _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
 
 
 def _find_platform_lib_subdir() -> str:
@@ -213,16 +213,9 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                # 🧪 Alchemist: Walrus operator and ternary conditional combine nested checks
+                if cls.name in (dirs if cls.is_dir else files) and cls.validate(p := Path(root) / cls.name):
+                    found.append(p)
         return found
 
     @classmethod
@@ -514,10 +507,8 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
     _resolve_runtime_paths(env)
     binary_path = _resolve_binary(tool_name)
 
-    cmd = [binary_path]
-    if extra_args:
-        cmd.extend(extra_args)
-    cmd.extend(sys.argv[1:])
+    # 🧪 Alchemist: List concatenation replaces multiple list extension calls
+    cmd = [binary_path] + (extra_args or []) + sys.argv[1:]
 
     try:
         # 🧪 Alchemist: On POSIX systems, os.execve replaces the Python interpreter entirely.
@@ -547,9 +538,8 @@ def __getattr__(name: str) -> Any:
         tool_name = name[8:].replace("_", "-")
         extra_args = ["-v0"] if tool_name == "ghc" else None
 
-        def executor() -> NoReturn:
-            _execute_tool(tool_name, extra_args=extra_args)
-
+        # 🧪 Alchemist: lambda assignment eliminates local function definition boilerplate
+        executor = lambda: _execute_tool(tool_name, extra_args=extra_args)
         executor.__name__ = name
         return executor
 
@@ -558,6 +548,5 @@ def __getattr__(name: str) -> Any:
 
 def __dir__() -> List[str]:
     """Provide explicit autocompletion for common dynamically generated entry points."""
-    base_dir = list(globals().keys())
-    dynamic_tools = ["execute_ghc", "execute_ghci", "execute_cabal"]
-    return base_dir + dynamic_tools
+    # 🧪 Alchemist: Inline list concatenation removes redundant intermediate variables
+    return list(globals().keys()) + ["execute_ghc", "execute_ghci", "execute_cabal"]
