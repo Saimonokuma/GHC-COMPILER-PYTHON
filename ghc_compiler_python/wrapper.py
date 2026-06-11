@@ -13,16 +13,16 @@ FIX v3: Fixed platform-specific path detection for settings and package.conf.d.
 FIX v2: Added DYLD_LIBRARY_PATH for macOS runtime library resolution.
 """
 
+from __future__ import annotations
 import os
 import sys
-import shutil
-import subprocess
-import tempfile
 import functools
-import mmap
 import re
 from pathlib import Path
-from typing import Any, List, NoReturn, Optional, Type
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any, List, NoReturn, Optional, Type
 
 
 GHC_VERSION = "9.4.8"
@@ -66,6 +66,7 @@ def _is_text_file(filepath: Path) -> bool:
 
 def _try_resolve_binary(name: str) -> Optional[str]:
     """Resolve the absolute path to a bundled native binary without dying."""
+    import shutil
     binary_name = f"{name}.exe" if sys.platform == "win32" else name
     bin_dir = "Scripts" if sys.platform == "win32" else "bin"
 
@@ -86,6 +87,7 @@ def _resolve_binary(name: str) -> str:
 
 def _validate_c_linker() -> None:
     """Pre-flight validation: assert the existence of a host C-linker."""
+    import shutil
     if not shutil.which("gcc") and not shutil.which("clang"):
         _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
 
@@ -127,6 +129,7 @@ def _sterilize_environment() -> dict:
             pass
         return None
 
+    import tempfile
     # 🧪 Alchemist: Declarative fallback chain replaces nested try-except blocks.
     # Lazily evaluate Path.home() to prevent premature RuntimeError.
     safe_home = (
@@ -438,6 +441,7 @@ def _resolve_runtime_paths(env: dict) -> None:
     for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
         target_path = Path(target)
         try:
+            import mmap
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
             # the entire binary into memory. Drastically reduces I/O latency for large binaries.
             content_to_write = None
@@ -493,6 +497,7 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
         return  # Can't recache without ghc-pkg
 
     try:
+        import subprocess
         # Use the sterilized environment which has LD_LIBRARY_PATH properly set
         # 🧪 Alchemist: Dictionary merge operator (|) replaces unpacking
         subprocess.run(
@@ -503,7 +508,7 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
             timeout=30,
             check=True,
         )
-    except (subprocess.SubprocessError, OSError) as e:
+    except (Exception, OSError) as e:
         sys.stderr.write(f"WARNING: ghc-pkg recache failed for {pkg_db_dir}: {e}\n")
 
 
@@ -528,12 +533,13 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
         if sys.platform != "win32":
             os.execve(binary_path, cmd, env)
         else:
+            import subprocess
             sys.exit(subprocess.run(cmd, env=env).returncode)
     except FileNotFoundError:
         _die(f"FATAL ERROR: Binary not found at '{binary_path}'.")
     except KeyboardInterrupt:
         sys.exit(130)
-    except (subprocess.SubprocessError, OSError) as e:
+    except Exception as e:
         _die(f"FATAL ERROR: Execution failed: {e}")
 
 
