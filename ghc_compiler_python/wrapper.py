@@ -17,7 +17,6 @@ import os
 import sys
 import shutil
 import subprocess
-import tempfile
 import functools
 import mmap
 import re
@@ -76,7 +75,7 @@ def _try_resolve_binary(name: str) -> Optional[str]:
 
     return next(
         (str(p) for p in candidates if p.exists()),
-        shutil.which(binary_name)
+        None
     )
 
 def _resolve_binary(name: str) -> str:
@@ -131,9 +130,11 @@ def _sterilize_environment() -> dict:
     # Lazily evaluate Path.home() to prevent premature RuntimeError.
     safe_home = (
         _try_mkdir(Path(sys.prefix) / ".ghc-compiler-python-home") or
-        _try_mkdir(_get_home_path()) or
-        Path(tempfile.mkdtemp(prefix="ghc-compiler-python-home-"))
+        _try_mkdir(_get_home_path())
     )
+
+    if not safe_home:
+        _die("FATAL ERROR: Could not create safe home directory.")
 
     env["HOME"] = str(safe_home)
 

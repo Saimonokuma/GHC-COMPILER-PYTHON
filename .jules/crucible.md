@@ -101,3 +101,22 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+---
+entry_id: "CRUCIBLE-2024-05-24-001"
+schema_version: "2.0"
+timestamp: "2024-05-24T12:00:00Z"
+title: "Fix TOCTOU vulnerability in wrapper.py temp directory generation and Fix PATH execution hijacking in wrapper.py binary resolution."
+---
+## 2024-05-24 - Multiple Hardening Fixes: TOCTOU and PATH hijacking
+
+**Learning:** `tempfile.mkdtemp` can be vulnerable to TOCTOU and privilege escalation if not handled correctly. `shutil.which` can be hijacked if the system PATH is polluted.
+
+**Action:** Eliminated the `tempfile.mkdtemp` fallback completely. If creating `.ghc-compiler-python-home` in `sys.prefix` or `~` fails, we fail and exit instead of falling back to the global temp directory. Removed the `shutil.which(binary_name)` fallback from the `_try_resolve_binary` candidates list to avoid PATH execution hijacking.
+
+**Defect Pattern ID:** PATTERN-008
+
+**Related Entries:** []
+
+**Axes Affected:** II (Semantic), IV (Operational)
+
+**Level:** L2

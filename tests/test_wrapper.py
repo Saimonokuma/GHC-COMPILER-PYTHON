@@ -61,14 +61,17 @@ class TestValidateCLinker:
 class TestResolveBinary:
     """Tests for binary resolution."""
 
-    @patch("ghc_compiler_python.wrapper.shutil.which")
-    def test_finds_binary_in_path(self, mock_which):
-        mock_which.return_value = "/usr/local/bin/ghc"
+    @patch("pathlib.Path.exists")
+    def test_finds_binary_in_path(self, mock_exists):
+        # We need to simulate the first path (or any candidate) existing.
+        # _try_resolve_binary uses (str(p) for p in candidates if p.exists())
+        # so if the first exists, it will return that.
+        mock_exists.side_effect = lambda: True
         result = _resolve_binary("ghc")
-        assert result == "/usr/local/bin/ghc"
+        # Since we mock exists to True, it returns the first candidate, which is Path(sys.prefix) / "bin" / "ghc"
+        assert result.endswith("ghc")
 
-    @patch("ghc_compiler_python.wrapper.shutil.which", return_value=None)
-    def test_exits_when_binary_not_found(self, mock_which):
+    def test_exits_when_binary_not_found(self):
         with pytest.raises(SystemExit):
             _resolve_binary("nonexistent_binary")
 
