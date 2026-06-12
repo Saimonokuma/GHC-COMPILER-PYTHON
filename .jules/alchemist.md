@@ -1,3 +1,8 @@
+## REPO CONTEXT (Last updated: 2024-05-18)
+**Project:** ghc-compiler-python | **Languages:** Python | **Build/Test/Lint:** hatchling, pytest
+**Transmutation Opportunities Identified:** `hatch_build.py` has a verbose `for` loop, list appends, and repetitive assignments that can be condensed.
+**Completed Transmutations:** hatch_build.py optimization.
+
 ## 2025-05-07 - Replace subprocess.run with os.execve
 **Transformation:** Replaced `subprocess.run(cmd, env=env)` and manual exit code forwarding/signal handling in `ghc_compiler_python/wrapper.py` with `os.execve(binary_path, cmd, env)`.
 **Result:** The e2e tests fail because they rely on the bundled binaries which are not present without a full installation, but the unit tests pass perfectly. The transformation eliminates the need to manually forward exit codes, handle KeyboardInterrupts, and maintain a running Python interpreter as a proxy.
@@ -37,3 +42,10 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2024-05-18 - Optimized `hatch_build.py`
+**Transformation:**
+- Replaced the verbose `for` loop and list appends used to build `core_tools` with a `set` initialization and the walrus operator `:=` combined with set union (`|=`) and set comprehension.
+- Used `dict.setdefault` and `.update()` with a dict comprehension to eliminate the manual loop over `core_tools` when generating `scripts`.
+**Result:** `hatch_build.py` is significantly shorter, more declarative, and uses idiomatic Python features (walrus operator, set comprehension). All tests continue to pass.
+**Lesson:** Python's set operations and dictionary comprehensions are powerful tools for declarative data manipulation, replacing verbose imperative loops and state tracking.
