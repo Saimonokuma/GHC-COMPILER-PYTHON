@@ -186,10 +186,9 @@ class BaseResource:
         cls.registry.append(cls)
 
     @classmethod
-    @functools.lru_cache(maxsize=None)
-    def locate(cls, base: str = sys.prefix, version: str = GHC_VERSION) -> List[Path]:
+    def locate(cls, base: Optional[str] = None, version: str = GHC_VERSION) -> List[Path]:
         """Locate all instances of this resource relative to a base directory."""
-        base_path = Path(base)
+        base_path = Path(base) if base else Path(sys.prefix)
         candidates = cls.get_candidates(base_path, version)
 
         # Check explicit candidates first
@@ -391,12 +390,17 @@ class BinWrappersResource(BaseResource):
 
                 # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
                 pattern = re.compile(
-                    r"/usr/local/lib/ghc-" + re.escape(version) + r"|/ghc-prefix|" +
+                    r"/usr/local/lib/ghc-" + re.escape(version) +
+                    r"|/usr/lib/ghc-" + re.escape(version) +
+                    r"|/ghc-prefix|" +
                     re.escape(abs_staging) + r"|" + re.escape(abs_staging_win)
                 )
 
                 def repl(m: re.Match) -> str:
-                    return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
+                    match_str = m.group(0)
+                    if match_str.startswith(f"/usr/local/lib/ghc-{version}") or match_str.startswith(f"/usr/lib/ghc-{version}"):
+                        return f"{placeholder}/lib/ghc-{version}"
+                    return placeholder
 
                 content = pattern.sub(repl, content)
 
@@ -424,11 +428,16 @@ def _resolve_runtime_paths(env: dict) -> None:
     except OSError:
         pass
 
-    # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
+    # 🐍 Ouroboros: Locate resources once to avoid O(N) filesystem walks multiple times
+    located_resources = {
+        resource_cls: resource_cls.locate()
+        for resource_cls in BaseResource.registry
+    }
+
     # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
     targets = [
-        target for resource_cls in BaseResource.registry
-        for resource_path in resource_cls.locate()
+        target for resource_cls, paths in located_resources.items()
+        for resource_path in paths
         for target in resource_cls.extract_targets(resource_path)
     ]
 
@@ -466,11 +475,12 @@ def _resolve_runtime_paths(env: dict) -> None:
             sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
 
     # 🧪 Alchemist: any() replaces manual flag variables and loops for succinct boolean reduction
+    pkg_dbs = located_resources.get(PackageDBResource, [])
     if patched_any_conf or any(
         not (pkg_db / "package.cache").exists()
-        for pkg_db in PackageDBResource.locate()
+        for pkg_db in pkg_dbs
     ):
-        for pkg_db in PackageDBResource.locate():
+        for pkg_db in pkg_dbs:
             _ghc_pkg_recache(str(pkg_db), env)
 
     # ⚡ Bolt: Write marker file to indicate this prefix has been successfully patched

@@ -101,3 +101,22 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+---
+entry_id: "CRUCIBLE-2026-05-18-005"
+schema_version: "2.0"
+timestamp: "2026-05-18T12:00:00Z"
+title: "Multiple Verification Fixes: O(N) Redundant Filesystem Walks, Python 3.8 classmethod/lru_cache compat, Hardcoded Path Patching"
+---
+## 2026-05-18 - Multiple Verification Fixes: O(N) Redundant Filesystem Walks, Python 3.8 classmethod/lru_cache compat, Hardcoded Path Patching
+
+**Learning:** `functools.lru_cache` atop `classmethod` was causing compatibility issues in Python 3.8 and caching default argument `sys.prefix` at import time, rendering test patching ineffective. Replaced with local caching within the runtime resolution step. `BinWrappersResource` missed `/usr/lib/ghc-` from regex substitution leading to hardcoded paths.
+
+**Action:** Addressed the vulnerabilities in `wrapper.py` in `BaseResource.locate`, `_resolve_runtime_paths`, and `BinWrappersResource.patch_build_time`.
+
+**Defect Pattern ID:** PATTERN-005
+
+**Related Entries:** []
+
+**Axes Affected:** II (Semantic), IV (Operational)
+
+**Level:** L2, L4
