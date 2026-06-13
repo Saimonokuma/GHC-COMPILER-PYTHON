@@ -1,3 +1,11 @@
+## REPO CONTEXT (Last updated: 2026-06-13)
+**Project:** ghc-compiler-python
+**Languages:** Python, Bash
+**Build:** hatchling, uv, pytest
+**Expand Macros:** N/A
+**Key Boilerplate Zones:** N/A
+**Generators Already Built:** Dynamic closures (__getattr__), Dynamic scripts hook (hatch_build.py), Resource locator metaclass (BaseResource), Python pipeline generator (generate_workflow.py)
+
 ## 2024-05-18 - The Entry Point Attribute Resolution
 **The Glitch:** Three statically written subprocess proxy entry points (`execute_ghc`, `execute_ghci`, `execute_cabal`) were implemented manually. If we added `runhaskell`, `haddock`, or `ghc-pkg`, we would have had to keep extending this list in `wrapper.py` and `pyproject.toml`.
 **The Bend:** Python 3.7's PEP 562 allows defining `__getattr__` and `__dir__` on the module level. Furthermore, Python's `importlib.metadata` and console scripts perfectly invoke `__getattr__` when looking for the target function defined in `pyproject.toml` (e.g. `ghc-wrapper = "ghc_compiler_python.wrapper:execute_ghc"`).
@@ -24,6 +32,12 @@
 **The Loop:** Ouroboros will remain dormant until structural repetition emerges.
 
 ## 2026-05-18 - The State of The Matrix
+**The Glitch:** Introspected the repository on a new cycle. Checked the build pipeline, the wrappers, the dynamic hooks, and path patchers. No massive boilerplate or rigid static structures were identified. The codebase remains highly abstract and declarative, thanks to previous transmutations.
+**The Bend:** No new meta-programming abstraction was necessary. Abiding by the philosophy of Ouroboros: do not generate complexity for the sake of creating a PR.
+**The Loop:** Ouroboros will remain dormant until structural repetition re-emerges in the Matrix.
+
+
+## 2026-06-13 - The State of The Matrix
 **The Glitch:** Introspected the repository on a new cycle. Checked the build pipeline, the wrappers, the dynamic hooks, and path patchers. No massive boilerplate or rigid static structures were identified. The codebase remains highly abstract and declarative, thanks to previous transmutations.
 **The Bend:** No new meta-programming abstraction was necessary. Abiding by the philosophy of Ouroboros: do not generate complexity for the sake of creating a PR.
 **The Loop:** Ouroboros will remain dormant until structural repetition re-emerges in the Matrix.
