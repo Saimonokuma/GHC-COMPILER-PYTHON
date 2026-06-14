@@ -80,6 +80,30 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+entry_id: "CRUCIBLE-2026-05-18-005"
+schema_version: "2.0"
+timestamp: "2026-05-18T12:00:00Z"
+title: "Crucible Hardening: Mypy, TOCTOU, check=True, and printf"
+---
+## 2026-05-18 - Crucible Hardening: Mypy, TOCTOU, check=True, and printf
+
+**Learning:** Found and fixed several issues across axes. Missing mypy type annotation for list in wrapper.py (Axis I, L1). A TOCTOU bug in `_resolve_runtime_paths` (PATTERN-008) (Axis II, IV, L2). Missing `check=True` in `subprocess.run` calls in `tests/test_e2e.py` which led to ignored exit codes (PATTERN-007) (Axis IV, L2). Use of `echo` with variables instead of `printf` in shell script `scripts/fetch_binaries.sh` (PATTERN-004) (Axis I, L2).
+
+**Action:**
+1. Added `List[Type["BaseResource"]]` annotation.
+2. Removed `is_file()` check before `read_text()`.
+3. Added `check=True` to `test_e2e.py` subprocess calls.
+4. Changed `echo` to `printf` in `fetch_binaries.sh`.
+
+**Defect Pattern ID:** PATTERN-008, PATTERN-007, PATTERN-004
+
+**Related Entries:** []
+
+**Axes Affected:** I (Syntactic), II (Semantic), IV (Operational)
+
+**Level:** L2
+
+---
 ---
 entry_id: "CRUCIBLE-2026-05-17-004"
 schema_version: "2.0"
