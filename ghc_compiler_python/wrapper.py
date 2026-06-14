@@ -179,7 +179,7 @@ class BaseResource:
     """Base class for all GHC resource locators and patchers."""
     name: str = ""
     is_dir: bool = False
-    registry = []
+    registry: list[type["BaseResource"]] = []
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -419,7 +419,7 @@ def _resolve_runtime_paths(env: dict) -> None:
     # If the marker file exists and contains the current prefix, we are already patched.
     marker_file = Path(sys.prefix) / "lib" / f".ghc_patched_{GHC_VERSION}.txt"
     try:
-        if marker_file.is_file() and marker_file.read_text(encoding="utf-8") == prefix_clean:
+        if marker_file.read_text(encoding="utf-8") == prefix_clean:
             return
     except OSError:
         pass

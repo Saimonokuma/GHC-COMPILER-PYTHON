@@ -74,9 +74,9 @@ sha256_check() {
 	local filepath=$2
 
 	if [[ "$OS" == "Darwin" ]] && command -v shasum >/dev/null 2>&1; then
-		echo "${expected_hash}  ${filepath}" | shasum -a 256 -c
+		printf "%s  %s\n" "${expected_hash}" "${filepath}" | shasum -a 256 -c
 	elif command -v sha256sum >/dev/null 2>&1; then
-		echo "${expected_hash}  ${filepath}" | sha256sum --check --status
+		printf "%s  %s\n" "${expected_hash}" "${filepath}" | sha256sum --check --status
 	else
 		echo "FATAL: No SHA-256 tool found (sha256sum, shasum)" >&2
 		exit 3

@@ -32,19 +32,16 @@ class TestGHCWrapper:
     """Tests for ghc-wrapper functionality."""
 
     def test_ghc_version(self):
-        result = subprocess.run(
-            ["ghc-wrapper", "--version"], capture_output=True, text=True
+        subprocess.run(
+            ["ghc-wrapper", "--version"], capture_output=True, text=True, check=True
         )
-        assert result.returncode == 0
 
     def test_ghc_compilation(self, haskell_source):
-        result = subprocess.run(
-            ["ghc-wrapper", haskell_source], capture_output=True, text=True
+        subprocess.run(
+            ["ghc-wrapper", haskell_source], capture_output=True, text=True, check=True
         )
-        assert result.returncode == 0
 
     def test_cabal_version(self):
-        result = subprocess.run(
-            ["cabal-wrapper", "--version"], capture_output=True, text=True
+        subprocess.run(
+            ["cabal-wrapper", "--version"], capture_output=True, text=True, check=True
         )
-        assert result.returncode == 0
