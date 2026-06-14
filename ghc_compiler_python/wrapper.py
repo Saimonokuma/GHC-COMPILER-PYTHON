@@ -58,8 +58,7 @@ def _is_text_file(filepath: Path) -> bool:
     """Check if a file is a text file by looking for null bytes in the first 1024 bytes."""
     try:
         with filepath.open("rb") as f:
-            chunk = f.read(1024)
-            return b"\0" not in chunk
+            return b"\0" not in f.read(1024)
     except OSError:
         return False
 
@@ -190,16 +189,13 @@ class BaseResource:
     def locate(cls, base: str = sys.prefix, version: str = GHC_VERSION) -> List[Path]:
         """Locate all instances of this resource relative to a base directory."""
         base_path = Path(base)
-        candidates = cls.get_candidates(base_path, version)
 
-        # Check explicit candidates first
-        for c in candidates:
-            # 🧪 Alchemist: Ternary conditional combines file and directory checks
-            if (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c):
-                return [c]
+        # 🧪 Alchemist: Generator expression + next() combined with early return replaces loops
+        if found := next((c for c in cls.get_candidates(base_path, version) if (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c)), None):
+            return [found]
 
         # Dynamic fallback
-        found = []
+        found_list = []
         if base_path.exists():
             lib_dir = base_path / "lib"
             search_dir = lib_dir if lib_dir.exists() else base_path
@@ -213,17 +209,10 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-        return found
+                # 🧪 Alchemist: Walrus operator combined with ternary operator condenses nested loops
+                if cls.name in (dirs if cls.is_dir else files) and cls.validate(p := Path(root) / cls.name):
+                    found_list.append(p)
+        return found_list
 
     @classmethod
     def get_candidates(cls, base: Path, version: str) -> List[Path]:
@@ -425,17 +414,17 @@ def _resolve_runtime_paths(env: dict) -> None:
         pass
 
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
-    # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
-    targets = [
+    # 🧪 Alchemist: Set comprehension naturally deduplicates targets dynamically in a single pass
+    targets = {
         target for resource_cls in BaseResource.registry
         for resource_path in resource_cls.locate()
         for target in resource_cls.extract_targets(resource_path)
-    ]
+    }
 
     # Replace @GHC_PREFIX@ in all target files
     prefix_clean_bytes = prefix_clean.encode("utf-8")
     patched_any_conf = False
-    for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
+    for target in targets:
         target_path = Path(target)
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
@@ -466,11 +455,9 @@ def _resolve_runtime_paths(env: dict) -> None:
             sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
 
     # 🧪 Alchemist: any() replaces manual flag variables and loops for succinct boolean reduction
-    if patched_any_conf or any(
-        not (pkg_db / "package.cache").exists()
-        for pkg_db in PackageDBResource.locate()
-    ):
-        for pkg_db in PackageDBResource.locate():
+    pkg_dbs = PackageDBResource.locate()
+    if patched_any_conf or any(not (pkg_db / "package.cache").exists() for pkg_db in pkg_dbs):
+        for pkg_db in pkg_dbs:
             _ghc_pkg_recache(str(pkg_db), env)
 
     # ⚡ Bolt: Write marker file to indicate this prefix has been successfully patched
@@ -558,6 +545,4 @@ def __getattr__(name: str) -> Any:
 
 def __dir__() -> List[str]:
     """Provide explicit autocompletion for common dynamically generated entry points."""
-    base_dir = list(globals().keys())
-    dynamic_tools = ["execute_ghc", "execute_ghci", "execute_cabal"]
-    return base_dir + dynamic_tools
+    return list(globals().keys()) + ["execute_ghc", "execute_ghci", "execute_cabal"]
