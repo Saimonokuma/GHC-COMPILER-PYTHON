@@ -147,8 +147,13 @@ else
 			cp -a "${GHC_EXTRACTED_DIR}/share/"* "../${STAGING_DIR}/share/"
 		fi
 
-		cp -a "${GHC_EXTRACTED_DIR}/settings" "../${STAGING_DIR}/"
-		cp -a "${GHC_EXTRACTED_DIR}/package.conf.d" "../${STAGING_DIR}/"
+		if [ -f "${GHC_EXTRACTED_DIR}/settings" ]; then
+			cp -a "${GHC_EXTRACTED_DIR}/settings" "../${STAGING_DIR}/"
+		fi
+
+		if [ -d "${GHC_EXTRACTED_DIR}/package.conf.d" ]; then
+			cp -a "${GHC_EXTRACTED_DIR}/package.conf.d" "../${STAGING_DIR}/"
+		fi
 
 	# Fix Windows mingw toolchain location
 	if [ -d "${GHC_EXTRACTED_DIR}/mingw" ]; then
