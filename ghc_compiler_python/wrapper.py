@@ -274,13 +274,10 @@ class SettingsResource(BaseResource):
                 r"/(?:usr/local/lib|usr/lib|opt|ghc-prefix)/ghc(?:-|/)" + re.escape(version) + r"|/ghc-prefix"
             )
 
-            def repl(m: re.Match) -> str:
-                match = m.group(0)
-                if match == "/ghc-prefix":
-                    return placeholder
-                return f"{placeholder}/lib/ghc-{version}"
-
-            new_content = pattern.sub(repl, content)
+            new_content = pattern.sub(
+                lambda m: placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}",
+                content
+            )
             if new_content != content:
                 path.write_text(new_content, encoding="utf-8")
                 return 1
@@ -326,13 +323,12 @@ class PackageDBResource(BaseResource):
                     r"(dynamic-library-dirs:\s*|library-dirs:\s*|include-dirs:\s*)/[^\s]+|/ghc-prefix/lib/ghc-" + re.escape(version) + r"|/ghc-prefix"
                 )
 
-                def repl(m: re.Match) -> str:
-                    g1 = m.group(1)
-                    if g1:
-                        return f"{g1}{placeholder}/lib/ghc-{version}{'/include' if 'include' in g1 else ''}"
-                    return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
-
-                content = pattern.sub(repl, original)
+                content = pattern.sub(
+                    lambda m: f"{m.group(1)}{placeholder}/lib/ghc-{version}{'/include' if 'include' in m.group(1) else ''}"
+                    if m.group(1)
+                    else (placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"),
+                    original
+                )
 
                 if content != original:
                     conf_file.write_text(content, encoding="utf-8")
@@ -395,10 +391,10 @@ class BinWrappersResource(BaseResource):
                     re.escape(abs_staging) + r"|" + re.escape(abs_staging_win)
                 )
 
-                def repl(m: re.Match) -> str:
-                    return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
-
-                content = pattern.sub(repl, content)
+                content = pattern.sub(
+                    lambda m: f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder,
+                    content
+                )
 
                 if content != original:
                     script.write_text(content, encoding="utf-8")
