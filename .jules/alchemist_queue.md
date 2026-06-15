@@ -1,0 +1,2 @@
+- Investigate if `_try_mkdir` fallback chain in `_sterilize_environment` can be compressed using a loop or walrus operator chain.
+- Review `_try_resolve_binary` for possible generator expression shortcuts for file checks.

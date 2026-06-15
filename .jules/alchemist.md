@@ -37,3 +37,8 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2025-06-25 - Replace Defs with Lambdas in re.sub
+**Transformation:** Replaced verbose nested `def repl(m: re.Match) -> str:` functions inside `SettingsResource.patch_build_time`, `PackageDBResource.patch_build_time` and `BinWrappersResource.patch_build_time` with inline `lambda` expressions passed directly to `re.sub`.
+**Result:** Code size reduced, removing unnecessary inner function declarations while preserving exact functional equivalence. All tests still pass.
+**Lesson:** Python's `lambda` expressions can cleanly capture outer scope variables like `placeholder` and `version` and are perfectly suited for inline regex replacement callbacks, eliminating multi-line `def` boilerplate when the logic is concise.
