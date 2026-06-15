@@ -136,19 +136,28 @@ if [[ "${OS}" == "Linux" || "${OS}" == "Darwin" ]]; then
 
 	# Extract Cabal for Unix
 	tar -xf "${CABAL_TAR}"
-	cp cabal "../${STAGING_DIR}/bin/" 2>/dev/null || true
+		cp cabal "../${STAGING_DIR}/bin/"
 else
 	# Windows: Relocatable by default, simple copy
 	echo "Windows detected: Performing native extraction..."
-	cp -a "${GHC_EXTRACTED_DIR}/bin/"* "../${STAGING_DIR}/bin/" 2>/dev/null || true
-	cp -a "${GHC_EXTRACTED_DIR}/lib/"* "../${STAGING_DIR}/lib/" 2>/dev/null || true
-	cp -a "${GHC_EXTRACTED_DIR}/share/"* "../${STAGING_DIR}/share/" 2>/dev/null || true
-	cp -a "${GHC_EXTRACTED_DIR}/settings" "../${STAGING_DIR}/" 2>/dev/null || true
-	cp -a "${GHC_EXTRACTED_DIR}/package.conf.d" "../${STAGING_DIR}/" 2>/dev/null || true
+		cp -a "${GHC_EXTRACTED_DIR}/bin/"* "../${STAGING_DIR}/bin/"
+		cp -a "${GHC_EXTRACTED_DIR}/lib/"* "../${STAGING_DIR}/lib/"
+
+		if [ -d "${GHC_EXTRACTED_DIR}/share" ]; then
+			cp -a "${GHC_EXTRACTED_DIR}/share/"* "../${STAGING_DIR}/share/"
+		fi
+
+		if [ -f "${GHC_EXTRACTED_DIR}/settings" ]; then
+			cp -a "${GHC_EXTRACTED_DIR}/settings" "../${STAGING_DIR}/"
+		fi
+
+		if [ -d "${GHC_EXTRACTED_DIR}/package.conf.d" ]; then
+			cp -a "${GHC_EXTRACTED_DIR}/package.conf.d" "../${STAGING_DIR}/"
+		fi
 
 	# Fix Windows mingw toolchain location
 	if [ -d "${GHC_EXTRACTED_DIR}/mingw" ]; then
-		cp -a "${GHC_EXTRACTED_DIR}/mingw" "../${STAGING_DIR}/" 2>/dev/null || true
+			cp -a "${GHC_EXTRACTED_DIR}/mingw" "../${STAGING_DIR}/"
 	fi
 
 	# Extract Cabal for Windows
