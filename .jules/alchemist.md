@@ -37,3 +37,15 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2025-05-25 - Helper and Resource Optimization
+**Transformation:**
+- Refactored `_is_text_file` to skip intermediate variables and return boolean check directly from `f.read()`.
+- Refactored `_try_resolve_binary` to use an inline tuple `candidates = (...)` instead of a list, avoiding heap allocations since it just needs to be an iterable sequence.
+- Refactored `_find_platform_lib_subdir` to use a `try/except OSError` wrapper around `.iterdir()` instead of checking `.is_dir()` first. This eliminates 1 stat() syscall.
+- Hoisted loop-invariant string path operations and `re.compile()` calls out of loops in `PackageDBResource.patch_build_time` and `BinWrappersResource.patch_build_time`.
+- Refactored `targets = set([...])` in `_resolve_runtime_paths` into a native set comprehension (`targets = { ... }`).
+- Refactored `content_to_write = f.read()` inside the mmap `with` block to simply slice the mmap array directly `content_to_write = m[:]`, bypassing an extra `read()` system call and memory stream duplication.
+- Replaced verbose list extensions (`cmd.extend(extra)`) in `_execute_tool` with Python array unpacking syntax `cmd = [binary_path, *(extra_args or []), *sys.argv[1:]]`.
+**Result:** Code size reduced, execution speed nominally improved by eliminating redundant passes, unnecessary allocations, and multiple syscalls. The codebase continues to pass all active integration and e2e test checks.
+**Lesson:** Array unpacking `[*array1, *array2]` is significantly more elegant than manual `.extend()` blocks. Mmap objects in Python can be natively sliced to quickly copy their memory chunks into byte arrays, meaning we don't have to seek to 0 and explicitly invoke `f.read()` if we already have the file open in memory.
