@@ -101,3 +101,22 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+---
+entry_id: "CRUCIBLE-2026-06-16-005"
+schema_version: "2.0"
+timestamp: "2026-06-16T16:00:00Z"
+title: "CI Pipeline Defect: Using pip instead of uv in CI workflow"
+---
+## 2026-06-16 - CI Pipeline Defect: Using pip instead of uv in CI workflow
+
+**Learning:** The pipeline definition in `scripts/generate_workflow.py` and the generated `.github/workflows/build.yml` relied heavily on `pip install` which violates the `uv/uvx (never pip)` rule, potentially causing slower installations and brittleness.
+
+**Action:** Replaced `actions/setup-python` pip cache with `astral-sh/setup-uv@v4`. Replaced all `pip install` commands with `uv pip install --system`.
+
+**Defect Pattern ID:** PATTERN-013 (Pipeline/Temporal defect)
+
+**Related Entries:** []
+
+**Axes Affected:** V (Temporal)
+
+**Level:** L2
