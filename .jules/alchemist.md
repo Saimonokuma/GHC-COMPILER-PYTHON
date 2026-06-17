@@ -37,3 +37,14 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2025-05-18 - Further Refactoring of `ghc_compiler_python/wrapper.py`
+**Transformation:**
+- Consolidate directory and file checks in `BaseResource.locate` using a single assignment.
+- Utilize `path.glob("*.conf")` over `iterdir()` and string-suffix checks in `PackageDBResource.extract_targets`.
+- Replace verbose `.extend()` calls with inline list concatenation `[binary_path] + (extra_args or []) + sys.argv[1:]` in `_execute_tool`.
+- Simplify binary patching logic in `_resolve_runtime_paths` by early-exiting `mmap` checks with `continue` to reduce nesting, and use `write_bytes()` to replace a verbose file context manager.
+**Result:** Code size reduced, control flow is flatter, and idioms like `glob` improve clarity. All 17 tests passed properly.
+**Lesson:**
+- Python context managers correctly invoke `__exit__` even when short-circuiting a loop with `continue`.
+- `pathlib.Path.write_bytes()` is an efficient substitute for simple binary open/write/close loops.

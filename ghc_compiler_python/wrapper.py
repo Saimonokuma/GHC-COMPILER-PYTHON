@@ -213,16 +213,12 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                # 🧪 Alchemist: Consolidate directory and file checks to avoid redundant branches
+                targets = dirs if cls.is_dir else files
+                if cls.name in targets:
+                    p = Path(root) / cls.name
+                    if cls.validate(p):
+                        found.append(p)
         return found
 
     @classmethod
@@ -311,7 +307,8 @@ class PackageDBResource(BaseResource):
     @classmethod
     def extract_targets(cls, path: Path) -> List[str]:
         try:
-            return [str(f) for f in path.iterdir() if f.name.endswith(".conf") and not f.is_symlink()]
+            # 🧪 Alchemist: glob() replaces manual iterdir() and string suffix checks
+            return [str(f) for f in path.glob("*.conf") if not f.is_symlink()]
         except OSError:
             return []
 
@@ -440,28 +437,29 @@ def _resolve_runtime_paths(env: dict) -> None:
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
             # the entire binary into memory. Drastically reduces I/O latency for large binaries.
-            content_to_write = None
             with target_path.open("rb") as f:
                 try:
                     with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
-                        if m.find(b"@GHC_PREFIX@") != -1:
-                            f.seek(0)
-                            content_to_write = f.read()
+                        # 🧪 Alchemist: Early exit from mmap check eliminates excessive block nesting
+                        if m.find(b"@GHC_PREFIX@") == -1:
+                            continue
+                        f.seek(0)
+                        content = f.read()
                 except (ValueError, OSError):
                     # mmap throws ValueError for empty files, OSError for unmappable ones
                     f.seek(0)
-                    content_to_write = f.read()
-                    if b"@GHC_PREFIX@" not in content_to_write:
-                        content_to_write = None
+                    content = f.read()
+                    if b"@GHC_PREFIX@" not in content:
+                        continue
 
-            if content_to_write is not None:
-                # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
-                if b" " in prefix_clean_bytes and b"\0" not in content_to_write:
-                    content_to_write = re.sub(rb'(?<!")(@GHC_PREFIX@[^\s"]+)', rb'"\1"', content_to_write)
-                with target_path.open("wb") as out:
-                    out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
-                if target.endswith(".conf"):
-                    patched_any_conf = True
+            # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
+            if b" " in prefix_clean_bytes and b"\0" not in content:
+                content = re.sub(rb'(?<!")(@GHC_PREFIX@[^\s"]+)', rb'"\1"', content)
+
+            # 🧪 Alchemist: write_bytes() replaces verbose context manager
+            target_path.write_bytes(content.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
+            if target.endswith(".conf"):
+                patched_any_conf = True
         except OSError as e:
             sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
 
@@ -514,10 +512,8 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
     _resolve_runtime_paths(env)
     binary_path = _resolve_binary(tool_name)
 
-    cmd = [binary_path]
-    if extra_args:
-        cmd.extend(extra_args)
-    cmd.extend(sys.argv[1:])
+    # 🧪 Alchemist: Inline list concatenation expression replaces verbose extend()
+    cmd = [binary_path] + (extra_args or []) + sys.argv[1:]
 
     try:
         # 🧪 Alchemist: On POSIX systems, os.execve replaces the Python interpreter entirely.
