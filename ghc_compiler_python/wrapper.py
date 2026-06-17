@@ -69,15 +69,15 @@ def _try_resolve_binary(name: str) -> Optional[str]:
     binary_name = f"{name}.exe" if sys.platform == "win32" else name
     bin_dir = "Scripts" if sys.platform == "win32" else "bin"
 
-    candidates = [
-        Path(sys.prefix) / bin_dir / binary_name,
-        Path(__file__).resolve().parent.parent / bin_dir / binary_name
-    ]
+    c1 = os.path.join(sys.prefix, bin_dir, binary_name)
+    if os.path.exists(c1):
+        return c1
 
-    return next(
-        (str(p) for p in candidates if p.exists()),
-        shutil.which(binary_name)
-    )
+    c2 = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), bin_dir, binary_name)
+    if os.path.exists(c2):
+        return c2
+
+    return shutil.which(binary_name)
 
 def _resolve_binary(name: str) -> str:
     """Resolve the absolute path to a bundled native binary."""
@@ -97,12 +97,21 @@ def _find_platform_lib_subdir() -> str:
     On macOS:   lib/ghc-9.4.8/lib/aarch64-osx-ghc-9.4.8/ (or similar)
     On Windows: Does not exist (DLLs are in mingw/bin/)
     """
-    ghc_lib_dir = Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib"
-    if not ghc_lib_dir.is_dir():
+    ghc_lib_dir = os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}", "lib")
+    if not os.path.isdir(ghc_lib_dir):
         return ""
 
-    # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
-    return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    try:
+        suffix = f"-ghc-{GHC_VERSION}"
+        for d in os.listdir(ghc_lib_dir):
+            if d.endswith(suffix):
+                full_path = os.path.join(ghc_lib_dir, d)
+                if os.path.isdir(full_path):
+                    return full_path
+    except OSError:
+        pass
+
+    return ""
 
 
 def _sterilize_environment() -> dict:
@@ -112,17 +121,18 @@ def _sterilize_environment() -> dict:
 
     _HOME_ORIGINAL = os.environ.get("HOME", os.environ.get("USERPROFILE", ""))
 
-    def _get_home_path() -> Path:
+    def _get_home_path() -> str:
         try:
-            return Path.home() / ".ghc-compiler-python-home"
-        except RuntimeError:
-            return Path()
+            return os.path.join(os.path.expanduser("~"), ".ghc-compiler-python-home")
+        except (RuntimeError, KeyError):
+            return ""
 
-    def _try_mkdir(path: Path) -> Optional[Path]:
+    def _try_mkdir(path_str: str) -> Optional[str]:
+        if not path_str or path_str == ".":
+            return None
         try:
-            if str(path) != ".":
-                path.mkdir(parents=True, exist_ok=True)
-                return path
+            os.makedirs(path_str, exist_ok=True)
+            return path_str
         except (OSError, RuntimeError):
             pass
         return None
@@ -130,15 +140,15 @@ def _sterilize_environment() -> dict:
     # 🧪 Alchemist: Declarative fallback chain replaces nested try-except blocks.
     # Lazily evaluate Path.home() to prevent premature RuntimeError.
     safe_home = (
-        _try_mkdir(Path(sys.prefix) / ".ghc-compiler-python-home") or
+        _try_mkdir(os.path.join(sys.prefix, ".ghc-compiler-python-home")) or
         _try_mkdir(_get_home_path()) or
-        Path(tempfile.mkdtemp(prefix="ghc-compiler-python-home-"))
+        tempfile.mkdtemp(prefix="ghc-compiler-python-home-")
     )
 
-    env["HOME"] = str(safe_home)
+    env["HOME"] = safe_home
 
     bin_dir = "Scripts" if sys.platform == "win32" else "bin"
-    env_bin = Path(sys.prefix) / bin_dir
+    env_bin = os.path.join(sys.prefix, bin_dir)
     current_path = env.get("PATH", "")
     env["PATH"] = f"{env_bin}{os.pathsep}{current_path}"
 
@@ -146,23 +156,23 @@ def _sterilize_environment() -> dict:
     match sys.platform:
         case "darwin":
             candidates = [
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
-                Path(sys.prefix) / "lib",
+                os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}", "lib"),
+                os.path.join(sys.prefix, "lib"),
             ]
             vars_to_update = ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"]
         case "linux":
             candidates = [
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}",
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
-                Path(_find_platform_lib_subdir() or "."),
-                Path(__file__).resolve().parent.parent / "ghc_compiler_python.libs",
+                os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}"),
+                os.path.join(sys.prefix, "lib", f"ghc-{GHC_VERSION}", "lib"),
+                _find_platform_lib_subdir() or ".",
+                os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "ghc_compiler_python.libs"),
             ]
             vars_to_update = ["LD_LIBRARY_PATH"]
         case _:
             candidates, vars_to_update = [], []
 
     if lib_dirs_str := os.pathsep.join(
-        str(p) for p in candidates if p.is_dir() and str(p) != "."
+        p for p in candidates if p != "." and os.path.isdir(p)
     ):
         for var in vars_to_update:
             env[var] = (
@@ -417,12 +427,15 @@ def _resolve_runtime_paths(env: dict) -> None:
 
     # ⚡ Bolt: Fast-path to avoid scanning and patching on every invocation.
     # If the marker file exists and contains the current prefix, we are already patched.
-    marker_file = Path(sys.prefix) / "lib" / f".ghc_patched_{GHC_VERSION}.txt"
+    marker_file_str = os.path.join(sys.prefix, "lib", f".ghc_patched_{GHC_VERSION}.txt")
     try:
-        if marker_file.is_file() and marker_file.read_text(encoding="utf-8") == prefix_clean:
-            return
+        with open(marker_file_str, "r", encoding="utf-8") as f:
+            if f.read() == prefix_clean:
+                return
     except OSError:
         pass
+
+    marker_file = Path(marker_file_str)
 
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
     # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
