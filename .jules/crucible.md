@@ -101,3 +101,23 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+
+---
+entry_id: "CRUCIBLE-2026-05-18-005"
+schema_version: "2.0"
+timestamp: "2026-05-18T12:00:00Z"
+title: "Crucible: Hardening python ecosystem via UV and syntax fixes"
+---
+## 2026-05-18 - Crucible: Hardening python ecosystem via UV and syntax fixes
+
+**Learning:** Replaced `match/case` with `if/elif` in `wrapper.py` to correctly adhere to the `requires-python = ">=3.8"` boundary. Transformed Python package installations from `pip` to `uv` to harden temporal and operational properties, significantly boosting isolation and determinism in GitHub Actions. Reverted an unsafe manual fix to a generated `build.yml` and corrected it at the source in `generate_workflow.py` to prevent regressions via pipeline overwriting. Cleaned up transient shell dependencies.
+
+**Action:** Addressed the vulnerabilities in `wrapper.py`, `generate_workflow.py`, `README.md`, and regenerated `build.yml` correctly. Handled dead code in tests found by `ruff`.
+
+**Defect Pattern ID:** None
+
+**Related Entries:** []
+
+**Axes Affected:** II (Semantic), IV (Operational), V (Temporal)
+
+**Level:** L2, L3, L5

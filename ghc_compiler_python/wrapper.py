@@ -22,7 +22,7 @@ import functools
 import mmap
 import re
 from pathlib import Path
-from typing import Any, List, NoReturn, Optional, Type
+from typing import Any, List, NoReturn, Optional
 
 
 GHC_VERSION = "9.4.8"
@@ -142,24 +142,23 @@ def _sterilize_environment() -> dict:
     current_path = env.get("PATH", "")
     env["PATH"] = f"{env_bin}{os.pathsep}{current_path}"
 
-    # 🧪 Alchemist: Structural pattern matching replaces lambda-based dictionary lookup
-    match sys.platform:
-        case "darwin":
-            candidates = [
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
-                Path(sys.prefix) / "lib",
-            ]
-            vars_to_update = ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"]
-        case "linux":
-            candidates = [
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}",
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
-                Path(_find_platform_lib_subdir() or "."),
-                Path(__file__).resolve().parent.parent / "ghc_compiler_python.libs",
-            ]
-            vars_to_update = ["LD_LIBRARY_PATH"]
-        case _:
-            candidates, vars_to_update = [], []
+    # 🧪 Alchemist: Structural pattern matching is not Python 3.8 compatible. Reverted to if/elif.
+    if sys.platform == "darwin":
+        candidates = [
+            Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
+            Path(sys.prefix) / "lib",
+        ]
+        vars_to_update = ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"]
+    elif sys.platform.startswith("linux"):
+        candidates = [
+            Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}",
+            Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
+            Path(_find_platform_lib_subdir() or "."),
+            Path(__file__).resolve().parent.parent / "ghc_compiler_python.libs",
+        ]
+        vars_to_update = ["LD_LIBRARY_PATH"]
+    else:
+        candidates, vars_to_update = [], []
 
     if lib_dirs_str := os.pathsep.join(
         str(p) for p in candidates if p.is_dir() and str(p) != "."
