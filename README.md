@@ -6,12 +6,12 @@ This project distributes a fully functional, self-contained Haskell compilation 
 
 ## Purpose
 
-By distributing the Haskell toolchain as a Python Wheel, developers can seamlessly add a GHC compiler to their local Python environments (`venv`, `conda`, etc.) using a simple `pip install`. This ensures isolated, hermetic, and reproducible Haskell compilation environments without mutating the global host state.
+By distributing the Haskell toolchain as a Python Wheel, developers can seamlessly add a GHC compiler to their local Python environments (`venv`, `conda`, etc.) using a simple `uv pip install`. This ensures isolated, hermetic, and reproducible Haskell compilation environments without mutating the global host state.
 
 ## Installation
 
 ```bash
-pip install ghc-compiler-python
+uv pip install ghc-compiler-python
 ```
 
 ### Requirements
