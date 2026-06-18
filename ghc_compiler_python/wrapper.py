@@ -58,8 +58,7 @@ def _is_text_file(filepath: Path) -> bool:
     """Check if a file is a text file by looking for null bytes in the first 1024 bytes."""
     try:
         with filepath.open("rb") as f:
-            chunk = f.read(1024)
-            return b"\0" not in chunk
+            return b"\0" not in f.read(1024)
     except OSError:
         return False
 
@@ -86,7 +85,7 @@ def _resolve_binary(name: str) -> str:
 
 def _validate_c_linker() -> None:
     """Pre-flight validation: assert the existence of a host C-linker."""
-    if not shutil.which("gcc") and not shutil.which("clang"):
+    if not any(map(shutil.which, ("gcc", "clang"))):
         _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
 
 
@@ -213,16 +212,11 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                # 🧪 Alchemist: Condense file/directory branch with conditional assignment
+                if cls.name in (targets := dirs if cls.is_dir else files):
+                    p = Path(root) / cls.name
+                    if cls.validate(p):
+                        found.append(p)
         return found
 
     @classmethod
@@ -425,17 +419,17 @@ def _resolve_runtime_paths(env: dict) -> None:
         pass
 
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
-    # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
-    targets = [
+    # 🧪 Alchemist: Set comprehension replaces list comprehension + set() cast for native deduplication
+    targets = {
         target for resource_cls in BaseResource.registry
         for resource_path in resource_cls.locate()
         for target in resource_cls.extract_targets(resource_path)
-    ]
+    }
 
     # Replace @GHC_PREFIX@ in all target files
     prefix_clean_bytes = prefix_clean.encode("utf-8")
     patched_any_conf = False
-    for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
+    for target in targets:
         target_path = Path(target)
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
@@ -465,12 +459,10 @@ def _resolve_runtime_paths(env: dict) -> None:
         except OSError as e:
             sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
 
-    # 🧪 Alchemist: any() replaces manual flag variables and loops for succinct boolean reduction
-    if patched_any_conf or any(
-        not (pkg_db / "package.cache").exists()
-        for pkg_db in PackageDBResource.locate()
-    ):
-        for pkg_db in PackageDBResource.locate():
+    # 🧪 Alchemist: Cache pkg_dbs to eliminate repetitive locate() lookup iterations
+    pkg_dbs = PackageDBResource.locate()
+    if patched_any_conf or any(not (pkg_db / "package.cache").exists() for pkg_db in pkg_dbs):
+        for pkg_db in pkg_dbs:
             _ghc_pkg_recache(str(pkg_db), env)
 
     # ⚡ Bolt: Write marker file to indicate this prefix has been successfully patched
@@ -514,10 +506,8 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
     _resolve_runtime_paths(env)
     binary_path = _resolve_binary(tool_name)
 
-    cmd = [binary_path]
-    if extra_args:
-        cmd.extend(extra_args)
-    cmd.extend(sys.argv[1:])
+    # 🧪 Alchemist: Immutable array concatenation replaces sequential list.extend mutations
+    cmd = [binary_path] + (extra_args or []) + sys.argv[1:]
 
     try:
         # 🧪 Alchemist: On POSIX systems, os.execve replaces the Python interpreter entirely.
@@ -558,6 +548,4 @@ def __getattr__(name: str) -> Any:
 
 def __dir__() -> List[str]:
     """Provide explicit autocompletion for common dynamically generated entry points."""
-    base_dir = list(globals().keys())
-    dynamic_tools = ["execute_ghc", "execute_ghci", "execute_cabal"]
-    return base_dir + dynamic_tools
+    return list(globals().keys()) + ["execute_ghc", "execute_ghci", "execute_cabal"]
