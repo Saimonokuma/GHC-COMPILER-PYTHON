@@ -13,16 +13,15 @@ FIX v3: Fixed platform-specific path detection for settings and package.conf.d.
 FIX v2: Added DYLD_LIBRARY_PATH for macOS runtime library resolution.
 """
 
+from __future__ import annotations
+
 import os
 import sys
-import shutil
-import subprocess
-import tempfile
-import functools
-import mmap
-import re
 from pathlib import Path
-from typing import Any, List, NoReturn, Optional, Type
+
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from typing import Any, List, NoReturn, Optional, Type
 
 
 GHC_VERSION = "9.4.8"
@@ -74,6 +73,7 @@ def _try_resolve_binary(name: str) -> Optional[str]:
         Path(__file__).resolve().parent.parent / bin_dir / binary_name
     ]
 
+    import shutil
     return next(
         (str(p) for p in candidates if p.exists()),
         shutil.which(binary_name)
@@ -86,6 +86,7 @@ def _resolve_binary(name: str) -> str:
 
 def _validate_c_linker() -> None:
     """Pre-flight validation: assert the existence of a host C-linker."""
+    import shutil
     if not shutil.which("gcc") and not shutil.which("clang"):
         _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
 
@@ -129,6 +130,7 @@ def _sterilize_environment() -> dict:
 
     # 🧪 Alchemist: Declarative fallback chain replaces nested try-except blocks.
     # Lazily evaluate Path.home() to prevent premature RuntimeError.
+    import tempfile
     safe_home = (
         _try_mkdir(Path(sys.prefix) / ".ghc-compiler-python-home") or
         _try_mkdir(_get_home_path()) or
@@ -186,9 +188,13 @@ class BaseResource:
         cls.registry.append(cls)
 
     @classmethod
-    @functools.lru_cache(maxsize=None)
     def locate(cls, base: str = sys.prefix, version: str = GHC_VERSION) -> List[Path]:
         """Locate all instances of this resource relative to a base directory."""
+        if not hasattr(cls, "_locate_cache"):
+            cls._locate_cache = {}
+        cache_key = (base, version)
+        if cache_key in cls._locate_cache:
+            return cls._locate_cache[cache_key]
         base_path = Path(base)
         candidates = cls.get_candidates(base_path, version)
 
@@ -223,6 +229,8 @@ class BaseResource:
                         p = Path(root) / cls.name
                         if cls.validate(p):
                             found.append(p)
+
+        cls._locate_cache[cache_key] = found
         return found
 
     @classmethod
@@ -268,13 +276,14 @@ class SettingsResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         try:
+            import re
             content = path.read_text(encoding="utf-8", errors="replace")
             # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
             pattern = re.compile(
                 r"/(?:usr/local/lib|usr/lib|opt|ghc-prefix)/ghc(?:-|/)" + re.escape(version) + r"|/ghc-prefix"
             )
 
-            def repl(m: re.Match) -> str:
+            def repl(m: Any) -> str:
                 match = m.group(0)
                 if match == "/ghc-prefix":
                     return placeholder
@@ -318,6 +327,7 @@ class PackageDBResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched_count = 0
+        import re
         for conf_file in path.glob("*.conf"):
             try:
                 original = conf_file.read_text(encoding="utf-8", errors="replace")
@@ -326,7 +336,7 @@ class PackageDBResource(BaseResource):
                     r"(dynamic-library-dirs:\s*|library-dirs:\s*|include-dirs:\s*)/[^\s]+|/ghc-prefix/lib/ghc-" + re.escape(version) + r"|/ghc-prefix"
                 )
 
-                def repl(m: re.Match) -> str:
+                def repl(m: Any) -> str:
                     g1 = m.group(1)
                     if g1:
                         return f"{g1}{placeholder}/lib/ghc-{version}{'/include' if 'include' in g1 else ''}"
@@ -378,6 +388,7 @@ class BinWrappersResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched = 0
+        import re
         for script in path.iterdir():
             if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
                 continue
@@ -395,7 +406,7 @@ class BinWrappersResource(BaseResource):
                     re.escape(abs_staging) + r"|" + re.escape(abs_staging_win)
                 )
 
-                def repl(m: re.Match) -> str:
+                def repl(m: Any) -> str:
                     return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
 
                 content = pattern.sub(repl, content)
@@ -440,6 +451,7 @@ def _resolve_runtime_paths(env: dict) -> None:
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
             # the entire binary into memory. Drastically reduces I/O latency for large binaries.
+            import mmap
             content_to_write = None
             with target_path.open("rb") as f:
                 try:
@@ -457,6 +469,7 @@ def _resolve_runtime_paths(env: dict) -> None:
             if content_to_write is not None:
                 # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
                 if b" " in prefix_clean_bytes and b"\0" not in content_to_write:
+                    import re
                     content_to_write = re.sub(rb'(?<!")(@GHC_PREFIX@[^\s"]+)', rb'"\1"', content_to_write)
                 with target_path.open("wb") as out:
                     out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
@@ -493,6 +506,7 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
         return  # Can't recache without ghc-pkg
 
     try:
+        import subprocess
         # Use the sterilized environment which has LD_LIBRARY_PATH properly set
         # 🧪 Alchemist: Dictionary merge operator (|) replaces unpacking
         subprocess.run(
@@ -503,8 +517,15 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
             timeout=30,
             check=True,
         )
-    except (subprocess.SubprocessError, OSError) as e:
+    except OSError as e:
         sys.stderr.write(f"WARNING: ghc-pkg recache failed for {pkg_db_dir}: {e}\n")
+    except Exception as e:
+        # Catch other errors, like subprocess.SubprocessError
+        import subprocess
+        if isinstance(e, subprocess.SubprocessError):
+            sys.stderr.write(f"WARNING: ghc-pkg recache failed for {pkg_db_dir}: {e}\n")
+        else:
+            raise
 
 
 def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoReturn:
@@ -528,13 +549,19 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
         if sys.platform != "win32":
             os.execve(binary_path, cmd, env)
         else:
+            import subprocess
             sys.exit(subprocess.run(cmd, env=env).returncode)
     except FileNotFoundError:
         _die(f"FATAL ERROR: Binary not found at '{binary_path}'.")
     except KeyboardInterrupt:
         sys.exit(130)
-    except (subprocess.SubprocessError, OSError) as e:
+    except OSError as e:
         _die(f"FATAL ERROR: Execution failed: {e}")
+    except Exception as e:
+        import subprocess
+        if isinstance(e, subprocess.SubprocessError):
+            _die(f"FATAL ERROR: Execution failed: {e}")
+        raise
 
 
 def __getattr__(name: str) -> Any:
