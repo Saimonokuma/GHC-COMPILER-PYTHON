@@ -74,10 +74,11 @@ def _try_resolve_binary(name: str) -> Optional[str]:
         Path(__file__).resolve().parent.parent / bin_dir / binary_name
     ]
 
-    return next(
-        (str(p) for p in candidates if p.exists()),
-        shutil.which(binary_name)
-    )
+    for p in candidates:
+        if p.exists():
+            return str(p)
+
+    return shutil.which(binary_name)
 
 def _resolve_binary(name: str) -> str:
     """Resolve the absolute path to a bundled native binary."""
