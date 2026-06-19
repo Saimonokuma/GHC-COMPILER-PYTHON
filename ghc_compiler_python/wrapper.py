@@ -102,7 +102,10 @@ def _find_platform_lib_subdir() -> str:
         return ""
 
     # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
-    return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    try:
+        return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    except OSError:
+        return ""
 
 
 def _sterilize_environment() -> dict:
@@ -204,25 +207,28 @@ class BaseResource:
             lib_dir = base_path / "lib"
             search_dir = lib_dir if lib_dir.exists() else base_path
 
-            for root, dirs, files in os.walk(search_dir):
-                # ⚡ Bolt: Prune os.walk to prevent recursion into massive Python directories.
-                # Modifying `dirs` in place avoids walking into these branches entirely.
-                dirs[:] = [
-                    d for d in dirs
-                    if d not in {"site-packages", "dist-packages"}
-                    and not d.startswith(("python", "pypy"))
-                ]
+            try:
+                for root, dirs, files in os.walk(search_dir):
+                    # ⚡ Bolt: Prune os.walk to prevent recursion into massive Python directories.
+                    # Modifying `dirs` in place avoids walking into these branches entirely.
+                    dirs[:] = [
+                        d for d in dirs
+                        if d not in {"site-packages", "dist-packages"}
+                        and not d.startswith(("python", "pypy"))
+                    ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                    if cls.is_dir:
+                        if cls.name in dirs:
+                            p = Path(root) / cls.name
+                            if cls.validate(p):
+                                found.append(p)
+                    else:
+                        if cls.name in files:
+                            p = Path(root) / cls.name
+                            if cls.validate(p):
+                                found.append(p)
+            except OSError:
+                pass
         return found
 
     @classmethod
@@ -318,7 +324,13 @@ class PackageDBResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched_count = 0
-        for conf_file in path.glob("*.conf"):
+        try:
+            conf_files = list(path.glob("*.conf"))
+        except OSError as e:
+            sys.stderr.write(f"WARNING: Failed to read directory {path}: {e}\n")
+            conf_files = []
+
+        for conf_file in conf_files:
             try:
                 original = conf_file.read_text(encoding="utf-8", errors="replace")
                 # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
@@ -378,7 +390,13 @@ class BinWrappersResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched = 0
-        for script in path.iterdir():
+        try:
+            scripts = list(path.iterdir())
+        except OSError as e:
+            sys.stderr.write(f"WARNING: Failed to read directory {path}: {e}\n")
+            scripts = []
+
+        for script in scripts:
             if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
                 continue
             try:
