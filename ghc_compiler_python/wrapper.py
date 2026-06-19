@@ -21,6 +21,8 @@ import tempfile
 import functools
 import mmap
 import re
+import contextlib
+import itertools
 from pathlib import Path
 from typing import Any, List, NoReturn, Optional, Type
 
@@ -74,10 +76,7 @@ def _try_resolve_binary(name: str) -> Optional[str]:
         Path(__file__).resolve().parent.parent / bin_dir / binary_name
     ]
 
-    return next(
-        (str(p) for p in candidates if p.exists()),
-        shutil.which(binary_name)
-    )
+    return next((str(p) for p in candidates if p.exists()), None) or shutil.which(binary_name)
 
 def _resolve_binary(name: str) -> str:
     """Resolve the absolute path to a bundled native binary."""
@@ -165,11 +164,7 @@ def _sterilize_environment() -> dict:
         str(p) for p in candidates if p.is_dir() and str(p) != "."
     ):
         for var in vars_to_update:
-            env[var] = (
-                f"{lib_dirs_str}{os.pathsep}{env[var]}"
-                if env.get(var)
-                else lib_dirs_str
-            )
+            env[var] = os.pathsep.join(filter(None, [lib_dirs_str, env.get(var)]))
 
     return env
 
@@ -192,38 +187,23 @@ class BaseResource:
         base_path = Path(base)
         candidates = cls.get_candidates(base_path, version)
 
-        # Check explicit candidates first
-        for c in candidates:
-            # 🧪 Alchemist: Ternary conditional combines file and directory checks
-            if (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c):
-                return [c]
+        # 🧪 Alchemist: Declarative short-circuit for explicit candidates
+        if explicit := next((c for c in candidates if (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c)), None):
+            return [explicit]
 
         # Dynamic fallback
-        found = []
-        if base_path.exists():
-            lib_dir = base_path / "lib"
-            search_dir = lib_dir if lib_dir.exists() else base_path
+        if not base_path.exists():
+            return []
 
+        search_dir = (base_path / "lib") if (base_path / "lib").exists() else base_path
+
+        # 🧪 Alchemist: Generator expression collapses the manual loop, preserving prune logic
+        def _walk_and_prune():
             for root, dirs, files in os.walk(search_dir):
-                # ⚡ Bolt: Prune os.walk to prevent recursion into massive Python directories.
-                # Modifying `dirs` in place avoids walking into these branches entirely.
-                dirs[:] = [
-                    d for d in dirs
-                    if d not in {"site-packages", "dist-packages"}
-                    and not d.startswith(("python", "pypy"))
-                ]
+                dirs[:] = [d for d in dirs if d not in {"site-packages", "dist-packages"} and not d.startswith(("python", "pypy"))]
+                yield Path(root) / cls.name if cls.name in (dirs if cls.is_dir else files) else None
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-        return found
+        return [p for p in _walk_and_prune() if p and cls.validate(p)]
 
     @classmethod
     def get_candidates(cls, base: Path, version: str) -> List[Path]:
@@ -310,10 +290,9 @@ class PackageDBResource(BaseResource):
 
     @classmethod
     def extract_targets(cls, path: Path) -> List[str]:
-        try:
-            return [str(f) for f in path.iterdir() if f.name.endswith(".conf") and not f.is_symlink()]
-        except OSError:
-            return []
+        with contextlib.suppress(OSError):
+            return [str(f) for f in path.glob("*.conf") if not f.is_symlink()]
+        return []
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
@@ -340,11 +319,9 @@ class PackageDBResource(BaseResource):
             except OSError as e:
                 sys.stderr.write(f"WARNING: Failed to patch {conf_file}: {e}\n")
 
-        # 🧪 Alchemist: Walrus operator (:=) consolidates variable assignment and existence check
-        try:
+        # 🧪 Alchemist: contextlib replaces try/except boilerplate
+        with contextlib.suppress(OSError):
             (path / "package.cache").unlink(missing_ok=True)
-        except OSError as e:
-            sys.stderr.write(f"WARNING: Failed to unlink {path / 'package.cache'}: {e}\n")
         return patched_count
 
 
@@ -378,16 +355,15 @@ class BinWrappersResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched = 0
-        for script in path.iterdir():
-            if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
-                continue
+        # 🧪 Alchemist: Generator expression consolidates loop conditions
+        for script in (f for f in path.iterdir() if f.is_file() and not f.is_symlink() and not f.name.endswith(".exe") and _is_text_file(f)):
             try:
                 content = script.read_text(encoding="utf-8", errors="replace")
                 original = content
 
                 staging_dir = path.parent.parent if path.parent.name == f"ghc-{version}" else path.parent
                 abs_staging = staging_dir.absolute().as_posix()
-                abs_staging_win = str(staging_dir.absolute()).replace("/", "\\")
+                abs_staging_win = str(staging_dir.absolute()).replace("/", "\\\\")
 
                 # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
                 pattern = re.compile(
@@ -418,24 +394,22 @@ def _resolve_runtime_paths(env: dict) -> None:
     # ⚡ Bolt: Fast-path to avoid scanning and patching on every invocation.
     # If the marker file exists and contains the current prefix, we are already patched.
     marker_file = Path(sys.prefix) / "lib" / f".ghc_patched_{GHC_VERSION}.txt"
-    try:
+    with contextlib.suppress(OSError):
         if marker_file.is_file() and marker_file.read_text(encoding="utf-8") == prefix_clean:
             return
-    except OSError:
-        pass
 
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
     # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
-    targets = [
+    targets = {
         target for resource_cls in BaseResource.registry
         for resource_path in resource_cls.locate()
         for target in resource_cls.extract_targets(resource_path)
-    ]
+    }
 
     # Replace @GHC_PREFIX@ in all target files
     prefix_clean_bytes = prefix_clean.encode("utf-8")
     patched_any_conf = False
-    for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
+    for target in targets:  # 🧪 Alchemist: Deduplicate targets in a single pass via set comprehension
         target_path = Path(target)
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
@@ -465,20 +439,16 @@ def _resolve_runtime_paths(env: dict) -> None:
         except OSError as e:
             sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
 
-    # 🧪 Alchemist: any() replaces manual flag variables and loops for succinct boolean reduction
-    if patched_any_conf or any(
-        not (pkg_db / "package.cache").exists()
-        for pkg_db in PackageDBResource.locate()
-    ):
-        for pkg_db in PackageDBResource.locate():
+    # 🧪 Alchemist: Cache lookup results and suppress boilerplate
+    pkg_dbs = PackageDBResource.locate()
+    if patched_any_conf or any(not (pkg_db / "package.cache").exists() for pkg_db in pkg_dbs):
+        for pkg_db in pkg_dbs:
             _ghc_pkg_recache(str(pkg_db), env)
 
     # ⚡ Bolt: Write marker file to indicate this prefix has been successfully patched
-    try:
+    with contextlib.suppress(OSError):
         marker_file.parent.mkdir(parents=True, exist_ok=True)
         marker_file.write_text(prefix_clean, encoding="utf-8")
-    except OSError:
-        pass
 
 
 def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
