@@ -101,3 +101,22 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+---
+entry_id: "CRUCIBLE-2026-05-18-005"
+schema_version: "2.0"
+timestamp: "2026-05-18T12:00:00Z"
+title: "Python 3.8 Compatibility Fix & Unused Imports"
+---
+## 2026-05-18 - Python 3.8 Compatibility Fix & Unused Imports
+
+**Learning:** Python `match` statements were introduced in Python 3.10, but the project declares support for `>=3.8`. Using `match` statements causes an L1 Syntactic Defect in Python 3.8 and 3.9 environments, leading to `SyntaxError` during module loading. Several files also contained unused imports.
+
+**Action:** Replaced the `match sys.platform` block with `if/elif` statements in `ghc_compiler_python/wrapper.py`. Ran `uvx ruff check --fix` to remove unused imports across the repository.
+
+**Defect Pattern ID:** None
+
+**Related Entries:** []
+
+**Axes Affected:** I (Syntactic), V (Temporal)
+
+**Level:** L1
