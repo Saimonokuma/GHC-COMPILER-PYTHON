@@ -86,10 +86,14 @@ def _resolve_binary(name: str) -> str:
 
 def _validate_c_linker() -> None:
     """Pre-flight validation: assert the existence of a host C-linker."""
+    if os.environ.get("_GHC_COMPILER_PYTHON_LINKER_VALIDATED") == "1":
+        return
     if not shutil.which("gcc") and not shutil.which("clang"):
         _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
+    os.environ["_GHC_COMPILER_PYTHON_LINKER_VALIDATED"] = "1"
 
 
+@functools.lru_cache(maxsize=None)
 def _find_platform_lib_subdir() -> str:
     """Find the platform-specific library subdirectory inside the GHC lib directory.
 
