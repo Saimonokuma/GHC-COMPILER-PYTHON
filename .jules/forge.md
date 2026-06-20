@@ -12,3 +12,5 @@ Deleted test script files that I added during my debugging phase.
 - Unhandled `PermissionError` (a subclass of `OSError`) caused crashes during path resolution when `iterdir()` was called on unreadable directories in `wrapper.py`. Added proper `try...except OSError` fallback.
 - Prevented a fatal crash (`sys.exit(1)`) triggered by missing `ghc-pkg` during recache by splitting binary resolution into a safe `_try_resolve_binary` method.
 - Replaced a stubbed verification string with proper `otool -l` execution checks inside `scripts/fix_macos_rpaths.sh`. Ensured to use `grep -E` (Extended Regular Expressions) for BSD `grep` compatibility on macOS when alternating values.
+### Critical Learnings (2024-05-18):
+- Discovered that structural pattern matching (`match sys.platform`) and the dictionary merge operator (`|`) were causing `SyntaxError` and `TypeError` on Python versions earlier than 3.10 and 3.9, breaking the package for Python 3.8 users despite `pyproject.toml` claiming `requires-python = ">=3.8"`. Replaced them with `if/elif/else` and `.copy()` to maintain backward compatibility.
