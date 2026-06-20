@@ -5,12 +5,18 @@ import sys
 import pytest
 from unittest.mock import patch
 
+@pytest.fixture(autouse=True)
+def clear_linker_env():
+    if "_GHC_COMPILER_PYTHON_LINKER_VALIDATED" in os.environ:
+        del os.environ["_GHC_COMPILER_PYTHON_LINKER_VALIDATED"]
+
 from ghc_compiler_python.wrapper import (
     HASKELL_POLLUTION_VARS,
     _sterilize_environment,
     _validate_c_linker,
     _resolve_binary,
 )
+
 
 
 class TestSterilizeEnvironment:
@@ -56,7 +62,6 @@ class TestValidateCLinker:
     def test_exits_without_linker(self, mock_which):
         with pytest.raises(SystemExit):
             _validate_c_linker()
-
 
 class TestResolveBinary:
     """Tests for binary resolution."""

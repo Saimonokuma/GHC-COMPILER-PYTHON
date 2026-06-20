@@ -22,3 +22,10 @@
 ## 2026-05-17 - Fast-path execution optimization for wrapper.py
 **Learning:** `_resolve_runtime_paths` dynamically searches and patches `@GHC_PREFIX@` on every execution, taking ~20ms-100ms. Since wrappers can be invoked frequently (by `cabal` running `ghc`, etc.), this creates significant overhead.
 **Action:** Added a fast-path in `ghc_compiler_python/wrapper.py` using a `.ghc_patched_{GHC_VERSION}.txt` marker file stored in `sys.prefix/lib`. If the file exists and its content matches the current `sys.prefix`, the function returns early. This effectively bypasses the entire scanning and patching phase on subsequent executions, bringing the overhead to < 0.5ms. Handled `OSError` to ensure fallback works for read-only environments.
+## 2026-06-20 - Fast-path linker validation across subprocesses
+**Learning:** `_validate_c_linker` previously performed slow `shutil.which` searches over `PATH` on every wrapper invocation. Since wrappers (`cabal`, `ghc`) frequently invoke each other (often spawning hundreds or thousands of subprocesses during a build), this validation added ~20ms of overhead per call.
+**Action:** Introduced an environment variable flag `_GHC_COMPILER_PYTHON_LINKER_VALIDATED="1"`. When wrappers spawn child processes, the children inherit the environment and return immediately from validation, avoiding repeated `PATH` lookups entirely.
+
+## 2026-06-20 - Memoize platform lib subdir lookup
+**Learning:** `_find_platform_lib_subdir` used string matching and filesystem checks on every invocation. Although isolated to the first call, it's inefficient to repeat static layout resolution across multiple calls within the same process.
+**Action:** Added `@functools.lru_cache(maxsize=None)` to effectively cache the resolution and return instantly.
