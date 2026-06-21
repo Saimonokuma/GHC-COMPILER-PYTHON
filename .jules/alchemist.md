@@ -37,3 +37,15 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2026-06-21 - Additional Python Wrapper Optimizations
+**Transformation:**
+- Refactored `BaseResource.locate()` to use the walrus operator (`:=`) for a more concise match filtering loop.
+- Refactored `_resolve_runtime_paths()` to use a set comprehension instead of a list comprehension passed into `set()` for implicit deduplication.
+- Refactored `_validate_c_linker()` to use the `any()` generator expression instead of verbose and redundant `.which()` assertions.
+- Refactored `_is_text_file()` to return a boolean check directly without assigning intermediate chunk variable.
+- Refactored `__getattr__` and `__dir__` to use inline list creation and argument resolution inside closure.
+
+**Result:** Code size reduced, execution speed nominally improved by using native set comprehensions and generators.
+
+**Lesson:** Walrus operator and generator expressions can further condense explicitly unrolled loops while maintaining the exact same functionality, offering performance and space benefits when applied to heavy directory scanning routines.

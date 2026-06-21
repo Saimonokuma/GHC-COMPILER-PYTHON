@@ -58,8 +58,7 @@ def _is_text_file(filepath: Path) -> bool:
     """Check if a file is a text file by looking for null bytes in the first 1024 bytes."""
     try:
         with filepath.open("rb") as f:
-            chunk = f.read(1024)
-            return b"\0" not in chunk
+            return b"\0" not in f.read(1024)
     except OSError:
         return False
 
@@ -86,7 +85,7 @@ def _resolve_binary(name: str) -> str:
 
 def _validate_c_linker() -> None:
     """Pre-flight validation: assert the existence of a host C-linker."""
-    if not shutil.which("gcc") and not shutil.which("clang"):
+    if not any(shutil.which(linker) for linker in ("gcc", "clang")):
         _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
 
 
@@ -199,30 +198,27 @@ class BaseResource:
                 return [c]
 
         # Dynamic fallback
+        if not base_path.exists():
+            return []
+
+        lib_dir = base_path / "lib"
+        search_dir = lib_dir if lib_dir.exists() else base_path
+
         found = []
-        if base_path.exists():
-            lib_dir = base_path / "lib"
-            search_dir = lib_dir if lib_dir.exists() else base_path
+        for root, dirs, files in os.walk(search_dir):
+            # ⚡ Bolt: Prune os.walk to prevent recursion into massive Python directories.
+            # Modifying `dirs` in place avoids walking into these branches entirely.
+            dirs[:] = [
+                d for d in dirs
+                if d not in {"site-packages", "dist-packages"}
+                and not d.startswith(("python", "pypy"))
+            ]
 
-            for root, dirs, files in os.walk(search_dir):
-                # ⚡ Bolt: Prune os.walk to prevent recursion into massive Python directories.
-                # Modifying `dirs` in place avoids walking into these branches entirely.
-                dirs[:] = [
-                    d for d in dirs
-                    if d not in {"site-packages", "dist-packages"}
-                    and not d.startswith(("python", "pypy"))
-                ]
+            # 🧪 Alchemist: List comprehension for concise match filtering
+            if cls.name in (dirs if cls.is_dir else files):
+                if cls.validate(p := Path(root) / cls.name):
+                    found.append(p)
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
         return found
 
     @classmethod
@@ -425,17 +421,17 @@ def _resolve_runtime_paths(env: dict) -> None:
         pass
 
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
-    # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
-    targets = [
+    # 🧪 Alchemist: Set comprehension condenses nested loops for dynamic target extraction and deduplication
+    targets = {
         target for resource_cls in BaseResource.registry
         for resource_path in resource_cls.locate()
         for target in resource_cls.extract_targets(resource_path)
-    ]
+    }
 
     # Replace @GHC_PREFIX@ in all target files
     prefix_clean_bytes = prefix_clean.encode("utf-8")
     patched_any_conf = False
-    for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
+    for target in targets:  # 🧪 Alchemist: Deduplicated targets in a single pass
         target_path = Path(target)
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
@@ -545,10 +541,9 @@ def __getattr__(name: str) -> Any:
     """
     if name.startswith("execute_"):
         tool_name = name[8:].replace("_", "-")
-        extra_args = ["-v0"] if tool_name == "ghc" else None
 
         def executor() -> NoReturn:
-            _execute_tool(tool_name, extra_args=extra_args)
+            _execute_tool(tool_name, extra_args=["-v0"] if tool_name == "ghc" else None)
 
         executor.__name__ = name
         return executor
@@ -558,6 +553,4 @@ def __getattr__(name: str) -> Any:
 
 def __dir__() -> List[str]:
     """Provide explicit autocompletion for common dynamically generated entry points."""
-    base_dir = list(globals().keys())
-    dynamic_tools = ["execute_ghc", "execute_ghci", "execute_cabal"]
-    return base_dir + dynamic_tools
+    return [*globals().keys(), "execute_ghc", "execute_ghci", "execute_cabal"]
