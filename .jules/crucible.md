@@ -101,3 +101,32 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+
+---
+entry_id: "CRUCIBLE-2026-06-21-005"
+schema_version: "2.0"
+timestamp: "2026-06-21T16:31:28Z"
+title: "L2 Safety Hardening: Resource cleanup, TOCTOU fixes, and unhandled OSError prevention"
+---
+## 2026-06-21 - L2 Safety Hardening: Resource cleanup, TOCTOU fixes, and unhandled OSError prevention
+
+**Learning:** Unhandled `OSError` exceptions during file/directory operations (`iterdir`, `glob`) can crash the application unexpectedly, especially when faced with `PermissionError`.  Additionally, using `try...finally` is necessary to ensure resources like temporary files are reliably cleaned up during testing, even if assertions fail. A TOCTOU issue was identified where `is_file()` was checked before reading a file, which was eliminated. Finally, directories should not be evaluated as valid binaries using `.exists()`.
+
+**Action:**
+- In `tests/test_e2e.py`: Wrapped `yield` in the `haskell_source` fixture with `try...finally` to guarantee temporary file removal.
+- In `ghc_compiler_python/wrapper.py`:
+  - Wrapped `ghc_lib_dir.iterdir()` in `_find_platform_lib_subdir` with `try...except OSError`.
+  - Replaced `p.exists()` with `p.is_file()` in `_try_resolve_binary` to prevent execution of directories.
+  - Added `try...except OSError` around `path.glob("*.conf")` in `PackageDBResource.patch_build_time`.
+  - Added `try...except OSError` around `path.iterdir()` in `BinWrappersResource.patch_build_time`.
+  - Removed `marker_file.is_file()` check in `_resolve_runtime_paths` to fix a TOCTOU race condition (PATTERN-008).
+
+**Defect Pattern ID:** PATTERN-008, PATTERN-012
+
+**Related Entries:** ["CRUCIBLE-2026-05-17-004"]
+
+**Axes Affected:** II (Semantic), IV (Operational)
+
+**Level:** L2
+
+---

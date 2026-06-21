@@ -75,7 +75,7 @@ def _try_resolve_binary(name: str) -> Optional[str]:
     ]
 
     return next(
-        (str(p) for p in candidates if p.exists()),
+        (str(p) for p in candidates if p.is_file()),
         shutil.which(binary_name)
     )
 
@@ -101,8 +101,11 @@ def _find_platform_lib_subdir() -> str:
     if not ghc_lib_dir.is_dir():
         return ""
 
-    # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
-    return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    try:
+        # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
+        return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    except OSError:
+        return ""
 
 
 def _sterilize_environment() -> dict:
@@ -318,7 +321,13 @@ class PackageDBResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched_count = 0
-        for conf_file in path.glob("*.conf"):
+        try:
+            conf_files = list(path.glob("*.conf"))
+        except OSError as e:
+            sys.stderr.write(f"WARNING: Failed to glob {path}: {e}\n")
+            return patched_count
+
+        for conf_file in conf_files:
             try:
                 original = conf_file.read_text(encoding="utf-8", errors="replace")
                 # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
@@ -378,7 +387,13 @@ class BinWrappersResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched = 0
-        for script in path.iterdir():
+        try:
+            script_files = list(path.iterdir())
+        except OSError as e:
+            sys.stderr.write(f"WARNING: Failed to iterdir {path}: {e}\n")
+            return patched
+
+        for script in script_files:
             if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
                 continue
             try:
@@ -419,7 +434,7 @@ def _resolve_runtime_paths(env: dict) -> None:
     # If the marker file exists and contains the current prefix, we are already patched.
     marker_file = Path(sys.prefix) / "lib" / f".ghc_patched_{GHC_VERSION}.txt"
     try:
-        if marker_file.is_file() and marker_file.read_text(encoding="utf-8") == prefix_clean:
+        if marker_file.read_text(encoding="utf-8") == prefix_clean:
             return
     except OSError:
         pass

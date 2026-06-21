@@ -15,8 +15,10 @@ def haskell_source():
         f.write('module Main where\nmain :: IO ()\nmain = putStrLn "E2E Test Passed"\n')
         f.flush()
         f.close()
-        yield f.name
-    Path(f.name).unlink()
+        try:
+            yield f.name
+        finally:
+            Path(f.name).unlink(missing_ok=True)
 
 
 @pytest.mark.skipif(
