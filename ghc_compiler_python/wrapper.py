@@ -76,8 +76,8 @@ def _try_resolve_binary(name: str) -> Optional[str]:
 
     return next(
         (str(p) for p in candidates if p.exists()),
-        shutil.which(binary_name)
-    )
+        None
+    ) or shutil.which(binary_name)
 
 def _resolve_binary(name: str) -> str:
     """Resolve the absolute path to a bundled native binary."""
