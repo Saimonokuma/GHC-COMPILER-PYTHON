@@ -12,3 +12,6 @@ Deleted test script files that I added during my debugging phase.
 - Unhandled `PermissionError` (a subclass of `OSError`) caused crashes during path resolution when `iterdir()` was called on unreadable directories in `wrapper.py`. Added proper `try...except OSError` fallback.
 - Prevented a fatal crash (`sys.exit(1)`) triggered by missing `ghc-pkg` during recache by splitting binary resolution into a safe `_try_resolve_binary` method.
 - Replaced a stubbed verification string with proper `otool -l` execution checks inside `scripts/fix_macos_rpaths.sh`. Ensured to use `grep -E` (Extended Regular Expressions) for BSD `grep` compatibility on macOS when alternating values.
+### Critical Learnings (YYYY-MM-DD):
+- Fixed potential `OSError` crashes when using `pathlib.Path` methods (`exists()`, `is_dir()`, `is_file()`) on unreadable files or directories by implementing and using `_safe_exists`, `_safe_is_dir`, and `_safe_is_file` helper functions in `ghc_compiler_python/wrapper.py`. This ensures runtime path resolution and build-time patching proceed defensively without aborting on permission errors.
+- Improved the `test_e2e.py` `haskell_source` test fixture cleanup by wrapping `Path.unlink()` in a `try...except OSError: pass` block to prevent Windows file lock issues or permission-denied errors from crashing test execution.

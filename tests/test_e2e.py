@@ -16,7 +16,10 @@ def haskell_source():
         f.flush()
         f.close()
         yield f.name
-    Path(f.name).unlink()
+    try:
+        Path(f.name).unlink()
+    except OSError:
+        pass
 
 
 @pytest.mark.skipif(
