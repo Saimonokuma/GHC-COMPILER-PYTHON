@@ -17,36 +17,37 @@ class Step:
         self.env = env
 
     def to_yaml(self, indent=6):
-        ind = " " * indent
-        lines = []
-        if self.uses:
-            if self.name:
-                lines.append(f"{ind}- name: {self.name}")
-                lines.append(f"{ind}  uses: {self.uses}")
-                inner_ind = indent + 2
-            else:
-                lines.append(f"{ind}- uses: {self.uses}")
-                inner_ind = indent + 2
-            if self.with_args:
-                lines.append(f"{' ' * inner_ind}with:")
-                for k, v in self.with_args.items():
-                    lines.append(f"{' ' * inner_ind}  {k}: {v}")
-        else:
-            lines.append(f"{ind}- name: {self.name}")
-            if self.shell:
-                lines.append(f"{ind}  shell: {self.shell}")
-            if self.env:
-                lines.append(f"{ind}  env:")
-                for k, v in self.env.items():
-                    lines.append(f"{ind}    {k}: {v}")
-            if self.run:
-                if "\n" in self.run.strip():
-                    lines.append(f"{ind}  run: |")
-                    for line in self.run.strip().split("\n"):
-                        lines.append(f"{ind}    {line}")
+        def _generate():
+            ind = " " * indent
+            if self.uses:
+                if self.name:
+                    yield f"{ind}- name: {self.name}"
+                    yield f"{ind}  uses: {self.uses}"
+                    inner_ind = indent + 2
                 else:
-                    lines.append(f"{ind}  run: {self.run}")
-        return "\n".join(lines)
+                    yield f"{ind}- uses: {self.uses}"
+                    inner_ind = indent + 2
+                if self.with_args:
+                    yield f"{' ' * inner_ind}with:"
+                    for k, v in self.with_args.items():
+                        yield f"{' ' * inner_ind}  {k}: {v}"
+            else:
+                yield f"{ind}- name: {self.name}"
+                if self.shell:
+                    yield f"{ind}  shell: {self.shell}"
+                if self.env:
+                    yield f"{ind}  env:"
+                    for k, v in self.env.items():
+                        yield f"{ind}    {k}: {v}"
+                if self.run:
+                    run_val = self.run.strip()
+                    if "\n" in run_val:
+                        yield f"{ind}  run: |"
+                        for line in run_val.split("\n"):
+                            yield f"{ind}    {line}" if line.strip() else ""
+                    else:
+                        yield f"{ind}  run: {run_val}"
+        return "\n".join(_generate())
 
 PLATFORMS = {
     "linux": {
@@ -114,7 +115,7 @@ fi""")
 
     if platform_key == "linux":
         add_step(name="Vendor Dynamic Libraries (Linux)", shell="bash", run="""# Find the exact directory where the nested .so files are located inside ghc-bindist/lib/
-LINUX_LIB_DIR=$(find ghc-bindist/lib -name "libHS*.so" | head -n 1 | xargs dirname)
+LINUX_LIB_DIR=$(find ghc-bindist/lib -name "libHS*.so" 2>/dev/null | head -n 1 | xargs -r dirname)
 if [ -n "$LINUX_LIB_DIR" ]; then
     echo "Found Linux GHC libraries at $LINUX_LIB_DIR"
     export LD_LIBRARY_PATH="$(pwd)/$LINUX_LIB_DIR:${LD_LIBRARY_PATH:-}"
