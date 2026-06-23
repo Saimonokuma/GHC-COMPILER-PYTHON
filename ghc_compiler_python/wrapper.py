@@ -74,10 +74,13 @@ def _try_resolve_binary(name: str) -> Optional[str]:
         Path(__file__).resolve().parent.parent / bin_dir / binary_name
     ]
 
-    return next(
-        (str(p) for p in candidates if p.exists()),
-        shutil.which(binary_name)
-    )
+    # ⚡ Bolt: Use a loop instead of next() with a default argument to prevent eager
+    # evaluation of shutil.which(). This avoids a ~20ms latency hit when the binary
+    # is found in the candidates list.
+    for p in candidates:
+        if p.exists():
+            return str(p)
+    return shutil.which(binary_name)
 
 def _resolve_binary(name: str) -> str:
     """Resolve the absolute path to a bundled native binary."""
