@@ -175,237 +175,40 @@ def _sterilize_environment() -> dict:
 
 
 
-class BaseResource:
-    """Base class for all GHC resource locators and patchers."""
-    name: str = ""
-    is_dir: bool = False
-    registry = []
+def _get_patch_targets(base: Path) -> List[str]:
+    """Find files that need @GHC_PREFIX@ replacements deterministically."""
+    targets = []
 
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-        cls.registry.append(cls)
-
-    @classmethod
-    @functools.lru_cache(maxsize=None)
-    def locate(cls, base: str = sys.prefix, version: str = GHC_VERSION) -> List[Path]:
-        """Locate all instances of this resource relative to a base directory."""
-        base_path = Path(base)
-        candidates = cls.get_candidates(base_path, version)
-
-        # Check explicit candidates first
-        for c in candidates:
-            # 🧪 Alchemist: Ternary conditional combines file and directory checks
-            if (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c):
-                return [c]
-
-        # Dynamic fallback
-        found = []
-        if base_path.exists():
-            lib_dir = base_path / "lib"
-            search_dir = lib_dir if lib_dir.exists() else base_path
-
-            for root, dirs, files in os.walk(search_dir):
-                # ⚡ Bolt: Prune os.walk to prevent recursion into massive Python directories.
-                # Modifying `dirs` in place avoids walking into these branches entirely.
-                dirs[:] = [
-                    d for d in dirs
-                    if d not in {"site-packages", "dist-packages"}
-                    and not d.startswith(("python", "pypy"))
-                ]
-
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-        return found
-
-    @classmethod
-    def get_candidates(cls, base: Path, version: str) -> List[Path]:
-        return []
-
-    @classmethod
-    def validate(cls, path: Path) -> bool:
-        return True
-
-    @classmethod
-    def extract_targets(cls, path: Path) -> List[str]:
-        """Extract actual file targets to be patched at runtime from the located resource."""
-        if not cls.is_dir:
-            return [str(path)]
-        return []
-
-    @classmethod
-    def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
-        """Patch the resource for relocatability during build."""
-        return 0
-
-
-class SettingsResource(BaseResource):
-    name = "settings"
-
-    @classmethod
-    def get_candidates(cls, base: Path, version: str) -> List[Path]:
-        return [
-            base / "lib" / f"ghc-{version}" / "lib" / "settings",
-            base / "lib" / "settings",
-            base / "settings"
-        ]
-
-    @classmethod
-    def validate(cls, path: Path) -> bool:
+    # 1. settings file
+    for p in [base / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "settings", base / "lib" / "settings", base / "settings"]:
         try:
-            content = path.read_text(encoding="utf-8", errors="replace")
-            return '"C compiler command"' in content or '"C preprocessor command"' in content
+            if p.is_file() and b'"C compiler command"' in p.read_bytes():
+                targets.append(str(p))
+                break
         except OSError:
-            return False
+            pass
 
-    @classmethod
-    def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
-        try:
-            content = path.read_text(encoding="utf-8", errors="replace")
-            # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
-            pattern = re.compile(
-                r"/(?:usr/local/lib|usr/lib|opt|ghc-prefix)/ghc(?:-|/)" + re.escape(version) + r"|/ghc-prefix"
-            )
+    # 2. package.conf.d files
+    for p in [base / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "package.conf.d", base / "lib" / "package.conf.d", base / "package.conf.d"]:
+        if p.is_dir():
+            targets.extend(str(f) for f in p.iterdir() if f.name.endswith(".conf") and not f.is_symlink())
+            break
 
-            def repl(m: re.Match) -> str:
-                match = m.group(0)
-                if match == "/ghc-prefix":
-                    return placeholder
-                return f"{placeholder}/lib/ghc-{version}"
+    # 3. bin wrappers
+    for p in [base / ("Scripts" if sys.platform == "win32" else "bin"), base / "lib" / f"ghc-{GHC_VERSION}" / "bin", base / "bin", base / "lib" / "bin"]:
+        if p.is_dir():
+            targets.extend(str(f) for f in p.iterdir() if f.is_file() and not f.is_symlink() and not f.name.endswith(".exe") and _is_text_file(f))
+            break
 
-            new_content = pattern.sub(repl, content)
-            if new_content != content:
-                path.write_text(new_content, encoding="utf-8")
-                return 1
-        except OSError as e:
-            sys.stderr.write(f"WARNING: Failed to patch {path}: {e}\n")
-        return 0
+    return targets
 
 
-class PackageDBResource(BaseResource):
-    name = "package.conf.d"
-    is_dir = True
-
-    @classmethod
-    def get_candidates(cls, base: Path, version: str) -> List[Path]:
-        return [
-            base / "lib" / f"ghc-{version}" / "lib" / "package.conf.d",
-            base / "lib" / "package.conf.d",
-            base / "package.conf.d"
-        ]
-
-    @classmethod
-    def validate(cls, path: Path) -> bool:
-        try:
-            return any(f.name.endswith(".conf") for f in path.iterdir())
-        except OSError:
-            return False
-
-    @classmethod
-    def extract_targets(cls, path: Path) -> List[str]:
-        try:
-            return [str(f) for f in path.iterdir() if f.name.endswith(".conf") and not f.is_symlink()]
-        except OSError:
-            return []
-
-    @classmethod
-    def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
-        patched_count = 0
-        for conf_file in path.glob("*.conf"):
-            try:
-                original = conf_file.read_text(encoding="utf-8", errors="replace")
-                # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
-                pattern = re.compile(
-                    r"(dynamic-library-dirs:\s*|library-dirs:\s*|include-dirs:\s*)/[^\s]+|/ghc-prefix/lib/ghc-" + re.escape(version) + r"|/ghc-prefix"
-                )
-
-                def repl(m: re.Match) -> str:
-                    g1 = m.group(1)
-                    if g1:
-                        return f"{g1}{placeholder}/lib/ghc-{version}{'/include' if 'include' in g1 else ''}"
-                    return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
-
-                content = pattern.sub(repl, original)
-
-                if content != original:
-                    conf_file.write_text(content, encoding="utf-8")
-                    patched_count += 1
-            except OSError as e:
-                sys.stderr.write(f"WARNING: Failed to patch {conf_file}: {e}\n")
-
-        # 🧪 Alchemist: Walrus operator (:=) consolidates variable assignment and existence check
-        try:
-            (path / "package.cache").unlink(missing_ok=True)
-        except OSError as e:
-            sys.stderr.write(f"WARNING: Failed to unlink {path / 'package.cache'}: {e}\n")
-        return patched_count
+def _locate_package_dbs() -> List[Path]:
+    """Find all active package.conf.d directories."""
+    base = Path(sys.prefix)
+    return [p for p in [base / "lib" / f"ghc-{GHC_VERSION}" / "lib" / "package.conf.d", base / "lib" / "package.conf.d", base / "package.conf.d"] if p.is_dir()]
 
 
-class BinWrappersResource(BaseResource):
-    name = "bin"
-    is_dir = True
-
-    @classmethod
-    def get_candidates(cls, base: Path, version: str) -> List[Path]:
-        return [
-            base / ("Scripts" if sys.platform == "win32" else "bin"),
-            base / "lib" / f"ghc-{version}" / "bin",
-            base / "bin",
-            base / "lib" / "bin"
-        ]
-
-    @classmethod
-    def validate(cls, path: Path) -> bool:
-        return True
-
-    @classmethod
-    def extract_targets(cls, path: Path) -> List[str]:
-        try:
-            return [
-                str(f) for f in path.iterdir()
-                if f.is_file() and not f.is_symlink() and not f.name.endswith(".exe") and _is_text_file(f)
-            ]
-        except OSError:
-            return []
-
-    @classmethod
-    def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
-        patched = 0
-        for script in path.iterdir():
-            if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
-                continue
-            try:
-                content = script.read_text(encoding="utf-8", errors="replace")
-                original = content
-
-                staging_dir = path.parent.parent if path.parent.name == f"ghc-{version}" else path.parent
-                abs_staging = staging_dir.absolute().as_posix()
-                abs_staging_win = str(staging_dir.absolute()).replace("/", "\\")
-
-                # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
-                pattern = re.compile(
-                    r"/usr/local/lib/ghc-" + re.escape(version) + r"|/ghc-prefix|" +
-                    re.escape(abs_staging) + r"|" + re.escape(abs_staging_win)
-                )
-
-                def repl(m: re.Match) -> str:
-                    return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
-
-                content = pattern.sub(repl, content)
-
-                if content != original:
-                    script.write_text(content, encoding="utf-8")
-                    patched += 1
-            except OSError as e:
-                sys.stderr.write(f"WARNING: Failed to patch {script}: {e}\n")
-        return patched
 def _resolve_runtime_paths(env: dict) -> None:
     """Dynamically replace @GHC_PREFIX@ with the active sys.prefix at runtime,
     then regenerate package.cache.
@@ -424,13 +227,8 @@ def _resolve_runtime_paths(env: dict) -> None:
     except OSError:
         pass
 
-    # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
-    # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
-    targets = [
-        target for resource_cls in BaseResource.registry
-        for resource_path in resource_cls.locate()
-        for target in resource_cls.extract_targets(resource_path)
-    ]
+    # 🐍 Ouroboros: Removed 150 lines of OOP metaclass hierarchy for simple list comprehensions
+    targets = _get_patch_targets(Path(sys.prefix))
 
     # Replace @GHC_PREFIX@ in all target files
     prefix_clean_bytes = prefix_clean.encode("utf-8")
@@ -466,12 +264,10 @@ def _resolve_runtime_paths(env: dict) -> None:
             sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
 
     # 🧪 Alchemist: any() replaces manual flag variables and loops for succinct boolean reduction
-    if patched_any_conf or any(
-        not (pkg_db / "package.cache").exists()
-        for pkg_db in PackageDBResource.locate()
-    ):
-        for pkg_db in PackageDBResource.locate():
-            _ghc_pkg_recache(str(pkg_db), env)
+    pkg_dbs = _locate_package_dbs()
+    if patched_any_conf or any(not (db / "package.cache").exists() for db in pkg_dbs):
+        for db in pkg_dbs:
+            _ghc_pkg_recache(str(db), env)
 
     # ⚡ Bolt: Write marker file to indicate this prefix has been successfully patched
     try:
