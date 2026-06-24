@@ -37,3 +37,11 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2026-05-18 - Eliminated BaseResource hierarchy
+**Transformation:**
+- Replaced the 150-line OOP `BaseResource` metaclass hierarchy in `ghc_compiler_python/wrapper.py` with the deterministic procedural functions `_get_patch_targets` and `_locate_package_dbs`.
+- Moved all build-time string replacement logic out of the runtime `wrapper.py` and into the build-time `scripts/patch_ghc_paths.py` standalone script.
+
+**Result:** Code size reduced significantly. Build-time logic was excised from the runtime artifact, eliminating dead code for users.
+**Lesson:** Over-engineered object hierarchies can often be replaced by deterministic procedural or functional lookups, saving memory, lines of code, and initialization latency. Code that is only used at build time should never be bundled into the production runtime wrapper.
