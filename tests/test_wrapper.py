@@ -220,3 +220,28 @@ class TestDynamicGetattr:
 
         with pytest.raises(AttributeError, match="has no attribute 'invalid_attr'"):
             wrapper.__getattr__("invalid_attr")
+
+class TestOSErrorHandling:
+    """Tests for proper OSError handling in path operations."""
+
+    @patch("ghc_compiler_python.wrapper.Path.is_dir", return_value=True)
+    @patch("ghc_compiler_python.wrapper.Path.iterdir", side_effect=PermissionError("Permission denied"))
+    def test_find_platform_lib_subdir_oserror(self, mock_iterdir, mock_isdir):
+        from ghc_compiler_python.wrapper import _find_platform_lib_subdir
+
+        result = _find_platform_lib_subdir()
+        assert result == ""
+
+    @patch("ghc_compiler_python.wrapper.Path.iterdir", side_effect=PermissionError("Permission denied"))
+    def test_bin_wrappers_patch_build_time_oserror(self, mock_iterdir, tmp_path):
+        from ghc_compiler_python.wrapper import BinWrappersResource
+
+        result = BinWrappersResource.patch_build_time(tmp_path, "9.4.8", "@GHC_PREFIX@")
+        assert result == 0
+
+    @patch("ghc_compiler_python.wrapper.Path.glob", side_effect=PermissionError("Permission denied"))
+    def test_package_db_patch_build_time_oserror(self, mock_glob, tmp_path):
+        from ghc_compiler_python.wrapper import PackageDBResource
+
+        result = PackageDBResource.patch_build_time(tmp_path, "9.4.8", "@GHC_PREFIX@")
+        assert result == 0
