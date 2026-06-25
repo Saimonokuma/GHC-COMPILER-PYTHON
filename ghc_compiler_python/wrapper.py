@@ -22,7 +22,7 @@ import functools
 import mmap
 import re
 from pathlib import Path
-from typing import Any, List, NoReturn, Optional, Type
+from typing import Any, List, NoReturn, Optional
 
 
 GHC_VERSION = "9.4.8"
