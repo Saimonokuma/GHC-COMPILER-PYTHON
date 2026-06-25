@@ -33,7 +33,14 @@
 ## 2026-05-18 - Additional Python Wrapper Optimizations
 **Transformation:**
 - Consolidated redundant multiple `re.sub` string manipulation passes into a single pass regex compilation using alternation and callback substitution in `BinWrappersResource.patch_build_time` and `PackageDBResource.patch_build_time`.
-
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
-
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2026-06-21 - Additional Python Syntactic Transmutations
+**Transformation:**
+- Transmuted logical expressions via De Morgan's laws (e.g., `not A and not B` -> `not (A or B)`).
+- Collapsed multi-level conditional loops via ternary branching.
+- Substituted inline set comprehensions over list comprehensions with `set()` deduplication wrappers.
+- Replaced list `.extend()` with inline star-unpacking `[*...]`.
+**Result:** Codebase is further compressed without altering functional correctness or test suite execution.
+**Lesson:** Language features like inline conditional ternary branches and native comprehensions continue to eliminate unnecessary structural levels (e.g. multi-level `if` branches) reducing mental overhead for maintainers.
