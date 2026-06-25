@@ -101,3 +101,24 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+---
+entry_id: "CRUCIBLE-2026-06-25-005"
+schema_version: "2.0"
+timestamp: "2026-06-25T12:00:00Z"
+title: "Fix syntax defects and ensure Python 3.12 temporal compliance"
+---
+## 2026-06-25 - Fix syntax defects and ensure Python 3.12 temporal compliance
+
+**Learning:** `ruff` found multiple syntax violations (unused imports in tests and wrapper, f-string issues in workflow script). The `pyproject.toml` file specified `python >= 3.8`, but `ghc_compiler_python/wrapper.py` was utilizing Python 3.10 features (`match`) and Python 3.9 features (dictionary union `|`), establishing a temporal defect. The CI workflows were violating the `never pip` rule, missing the `uv` toolchain.
+
+**Action:** Upgraded `requires-python` in `pyproject.toml` to `>=3.12` to fix temporal version alignment. Updated `scripts/generate_workflow.py` to target Python 3.12, installed `uv`, and replaced all usages of `pip` with `uv pip` and `python -m venv` with `uv venv`. Re-ran `generate_workflow.py` to fix `.github/workflows/build.yml`. Used `ruff check --fix .` to eliminate all unused imports and string errors. Queued Sentinel handoff notes for TOCTOU and PATH security findings.
+
+**Defect Pattern ID:** None
+
+**Related Entries:** []
+
+**Axes Affected:** I (Syntactic), II (Semantic), V (Temporal)
+
+**Level:** L1, L5
+
+---
