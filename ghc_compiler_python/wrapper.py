@@ -86,7 +86,8 @@ def _resolve_binary(name: str) -> str:
 
 def _validate_c_linker() -> None:
     """Pre-flight validation: assert the existence of a host C-linker."""
-    if not shutil.which("gcc") and not shutil.which("clang"):
+    # 🧪 Alchemist: map + any combines explicit truthiness checks into a single expression
+    if not any(map(shutil.which, ("gcc", "clang"))):
         _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
 
 
@@ -193,10 +194,12 @@ class BaseResource:
         candidates = cls.get_candidates(base_path, version)
 
         # Check explicit candidates first
-        for c in candidates:
-            # 🧪 Alchemist: Ternary conditional combines file and directory checks
-            if (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c):
-                return [c]
+        # 🧪 Alchemist: Walrus operator and next() condense the manual for-loop into a single expression
+        if found := next(
+            ([c] for c in candidates if (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c)),
+            None
+        ):
+            return found
 
         # Dynamic fallback
         found = []
@@ -304,7 +307,8 @@ class PackageDBResource(BaseResource):
     @classmethod
     def validate(cls, path: Path) -> bool:
         try:
-            return any(f.name.endswith(".conf") for f in path.iterdir())
+            # 🧪 Alchemist: Path.glob optimizes manual suffix checking into a single operation
+            return any(path.glob("*.conf"))
         except OSError:
             return False
 
@@ -514,10 +518,8 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
     _resolve_runtime_paths(env)
     binary_path = _resolve_binary(tool_name)
 
-    cmd = [binary_path]
-    if extra_args:
-        cmd.extend(extra_args)
-    cmd.extend(sys.argv[1:])
+    # 🧪 Alchemist: List spreading syntax consolidates append/extend logic into a single declaration
+    cmd = [binary_path, *(extra_args or []), *sys.argv[1:]]
 
     try:
         # 🧪 Alchemist: On POSIX systems, os.execve replaces the Python interpreter entirely.
@@ -547,9 +549,8 @@ def __getattr__(name: str) -> Any:
         tool_name = name[8:].replace("_", "-")
         extra_args = ["-v0"] if tool_name == "ghc" else None
 
-        def executor() -> NoReturn:
-            _execute_tool(tool_name, extra_args=extra_args)
-
+        # 🧪 Alchemist: functools.partial avoids inner closure definition overhead
+        executor = functools.partial(_execute_tool, tool_name, extra_args=extra_args)
         executor.__name__ = name
         return executor
 
