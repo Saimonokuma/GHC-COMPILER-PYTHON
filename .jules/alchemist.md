@@ -37,3 +37,13 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2025-05-25 - Python Wrapper Micro-Optimizations
+**Transformation:**
+- Replaced `not shutil.which("gcc") and not shutil.which("clang")` with `not any(map(shutil.which, ("gcc", "clang")))`.
+- Compressed candidate iteration in `BaseResource.locate` using the walrus operator `:=` and `next()` with a generator expression.
+- Streamlined `any(f.name.endswith(".conf") for f in path.iterdir())` to `any(path.glob("*.conf"))` in `PackageDBResource.validate`.
+- Simplified array extension in `_execute_tool` using list spreading `cmd = [binary_path, *(extra_args or []), *sys.argv[1:]]`.
+- Minimized closure definition overhead in `__getattr__` by utilizing `functools.partial`.
+**Result:** Codesize reduced. Several loop constructs replaced with concise C-backed built-in functions like `any()` and `map()`.
+**Lesson:** Iterative `append()`/`extend()` lists and explicit loops can be elegantly transformed into single declarations using list spreading and generator functions (`next`, `any`), reducing the AST size and speeding up the CPython evaluation slightly. `functools.partial` avoids the overhead of defining an inner function closure when dynamically generating proxy executors.
