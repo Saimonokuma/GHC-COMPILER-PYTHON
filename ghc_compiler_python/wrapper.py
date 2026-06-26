@@ -102,7 +102,10 @@ def _find_platform_lib_subdir() -> str:
         return ""
 
     # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
-    return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    try:
+        return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    except OSError:
+        return ""
 
 
 def _sterilize_environment() -> dict:
@@ -378,33 +381,36 @@ class BinWrappersResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched = 0
-        for script in path.iterdir():
-            if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
-                continue
-            try:
-                content = script.read_text(encoding="utf-8", errors="replace")
-                original = content
+        try:
+            for script in path.iterdir():
+                if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
+                    continue
+                try:
+                    content = script.read_text(encoding="utf-8", errors="replace")
+                    original = content
 
-                staging_dir = path.parent.parent if path.parent.name == f"ghc-{version}" else path.parent
-                abs_staging = staging_dir.absolute().as_posix()
-                abs_staging_win = str(staging_dir.absolute()).replace("/", "\\")
+                    staging_dir = path.parent.parent if path.parent.name == f"ghc-{version}" else path.parent
+                    abs_staging = staging_dir.absolute().as_posix()
+                    abs_staging_win = str(staging_dir.absolute()).replace("/", "\\")
 
-                # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
-                pattern = re.compile(
-                    r"/usr/local/lib/ghc-" + re.escape(version) + r"|/ghc-prefix|" +
-                    re.escape(abs_staging) + r"|" + re.escape(abs_staging_win)
-                )
+                    # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
+                    pattern = re.compile(
+                        r"/usr/local/lib/ghc-" + re.escape(version) + r"|/ghc-prefix|" +
+                        re.escape(abs_staging) + r"|" + re.escape(abs_staging_win)
+                    )
 
-                def repl(m: re.Match) -> str:
-                    return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
+                    def repl(m: re.Match) -> str:
+                        return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
 
-                content = pattern.sub(repl, content)
+                    content = pattern.sub(repl, content)
 
-                if content != original:
-                    script.write_text(content, encoding="utf-8")
-                    patched += 1
-            except OSError as e:
-                sys.stderr.write(f"WARNING: Failed to patch {script}: {e}\n")
+                    if content != original:
+                        script.write_text(content, encoding="utf-8")
+                        patched += 1
+                except OSError as e:
+                    sys.stderr.write(f"WARNING: Failed to patch {script}: {e}\n")
+        except OSError:
+            pass
         return patched
 def _resolve_runtime_paths(env: dict) -> None:
     """Dynamically replace @GHC_PREFIX@ with the active sys.prefix at runtime,
