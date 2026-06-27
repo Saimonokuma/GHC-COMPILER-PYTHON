@@ -71,6 +71,7 @@ def _try_resolve_binary(name: str) -> Optional[str]:
 
     candidates = [
         Path(sys.prefix) / bin_dir / binary_name,
+        Path(__file__).resolve().parent.parent / "ghc-bindist" / "bin" / binary_name,
         Path(__file__).resolve().parent.parent / bin_dir / binary_name
     ]
 
@@ -484,6 +485,7 @@ def _resolve_runtime_paths(env: dict) -> None:
                 try:
                     with temp_target.open("wb") as out:
                         out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
+                    temp_target.chmod(target_path.stat().st_mode)
                     temp_target.replace(target_path)
                 finally:
                     try:
