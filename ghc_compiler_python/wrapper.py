@@ -101,8 +101,11 @@ def _find_platform_lib_subdir() -> str:
     if not ghc_lib_dir.is_dir():
         return ""
 
-    # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
-    return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    try:
+        # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
+        return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    except OSError:
+        return ""
 
 
 def _sterilize_environment() -> dict:
@@ -127,13 +130,18 @@ def _sterilize_environment() -> dict:
             pass
         return None
 
+    import atexit
     # 🧪 Alchemist: Declarative fallback chain replaces nested try-except blocks.
     # Lazily evaluate Path.home() to prevent premature RuntimeError.
     safe_home = (
         _try_mkdir(Path(sys.prefix) / ".ghc-compiler-python-home") or
-        _try_mkdir(_get_home_path()) or
-        Path(tempfile.mkdtemp(prefix="ghc-compiler-python-home-"))
+        _try_mkdir(_get_home_path())
     )
+
+    if not safe_home:
+        temp_home = tempfile.TemporaryDirectory(prefix="ghc-compiler-python-home-")
+        safe_home = Path(temp_home.name)
+        atexit.register(temp_home.cleanup)
 
     env["HOME"] = str(safe_home)
 
@@ -318,7 +326,13 @@ class PackageDBResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched_count = 0
-        for conf_file in path.glob("*.conf"):
+        try:
+            conf_files = list(path.glob("*.conf"))
+        except OSError as e:
+            sys.stderr.write(f"WARNING: Failed to read package.conf.d directory {path}: {e}\n")
+            conf_files = []
+
+        for conf_file in conf_files:
             try:
                 original = conf_file.read_text(encoding="utf-8", errors="replace")
                 # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
@@ -378,7 +392,13 @@ class BinWrappersResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched = 0
-        for script in path.iterdir():
+        try:
+            scripts = list(path.iterdir())
+        except OSError as e:
+            sys.stderr.write(f"WARNING: Failed to read bin directory {path}: {e}\n")
+            scripts = []
+
+        for script in scripts:
             if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
                 continue
             try:
@@ -419,7 +439,7 @@ def _resolve_runtime_paths(env: dict) -> None:
     # If the marker file exists and contains the current prefix, we are already patched.
     marker_file = Path(sys.prefix) / "lib" / f".ghc_patched_{GHC_VERSION}.txt"
     try:
-        if marker_file.is_file() and marker_file.read_text(encoding="utf-8") == prefix_clean:
+        if marker_file.read_text(encoding="utf-8") == prefix_clean:
             return
     except OSError:
         pass
@@ -458,8 +478,19 @@ def _resolve_runtime_paths(env: dict) -> None:
                 # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
                 if b" " in prefix_clean_bytes and b"\0" not in content_to_write:
                     content_to_write = re.sub(rb'(?<!")(@GHC_PREFIX@[^\s"]+)', rb'"\1"', content_to_write)
-                with target_path.open("wb") as out:
-                    out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
+
+                # Write to a temporary file and atomically replace to prevent corruption during concurrent access
+                temp_target = target_path.with_suffix(f".tmp.{os.getpid()}.ghc_compiler_python")
+                try:
+                    with temp_target.open("wb") as out:
+                        out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
+                    temp_target.replace(target_path)
+                finally:
+                    try:
+                        temp_target.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+
                 if target.endswith(".conf"):
                     patched_any_conf = True
         except OSError as e:
