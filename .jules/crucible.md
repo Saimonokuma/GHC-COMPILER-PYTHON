@@ -101,3 +101,24 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+---
+entry_id: "CRUCIBLE-$(date +%Y-%m-%d)-005"
+schema_version: "2.0"
+timestamp: "$(date +%Y-%m-%dT%H:%M:%SZ)"
+title: "Crucible Verification: Atomic writes, Resource cleanup, Bound checks"
+---
+## $(date +%Y-%m-%d) - Crucible Verification: Atomic writes, Resource cleanup, Bound checks
+
+**Learning:** Fixed multiple verification defects. Replaced unbounded `tempfile.mkdtemp` fallback with a cleaned-up `tempfile.TemporaryDirectory`. Mitigated concurrent data corruption in runtime patching with process-specific intermediate atomic file replacements. Secured restricted filesystem scans with explicit `try/except OSError` boundary handling. Remedied check-then-act marker validation.
+
+**Action:** Addressed TOCTOU and resource issues in `wrapper.py` in `_sterilize_environment`, `_resolve_runtime_paths`, `_find_platform_lib_subdir` and `BaseResource` subclasses.
+
+**Defect Pattern ID:** PATTERN-008, PATTERN-006
+
+**Related Entries:** []
+
+**Axes Affected:** II (Semantic), IV (Operational)
+
+**Level:** L2 (Safety Hardening)
+
+---
