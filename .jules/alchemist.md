@@ -37,3 +37,10 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2025-05-18 - Concurrent I/O Optimization in build and runtime scripts
+**Transformation:**
+- Refactored `scripts/fetch_binaries.sh` to download GHC/Cabal archives and checksums concurrently using background jobs (`&`) and `wait`.
+- Refactored `ghc_compiler_python/wrapper.py` in `_resolve_runtime_paths` to apply regex patching to target files concurrently using `concurrent.futures.ThreadPoolExecutor`.
+**Result:** Build-time artifact downloading and runtime file patching execution times should be significantly reduced through parallel I/O.
+**Lesson:** Python's `concurrent.futures.ThreadPoolExecutor` and bash's `&`/`wait` are effective mechanisms to parallelize independent I/O bound operations without large refactoring.

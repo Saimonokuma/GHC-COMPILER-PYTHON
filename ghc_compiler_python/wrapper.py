@@ -21,6 +21,7 @@ import tempfile
 import functools
 import mmap
 import re
+import concurrent.futures
 from pathlib import Path
 from typing import Any, List, NoReturn, Optional, Type
 
@@ -434,8 +435,8 @@ def _resolve_runtime_paths(env: dict) -> None:
 
     # Replace @GHC_PREFIX@ in all target files
     prefix_clean_bytes = prefix_clean.encode("utf-8")
-    patched_any_conf = False
-    for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
+
+    def _patch_single_target(target: str) -> bool:
         target_path = Path(target)
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
@@ -461,9 +462,17 @@ def _resolve_runtime_paths(env: dict) -> None:
                 with target_path.open("wb") as out:
                     out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
                 if target.endswith(".conf"):
-                    patched_any_conf = True
+                    return True
         except OSError as e:
             sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
+        return False
+
+    # 🧪 Alchemist: Concurrent futures allow for patching targets in parallel.
+    # set() removes duplicate targets in a single pass before concurrent mapping.
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        results = list(executor.map(_patch_single_target, set(targets)))
+
+    patched_any_conf = any(results)
 
     # 🧪 Alchemist: any() replaces manual flag variables and loops for succinct boolean reduction
     if patched_any_conf or any(
