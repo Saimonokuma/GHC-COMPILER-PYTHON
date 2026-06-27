@@ -57,15 +57,19 @@ CABAL_SHA_URL="${CABAL_BASE_URL}/SHA256SUMS"
 mkdir -p "${BUILD_DIR}"
 cd "${BUILD_DIR}"
 
-echo "[1/5] Fetching SHA256 checksum indices..."
-curl --fail --silent --show-error --location "${GHC_SHA_URL}" -o ghc_sha256.txt
-curl --fail --silent --show-error --location "${CABAL_SHA_URL}" -o cabal_sha256.txt
+echo "[1/5] to [3/5] Concurrently fetching indices and downloading archives..."
+curl --fail --silent --show-error --location "${GHC_SHA_URL}" -o ghc_sha256.txt &
+PID_GHC_SHA=$!
+curl --fail --silent --show-error --location "${CABAL_SHA_URL}" -o cabal_sha256.txt &
+PID_CABAL_SHA=$!
+curl --fail --silent --show-error --location "${GHC_URL}" -o "${GHC_TAR}" &
+PID_GHC_TAR=$!
+curl --fail --silent --show-error --location "${CABAL_URL}" -o "${CABAL_TAR}" &
+PID_CABAL_TAR=$!
 
-echo "[2/5] Downloading GHC ${GHC_VERSION}..."
-curl --fail --silent --show-error --location "${GHC_URL}" -o "${GHC_TAR}"
-
-echo "[3/5] Downloading Cabal ${CABAL_VERSION}..."
-curl --fail --silent --show-error --location "${CABAL_URL}" -o "${CABAL_TAR}"
+for pid in $PID_GHC_SHA $PID_CABAL_SHA $PID_GHC_TAR $PID_CABAL_TAR; do
+    wait $pid
+done
 
 echo "[4/5] Validating cryptographic hashes..."
 
