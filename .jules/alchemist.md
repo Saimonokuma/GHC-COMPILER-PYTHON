@@ -37,3 +37,15 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2026-05-18 - Additional Structural and Pythonic Optimizations in Wrapper
+**Transformation:**
+- Rewrote the dynamic console script generator `__getattr__` to use a `lambda` expression, avoiding a redundant nested function definition.
+- Refactored `BaseResource.locate` to use `next()` instead of a manual loop over `candidates` for a cleaner short-circuit approach.
+- Compressed multi-step iteration and assignment blocks in `PackageDBResource.patch_build_time` and `BinWrappersResource.patch_build_time` by using the walrus operator (`:=`).
+- Hoisted `re.compile` calls outside of `glob` iteration loops for a substantial reduction in duplicate work (moving O(N) regex compilations to O(1)).
+- Merged nested list comprehensions inside `_resolve_runtime_paths` into a single, highly efficient set comprehension to automatically deduplicate target paths on the fly.
+
+**Result:** Code size reduced, temporal overhead slightly minimized by stripping out inner loop operations and moving static regex compilations upward. All test suites still pass.
+
+**Lesson:** Even after heavy refactoring, Python's ecosystem provides iterative ways to clean up execution loops: the walrus operator dramatically shortens string comparison and assignment, while hoisting invariant objects from loops prevents compounding overhead across many targets. Furthermore, combining comprehensions into set comprehensions replaces unnecessary object intermediate generation.
