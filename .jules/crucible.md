@@ -101,3 +101,23 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+
+---
+entry_id: "CRUCIBLE-2026-05-18-005"
+schema_version: "2.0"
+timestamp: "2026-05-18T12:00:00Z"
+title: "Enforce process verification with check=True in subprocess.run"
+---
+## 2026-05-18 - Enforce process verification with check=True in subprocess.run
+
+**Learning:** Unchecked `subprocess.run` calls can silently swallow execution errors and fail to propagate exit codes accurately on Windows. Wrapping with `try...except CalledProcessError` allows proper exit code propagation while asserting runtime safety correctly.
+
+**Action:** Addressed PATTERN-007 by enforcing `check=True` in `subprocess.run` calls within `_execute_tool`'s Windows fallback branch and inside `tests/test_e2e.py`. Added proper exception handling via `subprocess.CalledProcessError`.
+
+**Defect Pattern ID:** PATTERN-007
+
+**Related Entries:** ["CRUCIBLE-2026-05-17-004"]
+
+**Axes Affected:** II (Semantic), IV (Operational)
+
+**Level:** L2
