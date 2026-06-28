@@ -528,7 +528,10 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
         if sys.platform != "win32":
             os.execve(binary_path, cmd, env)
         else:
-            sys.exit(subprocess.run(cmd, env=env).returncode)
+            try:
+                sys.exit(subprocess.run(cmd, env=env, check=True).returncode)
+            except subprocess.CalledProcessError as e:
+                sys.exit(e.returncode)
     except FileNotFoundError:
         _die(f"FATAL ERROR: Binary not found at '{binary_path}'.")
     except KeyboardInterrupt:
