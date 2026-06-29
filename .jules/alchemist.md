@@ -37,3 +37,10 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+## 2026-05-18 - Additional Python Wrapper Optimizations (Hoisting Regex)
+**Transformation:**
+- Hoisted loop-invariant `re.compile` calls and `def repl(m)` closures out of the iteration loops in `PackageDBResource.patch_build_time` and `BinWrappersResource.patch_build_time`.
+- Hoisted the compilation of the binary regex in `_resolve_runtime_paths` out of the target iteration loop.
+- Replaced a list comprehension followed by a `set()` conversion with a native set comprehension `{...}` to directly extract and deduplicate targets in `_resolve_runtime_paths`.
+**Result:** Code logic remains mathematically and logically identical, but performance overhead inside file-processing loops is significantly reduced by eliminating redundant allocations and evaluations. Tests pass perfectly.
+**Lesson:** It is always advantageous to hoist static regex compilation and static helper closures out of loops, especially in file processing routines. Furthermore, native set comprehensions save memory allocation relative to creating lists and then converting them.
