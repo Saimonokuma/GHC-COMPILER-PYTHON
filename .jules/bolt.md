@@ -22,3 +22,7 @@
 ## 2026-05-17 - Fast-path execution optimization for wrapper.py
 **Learning:** `_resolve_runtime_paths` dynamically searches and patches `@GHC_PREFIX@` on every execution, taking ~20ms-100ms. Since wrappers can be invoked frequently (by `cabal` running `ghc`, etc.), this creates significant overhead.
 **Action:** Added a fast-path in `ghc_compiler_python/wrapper.py` using a `.ghc_patched_{GHC_VERSION}.txt` marker file stored in `sys.prefix/lib`. If the file exists and its content matches the current `sys.prefix`, the function returns early. This effectively bypasses the entire scanning and patching phase on subsequent executions, bringing the overhead to < 0.5ms. Handled `OSError` to ensure fallback works for read-only environments.
+
+## 2024-05-18 - Lazy loading wrapper imports
+**Learning:** `wrapper.py` takes ~40-50ms just to import because it globally loads heavy modules like `shutil`, `subprocess`, `tempfile`, `mmap`, `re`, `pathlib`, and `typing`. This happens on every wrapper execution (`ghc`, `cabal`, `ghci`).
+**Action:** Move all heavy imports inside functions, use `from __future__ import annotations`, and put `typing` imports inside an `if typing.TYPE_CHECKING:` block. This reduces import time to ~0ms.

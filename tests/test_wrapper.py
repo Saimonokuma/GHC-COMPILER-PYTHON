@@ -42,17 +42,17 @@ class TestSterilizeEnvironment:
 class TestValidateCLinker:
     """Tests for C-linker validation."""
 
-    @patch("ghc_compiler_python.wrapper.shutil.which")
+    @patch("shutil.which")
     def test_passes_with_gcc(self, mock_which):
         mock_which.side_effect = lambda x: "/usr/bin/gcc" if x == "gcc" else None
         _validate_c_linker()  # Should not exit
 
-    @patch("ghc_compiler_python.wrapper.shutil.which")
+    @patch("shutil.which")
     def test_passes_with_clang(self, mock_which):
         mock_which.side_effect = lambda x: "/usr/bin/clang" if x == "clang" else None
         _validate_c_linker()  # Should not exit
 
-    @patch("ghc_compiler_python.wrapper.shutil.which", return_value=None)
+    @patch("shutil.which", return_value=None)
     def test_exits_without_linker(self, mock_which):
         with pytest.raises(SystemExit):
             _validate_c_linker()
@@ -61,13 +61,13 @@ class TestValidateCLinker:
 class TestResolveBinary:
     """Tests for binary resolution."""
 
-    @patch("ghc_compiler_python.wrapper.shutil.which")
+    @patch("shutil.which")
     def test_finds_binary_in_path(self, mock_which):
         mock_which.return_value = "/usr/local/bin/ghc"
         result = _resolve_binary("ghc")
         assert result == "/usr/local/bin/ghc"
 
-    @patch("ghc_compiler_python.wrapper.shutil.which", return_value=None)
+    @patch("shutil.which", return_value=None)
     def test_exits_when_binary_not_found(self, mock_which):
         with pytest.raises(SystemExit):
             _resolve_binary("nonexistent_binary")
@@ -124,7 +124,7 @@ class TestExceptionHandling:
                 _execute_tool("ghc")
             assert exc.value.code == 1
         else:
-            with patch("ghc_compiler_python.wrapper.subprocess.run") as mock_run:
+            with patch("subprocess.run") as mock_run:
                 mock_run.side_effect = OSError("test error")
                 with pytest.raises(SystemExit) as exc:
                     _execute_tool("ghc")
