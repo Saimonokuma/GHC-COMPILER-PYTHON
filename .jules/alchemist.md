@@ -37,3 +37,14 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+## 2025-05-18 - Additional Python Wrapper Optimizations (Hoisting & Data Structures)
+**Transformation:**
+- Hoisted expensive O(N) operations like `re.compile()` and path resolutions outside of the `for` loops in `PackageDBResource.patch_build_time` and `BinWrappersResource.patch_build_time`.
+- Refactored list comprehensions wrapped in `set()` to direct native set comprehensions `{...}` in `_resolve_runtime_paths`.
+- Replaced multiple `.extend()` calls with inline list unpacking `[binary_path, *(extra_args or []), *sys.argv[1:]]` in `_execute_tool`.
+- Consolidated verbose file/directory logic and conditional regex checks with the walrus operator (`:=`).
+- Memoized the `PackageDBResource.locate()` generator call to avoid traversing the filesystem twice when doing boolean checks.
+
+**Result:** Code size reduced, syntax streamlined into declarative patterns, and time complexity optimized by eliminating redundant compilations and directory traversals. Test coverage verified.
+
+**Lesson:** Even after previous code compression passes, deep performance optimization targets such as loop hoisting, data structure instantiation costs (avoiding intermediate lists for sets), and redundant generator evaluations are highly effective optimizations that improve both the latency of file patching and readability.
