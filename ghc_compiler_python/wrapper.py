@@ -58,8 +58,8 @@ def _is_text_file(filepath: Path) -> bool:
     """Check if a file is a text file by looking for null bytes in the first 1024 bytes."""
     try:
         with filepath.open("rb") as f:
-            chunk = f.read(1024)
-            return b"\0" not in chunk
+            # 🧪 Alchemist: inline chunk read
+            return b"\0" not in f.read(1024)
     except OSError:
         return False
 
@@ -86,7 +86,8 @@ def _resolve_binary(name: str) -> str:
 
 def _validate_c_linker() -> None:
     """Pre-flight validation: assert the existence of a host C-linker."""
-    if not shutil.which("gcc") and not shutil.which("clang"):
+    # 🧪 Alchemist: Built-in `any()` and `map()` combine multiple shutil.which calls efficiently
+    if not any(map(shutil.which, ("gcc", "clang"))):
         _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
 
 
@@ -213,16 +214,10 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                # 🧪 Alchemist: Ternary assignment and walrus operator consolidates conditional validation
+                targets = dirs if cls.is_dir else files
+                if cls.name in targets and cls.validate(p := Path(root) / cls.name):
+                    found.append(p)
         return found
 
     @classmethod
@@ -274,13 +269,11 @@ class SettingsResource(BaseResource):
                 r"/(?:usr/local/lib|usr/lib|opt|ghc-prefix)/ghc(?:-|/)" + re.escape(version) + r"|/ghc-prefix"
             )
 
-            def repl(m: re.Match) -> str:
-                match = m.group(0)
-                if match == "/ghc-prefix":
-                    return placeholder
-                return f"{placeholder}/lib/ghc-{version}"
-
-            new_content = pattern.sub(repl, content)
+            # 🧪 Alchemist: Inline lambda for succinct matching logic
+            new_content = pattern.sub(
+                lambda m: placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}",
+                content
+            )
             if new_content != content:
                 path.write_text(new_content, encoding="utf-8")
                 return 1
@@ -326,13 +319,15 @@ class PackageDBResource(BaseResource):
                     r"(dynamic-library-dirs:\s*|library-dirs:\s*|include-dirs:\s*)/[^\s]+|/ghc-prefix/lib/ghc-" + re.escape(version) + r"|/ghc-prefix"
                 )
 
-                def repl(m: re.Match) -> str:
-                    g1 = m.group(1)
-                    if g1:
-                        return f"{g1}{placeholder}/lib/ghc-{version}{'/include' if 'include' in g1 else ''}"
-                    return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
-
-                content = pattern.sub(repl, original)
+                # 🧪 Alchemist: Inline lambda for succinct matching logic
+                content = pattern.sub(
+                    lambda m: (
+                        f"{m.group(1)}{placeholder}/lib/ghc-{version}{'/include' if 'include' in m.group(1) else ''}"
+                        if m.group(1) else
+                        (placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}")
+                    ),
+                    original
+                )
 
                 if content != original:
                     conf_file.write_text(content, encoding="utf-8")
@@ -395,10 +390,11 @@ class BinWrappersResource(BaseResource):
                     re.escape(abs_staging) + r"|" + re.escape(abs_staging_win)
                 )
 
-                def repl(m: re.Match) -> str:
-                    return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
-
-                content = pattern.sub(repl, content)
+                # 🧪 Alchemist: Inline lambda for succinct matching logic
+                content = pattern.sub(
+                    lambda m: f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder,
+                    content
+                )
 
                 if content != original:
                     script.write_text(content, encoding="utf-8")
@@ -425,17 +421,17 @@ def _resolve_runtime_paths(env: dict) -> None:
         pass
 
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
-    # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
-    targets = [
+    # 🧪 Alchemist: Set comprehension condenses nested loops and deduplicates target extraction
+    targets = {
         target for resource_cls in BaseResource.registry
         for resource_path in resource_cls.locate()
         for target in resource_cls.extract_targets(resource_path)
-    ]
+    }
 
     # Replace @GHC_PREFIX@ in all target files
     prefix_clean_bytes = prefix_clean.encode("utf-8")
     patched_any_conf = False
-    for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
+    for target in targets:
         target_path = Path(target)
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
