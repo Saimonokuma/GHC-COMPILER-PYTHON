@@ -37,3 +37,15 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2026-05-18 - Further Lambda and Comprehension Transmutations
+**Transformation:**
+- Replaced the redundant `chunk = f.read(1024)` check in `_is_text_file` to evaluate `b"\0" not in f.read(1024)` directly.
+- Converted repetitive `shutil.which` lookups in `_validate_c_linker` into a concise `any(map(shutil.which, ("gcc", "clang")))`.
+- Simplified the duplicate code paths checking directories or files in `BaseResource.locate` by setting an intermediate `targets = dirs if cls.is_dir else files` using a ternary operator, and assigning variables natively with the walrus operator.
+- Swapped nested inner `repl` functions for `SettingsResource.patch_build_time`, `PackageDBResource.patch_build_time`, and `BinWrappersResource.patch_build_time` with inline multiline `lambda`s to reduce functional boilerplate.
+- Replaced `targets = [ ... ]` paired with `for target in set(targets)` in `_resolve_runtime_paths` with a single native Python set comprehension (`{ ... }`) deduplication step directly during instantiation.
+
+**Result:** Logic flows more natively without requiring excess named function lookups or repetitive statements. The Python unit tests passed immediately afterwards with all permutations. Code structure became slightly more terse, dropping nearly 25 lines of duplicate text in `wrapper.py` in the process.
+
+**Lesson:** Python list comprehensions, while highly efficient, shouldn't be blindly converted into `set` conversions when sets can be generated from standard comprehension `for ... in` expressions directly via curly braces. The use of lambda expressions helps localize function replacement logic inside the regex logic, preserving readability.
