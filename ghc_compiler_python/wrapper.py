@@ -58,8 +58,7 @@ def _is_text_file(filepath: Path) -> bool:
     """Check if a file is a text file by looking for null bytes in the first 1024 bytes."""
     try:
         with filepath.open("rb") as f:
-            chunk = f.read(1024)
-            return b"\0" not in chunk
+            return b"\0" not in f.read(1024)
     except OSError:
         return False
 
@@ -318,19 +317,21 @@ class PackageDBResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched_count = 0
+
+        # 🧪 Alchemist: Combine regex patterns into a single pass using alternation and hoist out of loop
+        pattern = re.compile(
+            r"(dynamic-library-dirs:\s*|library-dirs:\s*|include-dirs:\s*)/[^\s]+|/ghc-prefix/lib/ghc-" + re.escape(version) + r"|/ghc-prefix"
+        )
+
+        def repl(m: re.Match) -> str:
+            g1 = m.group(1)
+            if g1:
+                return f"{g1}{placeholder}/lib/ghc-{version}{'/include' if 'include' in g1 else ''}"
+            return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
+
         for conf_file in path.glob("*.conf"):
             try:
                 original = conf_file.read_text(encoding="utf-8", errors="replace")
-                # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
-                pattern = re.compile(
-                    r"(dynamic-library-dirs:\s*|library-dirs:\s*|include-dirs:\s*)/[^\s]+|/ghc-prefix/lib/ghc-" + re.escape(version) + r"|/ghc-prefix"
-                )
-
-                def repl(m: re.Match) -> str:
-                    g1 = m.group(1)
-                    if g1:
-                        return f"{g1}{placeholder}/lib/ghc-{version}{'/include' if 'include' in g1 else ''}"
-                    return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
 
                 content = pattern.sub(repl, original)
 
@@ -378,25 +379,26 @@ class BinWrappersResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched = 0
+
+        staging_dir = path.parent.parent if path.parent.name == f"ghc-{version}" else path.parent
+        abs_staging = staging_dir.absolute().as_posix()
+        abs_staging_win = str(staging_dir.absolute()).replace("/", "\\")
+
+        # 🧪 Alchemist: Combine regex patterns into a single pass using alternation and hoist out of loop
+        pattern = re.compile(
+            r"/usr/local/lib/ghc-" + re.escape(version) + r"|/ghc-prefix|" +
+            re.escape(abs_staging) + r"|" + re.escape(abs_staging_win)
+        )
+
+        def repl(m: re.Match) -> str:
+            return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
+
         for script in path.iterdir():
             if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
                 continue
             try:
                 content = script.read_text(encoding="utf-8", errors="replace")
                 original = content
-
-                staging_dir = path.parent.parent if path.parent.name == f"ghc-{version}" else path.parent
-                abs_staging = staging_dir.absolute().as_posix()
-                abs_staging_win = str(staging_dir.absolute()).replace("/", "\\")
-
-                # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
-                pattern = re.compile(
-                    r"/usr/local/lib/ghc-" + re.escape(version) + r"|/ghc-prefix|" +
-                    re.escape(abs_staging) + r"|" + re.escape(abs_staging_win)
-                )
-
-                def repl(m: re.Match) -> str:
-                    return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
 
                 content = pattern.sub(repl, content)
 
@@ -425,17 +427,17 @@ def _resolve_runtime_paths(env: dict) -> None:
         pass
 
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
-    # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
-    targets = [
+    # 🧪 Alchemist: Set comprehension natively deduplicates targets during extraction, eliminating later set() call
+    targets = {
         target for resource_cls in BaseResource.registry
         for resource_path in resource_cls.locate()
         for target in resource_cls.extract_targets(resource_path)
-    ]
+    }
 
     # Replace @GHC_PREFIX@ in all target files
     prefix_clean_bytes = prefix_clean.encode("utf-8")
     patched_any_conf = False
-    for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
+    for target in targets:  # 🧪 Alchemist: Targets are already deduplicated
         target_path = Path(target)
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
@@ -450,9 +452,10 @@ def _resolve_runtime_paths(env: dict) -> None:
                 except (ValueError, OSError):
                     # mmap throws ValueError for empty files, OSError for unmappable ones
                     f.seek(0)
-                    content_to_write = f.read()
-                    if b"@GHC_PREFIX@" not in content_to_write:
-                        content_to_write = None
+                    # 🧪 Alchemist: Walrus operator consolidates read and check, avoiding unnecessary variable assignment
+                    if b"@GHC_PREFIX@" not in (content := f.read()):
+                        content = None
+                    content_to_write = content
 
             if content_to_write is not None:
                 # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic

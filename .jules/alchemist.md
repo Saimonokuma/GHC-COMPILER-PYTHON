@@ -37,3 +37,12 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2025-05-25 - Python Refactor: Hoisting re.compile and Using Set Comprehensions
+**Transformation:**
+- Moved `re.compile()` calls and invariant calculations outside of the loop in `BinWrappersResource.patch_build_time` and `PackageDBResource.patch_build_time`.
+- Replaced a list comprehension followed by a `set()` conversion with a direct set comprehension in `_resolve_runtime_paths`.
+- Inlined a file reading operation in `_is_text_file`.
+- Used the walrus operator (`:=`) to consolidate a read and check in `_resolve_runtime_paths` mmap fallback logic.
+**Result:** The code executes fewer redundant steps by turning O(N) regex compilations per directory iteration into O(1). Intermediate object creations (like lists) were removed, lowering memory churn. Tests continued to pass.
+**Lesson:** Loops inside file processing methods are frequent sources of redundant operations in Python. Hoisting invariant logic and utilizing native comprehensions (like set comprehension) minimizes iterations and allocations significantly.
