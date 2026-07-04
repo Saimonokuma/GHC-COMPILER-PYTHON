@@ -50,16 +50,14 @@ _HOME_ORIGINAL: Optional[str] = None
 
 
 def _die(msg: str) -> NoReturn:
-    sys.stderr.write(f"{msg}\n")
-    sys.exit(1)
+    sys.exit(msg)
 
 
 def _is_text_file(filepath: Path) -> bool:
     """Check if a file is a text file by looking for null bytes in the first 1024 bytes."""
     try:
         with filepath.open("rb") as f:
-            chunk = f.read(1024)
-            return b"\0" not in chunk
+            return b"\0" not in f.read(1024)
     except OSError:
         return False
 
@@ -97,12 +95,8 @@ def _find_platform_lib_subdir() -> str:
     On macOS:   lib/ghc-9.4.8/lib/aarch64-osx-ghc-9.4.8/ (or similar)
     On Windows: Does not exist (DLLs are in mingw/bin/)
     """
-    ghc_lib_dir = Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib"
-    if not ghc_lib_dir.is_dir():
-        return ""
-
-    # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
-    return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    # 🧪 Alchemist: Walrus operator minimizes variables while preserving readability and avoiding redundant execution
+    return next((str(c) for c in lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "") if (lib_dir := Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib").is_dir() else ""
 
 
 def _sterilize_environment() -> dict:
@@ -213,16 +207,10 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                if cls.name in (dirs if cls.is_dir else files):
+                    p = Path(root) / cls.name
+                    if cls.validate(p):
+                        found.append(p)
         return found
 
     @classmethod
@@ -425,17 +413,17 @@ def _resolve_runtime_paths(env: dict) -> None:
         pass
 
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
-    # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
-    targets = [
+    # 🧪 Alchemist: Set comprehension condenses nested loops for dynamic unique target extraction
+    targets = {
         target for resource_cls in BaseResource.registry
         for resource_path in resource_cls.locate()
         for target in resource_cls.extract_targets(resource_path)
-    ]
+    }
 
     # Replace @GHC_PREFIX@ in all target files
     prefix_clean_bytes = prefix_clean.encode("utf-8")
     patched_any_conf = False
-    for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
+    for target in targets:
         target_path = Path(target)
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
@@ -445,8 +433,7 @@ def _resolve_runtime_paths(env: dict) -> None:
                 try:
                     with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
                         if m.find(b"@GHC_PREFIX@") != -1:
-                            f.seek(0)
-                            content_to_write = f.read()
+                            content_to_write = m.read()
                 except (ValueError, OSError):
                     # mmap throws ValueError for empty files, OSError for unmappable ones
                     f.seek(0)
@@ -458,8 +445,7 @@ def _resolve_runtime_paths(env: dict) -> None:
                 # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
                 if b" " in prefix_clean_bytes and b"\0" not in content_to_write:
                     content_to_write = re.sub(rb'(?<!")(@GHC_PREFIX@[^\s"]+)', rb'"\1"', content_to_write)
-                with target_path.open("wb") as out:
-                    out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
+                target_path.write_bytes(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
                 if target.endswith(".conf"):
                     patched_any_conf = True
         except OSError as e:
