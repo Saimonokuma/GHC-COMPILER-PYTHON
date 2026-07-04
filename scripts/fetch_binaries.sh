@@ -83,8 +83,18 @@ sha256_check() {
 	fi
 }
 
-GHC_EXPECTED=$(grep "${GHC_TAR}" ghc_sha256.txt | awk '{print $1}')
-CABAL_EXPECTED=$(grep "${CABAL_TAR}" cabal_sha256.txt | awk '{print $1}')
+GHC_EXPECTED=$(grep "${GHC_TAR}" ghc_sha256.txt | awk '{print $1}' || true)
+CABAL_EXPECTED=$(grep "${CABAL_TAR}" cabal_sha256.txt | awk '{print $1}' || true)
+
+if [ -z "${GHC_EXPECTED}" ]; then
+	echo "FATAL: GHC hash not found in SHA256SUMS file!" >&2
+	exit 3
+fi
+
+if [ -z "${CABAL_EXPECTED}" ]; then
+	echo "FATAL: Cabal hash not found in SHA256SUMS file!" >&2
+	exit 3
+fi
 
 if ! sha256_check "${GHC_EXPECTED}" "${GHC_TAR}"; then
 	echo "FATAL: GHC SHA-256 validation failed!" >&2
