@@ -122,13 +122,13 @@ class TestExceptionHandling:
             mock_execve.side_effect = OSError("test error")
             with pytest.raises(SystemExit) as exc:
                 _execute_tool("ghc")
-            assert exc.value.code == 1
+            assert exc.value.code == "FATAL ERROR: Execution failed: test error"
         else:
             with patch("ghc_compiler_python.wrapper.subprocess.run") as mock_run:
                 mock_run.side_effect = OSError("test error")
                 with pytest.raises(SystemExit) as exc:
                     _execute_tool("ghc")
-                assert exc.value.code == 1
+            assert exc.value.code == "FATAL ERROR: Execution failed: test error"
 
 class TestBinWrappersResource:
     """Tests for BinWrappersResource binary filtering."""
