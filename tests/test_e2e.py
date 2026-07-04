@@ -16,7 +16,7 @@ def haskell_source():
         f.flush()
         f.close()
         yield f.name
-    Path(f.name).unlink()
+    Path(f.name).unlink(missing_ok=True)
 
 
 @pytest.mark.skipif(

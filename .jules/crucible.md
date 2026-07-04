@@ -101,3 +101,23 @@ title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, side-effect compreh
 **Level:** L2, L3
 
 ---
+---
+entry_id: "CRUCIBLE-2026-05-18-005"
+schema_version: "2.0"
+timestamp: "2026-05-18T12:00:00Z"
+title: "Multiple Hardening Fixes: TOCTOU, ignored exit code, missing cleanup"
+---
+## 2026-05-18 - Multiple Hardening Fixes: TOCTOU, ignored exit code, missing cleanup
+
+**Learning:** Fixed multiple vulnerability vectors identified across axes. Removed check-then-act sequences in `wrapper.py` in favor of EAFP structure to resolve TOCTOU races (PATTERN-008). Added explicit fallback validation for failed hash fetches in `fetch_binaries.sh` (PATTERN-007). Addressed missing testing cleanup missing_ok in `test_e2e.py`.
+
+**Action:** Addressed TOCTOU and missing error handling in `wrapper.py`, `fetch_binaries.sh`, and `test_e2e.py`.
+
+**Defect Pattern ID:** PATTERN-008, PATTERN-007
+
+**Related Entries:** []
+
+**Axes Affected:** II (Semantic), IV (Operational)
+
+**Level:** L2, L4
+---
