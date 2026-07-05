@@ -37,3 +37,20 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## REPO CONTEXT (Last updated: 2026-05-18)
+**Project:** ghc-compiler-python | **Languages:** Python | **Build/Test/Lint:** hatch/pytest/isort/black
+**Transmutation Opportunities Identified:**
+- `ghc_compiler_python/wrapper.py`: Replaced loops and large conditionals with list/generator comprehensions, lambda regex replacements, and functools.partial. Replaced multiple list extensions with concatenations. Used `dict.get` to condense `sys.platform` match block.
+**Completed Transmutations:**
+- `_is_text_file` null check condensed to a one-liner.
+- `_try_resolve_binary` list instantiation and loop converted to a generator expression with `next`.
+- `_resolve_binary` extracted walrus operator for early return.
+- `_validate_c_linker` condensed with logical `or`.
+- `_try_mkdir` try-except body condensed.
+- `_sterilize_environment` sys.platform `match` block converted to a dictionary `.get()`.
+- `BaseResource.locate` condensed recursive searching list logic using a combined generator step.
+- `SettingsResource`, `PackageDBResource`, and `BinWrappersResource` replaced regex `re.compile` with inline `re.sub` using lambda replacements.
+- `_resolve_runtime_paths` used a nested list comprehension to collapse three loops into one when populating targets.
+- `_execute_tool` replaced explicit loop with list concatenation `+`.
+- `__getattr__` replaced manual nested function closure with `functools.partial`.
