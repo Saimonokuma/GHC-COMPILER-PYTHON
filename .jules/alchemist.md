@@ -37,3 +37,10 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2026-06-25 - Extracted regex compilation and optimized list/set conversion
+**Transformation:**
+- Moved `re.compile` outside of processing loops in `PackageDBResource.patch_build_time` and `BinWrappersResource.patch_build_time` to avoid redundant O(N) regex re-compilations.
+- Replaced the list comprehension to set conversion (`set([x for x in ...])`) in `_resolve_runtime_paths` with a direct set comprehension (`{x for x in ...}`).
+**Result:** Code remains concise, correctness is preserved, and test suite passes. Execution cost inside hot loops during build time is mathematically reduced from O(N) to O(1) for regex parsing.
+**Lesson:** Always hoist static variables and static initializations (like regex compilation) out of processing loops. Set comprehensions in Python skip the intermediate list allocation, saving memory and processing overhead.
