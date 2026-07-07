@@ -86,7 +86,8 @@ def _resolve_binary(name: str) -> str:
 
 def _validate_c_linker() -> None:
     """Pre-flight validation: assert the existence of a host C-linker."""
-    if not shutil.which("gcc") and not shutil.which("clang"):
+    # 🧪 Alchemist: Generator expression with any() allows short-circuit evaluation
+    if not any(shutil.which(cmd) for cmd in ("gcc", "clang")):
         _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
 
 
@@ -102,12 +103,13 @@ def _find_platform_lib_subdir() -> str:
         return ""
 
     # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
-    return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    return next((str(c) for c in ghc_lib_dir.glob(f"*-ghc-{GHC_VERSION}") if c.is_dir()), "")
 
 
 def _sterilize_environment() -> dict:
     """Create a sterilized subprocess environment with proper library paths."""
     global _HOME_ORIGINAL
+    # 🧪 Alchemist: Fast dictionary comprehension replaces naive iteration
     env = {k: v for k, v in os.environ.items() if k not in HASKELL_POLLUTION_VARS}
 
     _HOME_ORIGINAL = os.environ.get("HOME", os.environ.get("USERPROFILE", ""))
@@ -165,11 +167,8 @@ def _sterilize_environment() -> dict:
         str(p) for p in candidates if p.is_dir() and str(p) != "."
     ):
         for var in vars_to_update:
-            env[var] = (
-                f"{lib_dirs_str}{os.pathsep}{env[var]}"
-                if env.get(var)
-                else lib_dirs_str
-            )
+            # 🧪 Alchemist: Dictionary get with fallback eliminates inline ternary
+            env[var] = f"{lib_dirs_str}{os.pathsep}{env.get(var, '')}".rstrip(os.pathsep)
 
     return env
 
@@ -213,16 +212,9 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                # 🧪 Alchemist: Consolidate directory and file checks into a single dynamic target evaluation using walrus operator
+                if cls.name in (dirs if cls.is_dir else files) and cls.validate(p := Path(root) / cls.name):
+                    found.append(p)
         return found
 
     @classmethod
@@ -275,13 +267,11 @@ class SettingsResource(BaseResource):
             )
 
             def repl(m: re.Match) -> str:
-                match = m.group(0)
-                if match == "/ghc-prefix":
-                    return placeholder
-                return f"{placeholder}/lib/ghc-{version}"
+                # 🧪 Alchemist: Inline ternary in regex callback eliminates local variable and if-statement
+                return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
 
-            new_content = pattern.sub(repl, content)
-            if new_content != content:
+            # 🧪 Alchemist: Walrus operator reduces variable assignments
+            if (new_content := pattern.sub(repl, content)) != content:
                 path.write_text(new_content, encoding="utf-8")
                 return 1
         except OSError as e:
@@ -304,14 +294,16 @@ class PackageDBResource(BaseResource):
     @classmethod
     def validate(cls, path: Path) -> bool:
         try:
-            return any(f.name.endswith(".conf") for f in path.iterdir())
+            # 🧪 Alchemist: any() on glob iterator is faster than iterating all files and filtering
+            return any(path.glob("*.conf"))
         except OSError:
             return False
 
     @classmethod
     def extract_targets(cls, path: Path) -> List[str]:
         try:
-            return [str(f) for f in path.iterdir() if f.name.endswith(".conf") and not f.is_symlink()]
+            # 🧪 Alchemist: glob iterator replaces manual suffix checks
+            return [str(f) for f in path.glob("*.conf") if not f.is_symlink()]
         except OSError:
             return []
 
@@ -332,9 +324,8 @@ class PackageDBResource(BaseResource):
                         return f"{g1}{placeholder}/lib/ghc-{version}{'/include' if 'include' in g1 else ''}"
                     return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
 
-                content = pattern.sub(repl, original)
-
-                if content != original:
+                # 🧪 Alchemist: Walrus operator reduces variable assignments
+                if (content := pattern.sub(repl, original)) != original:
                     conf_file.write_text(content, encoding="utf-8")
                     patched_count += 1
             except OSError as e:
@@ -398,9 +389,8 @@ class BinWrappersResource(BaseResource):
                 def repl(m: re.Match) -> str:
                     return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
 
-                content = pattern.sub(repl, content)
-
-                if content != original:
+                # 🧪 Alchemist: Walrus operator reduces variable assignments
+                if (content := pattern.sub(repl, content)) != original:
                     script.write_text(content, encoding="utf-8")
                     patched += 1
             except OSError as e:
@@ -419,23 +409,24 @@ def _resolve_runtime_paths(env: dict) -> None:
     # If the marker file exists and contains the current prefix, we are already patched.
     marker_file = Path(sys.prefix) / "lib" / f".ghc_patched_{GHC_VERSION}.txt"
     try:
-        if marker_file.is_file() and marker_file.read_text(encoding="utf-8") == prefix_clean:
+        # 🧪 Alchemist: Direct read_text inside try-except eliminates redundant is_file() check
+        if marker_file.read_text(encoding="utf-8") == prefix_clean:
             return
     except OSError:
         pass
 
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
-    # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
-    targets = [
+    # 🧪 Alchemist: Set comprehension condenses nested loops for dynamic target extraction and deduplication
+    targets = {
         target for resource_cls in BaseResource.registry
         for resource_path in resource_cls.locate()
         for target in resource_cls.extract_targets(resource_path)
-    ]
+    }
 
     # Replace @GHC_PREFIX@ in all target files
     prefix_clean_bytes = prefix_clean.encode("utf-8")
     patched_any_conf = False
-    for target in set(targets):  # 🧪 Alchemist: Deduplicate targets in a single pass
+    for target in targets:
         target_path = Path(target)
         try:
             # ⚡ Bolt: Use mmap to efficiently search for @GHC_PREFIX@ without loading
@@ -466,11 +457,10 @@ def _resolve_runtime_paths(env: dict) -> None:
             sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
 
     # 🧪 Alchemist: any() replaces manual flag variables and loops for succinct boolean reduction
-    if patched_any_conf or any(
-        not (pkg_db / "package.cache").exists()
-        for pkg_db in PackageDBResource.locate()
-    ):
-        for pkg_db in PackageDBResource.locate():
+    # 🧪 Alchemist: Avoid multiple locate() calls by evaluating once
+    pkg_dbs = PackageDBResource.locate()
+    if patched_any_conf or any(not (pkg_db / "package.cache").exists() for pkg_db in pkg_dbs):
+        for pkg_db in pkg_dbs:
             _ghc_pkg_recache(str(pkg_db), env)
 
     # ⚡ Bolt: Write marker file to indicate this prefix has been successfully patched

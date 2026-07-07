@@ -40,9 +40,8 @@ def main():
 
         for path in found_paths:
             print(f"Found {resource_cls.name} at: {path}")
-            patched_count = resource_cls.patch_build_time(path, GHC_VERSION, PLACEHOLDER_PREFIX)
-
-            if patched_count > 0:
+            # 🧪 Alchemist: Walrus operator eliminates explicit variable declaration
+            if patched_count := resource_cls.patch_build_time(path, GHC_VERSION, PLACEHOLDER_PREFIX):
                 print(f"Successfully patched {patched_count} items in {resource_cls.name}")
                 total_patched += patched_count
             else:

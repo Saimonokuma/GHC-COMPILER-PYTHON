@@ -37,3 +37,15 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2026-05-18 - Additional Python Wrapper Optimizations (Batch 3)
+**Transformation:**
+- Eliminated redundant `if` checks and manual assignment loops by adopting generator expressions with `any()`.
+- Reduced memory overhead and lookup loops in `_sterilize_environment` by rewriting standard `for` loops into optimized dictionary comprehensions.
+- Eliminated manual index filtering loops replacing them with `glob("*.conf")` inside generator comprehensions.
+- Replaced the procedural extraction of runtime targets with a set comprehension reducing time complexity.
+- Adopted the walrus operator (`:=`) extensively in `BinWrappersResource`, `PackageDBResource`, `SettingsResource` and `scripts/patch_ghc_paths.py` reducing total LOC while preserving semantics.
+
+**Result:** Code size remains compact. Python parser overhead is reduced through built-in generators and comprehensions, and code legibility is improved through the walrus operator. All tests pass successfully.
+
+**Lesson:** Embracing comprehensions, sets and generator expressions combined with modern features like the walrus operator creates dense, highly performant code by reducing interpreter-level looping and variable assignment.
