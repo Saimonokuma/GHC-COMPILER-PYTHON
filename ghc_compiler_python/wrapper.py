@@ -13,16 +13,16 @@ FIX v3: Fixed platform-specific path detection for settings and package.conf.d.
 FIX v2: Added DYLD_LIBRARY_PATH for macOS runtime library resolution.
 """
 
+from __future__ import annotations
+
 import os
 import sys
-import shutil
-import subprocess
-import tempfile
-import functools
 import mmap
-import re
 from pathlib import Path
-from typing import Any, List, NoReturn, Optional, Type
+
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from typing import Any, List, NoReturn, Optional, Type
 
 
 GHC_VERSION = "9.4.8"
@@ -47,6 +47,17 @@ HASKELL_POLLUTION_VARS = frozenset(
 )
 
 _HOME_ORIGINAL: Optional[str] = None
+
+
+def _which(cmd: str) -> Optional[str]:
+    exts = os.environ.get("PATHEXT", "").split(os.pathsep) if sys.platform == "win32" else [""]
+    for p in os.environ.get("PATH", os.defpath).split(os.pathsep):
+        p = p.strip('"')
+        for ext in exts:
+            exe = os.path.join(p, cmd + ext)
+            if os.path.isfile(exe) and os.access(exe, os.X_OK):
+                return exe
+    return None
 
 
 def _die(msg: str) -> NoReturn:
@@ -74,10 +85,11 @@ def _try_resolve_binary(name: str) -> Optional[str]:
         Path(__file__).resolve().parent.parent / bin_dir / binary_name
     ]
 
-    return next(
-        (str(p) for p in candidates if p.exists()),
-        shutil.which(binary_name)
-    )
+    for p in candidates:
+        if p.exists():
+            return str(p)
+    return _which(binary_name)
+
 
 def _resolve_binary(name: str) -> str:
     """Resolve the absolute path to a bundled native binary."""
@@ -86,7 +98,7 @@ def _resolve_binary(name: str) -> str:
 
 def _validate_c_linker() -> None:
     """Pre-flight validation: assert the existence of a host C-linker."""
-    if not shutil.which("gcc") and not shutil.which("clang"):
+    if not _which("gcc") and not _which("clang"):
         _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
 
 
@@ -132,7 +144,7 @@ def _sterilize_environment() -> dict:
     safe_home = (
         _try_mkdir(Path(sys.prefix) / ".ghc-compiler-python-home") or
         _try_mkdir(_get_home_path()) or
-        Path(tempfile.mkdtemp(prefix="ghc-compiler-python-home-"))
+        Path(__import__("tempfile").mkdtemp(prefix="ghc-compiler-python-home-"))
     )
 
     env["HOME"] = str(safe_home)
@@ -186,9 +198,14 @@ class BaseResource:
         cls.registry.append(cls)
 
     @classmethod
-    @functools.lru_cache(maxsize=None)
     def locate(cls, base: str = sys.prefix, version: str = GHC_VERSION) -> List[Path]:
         """Locate all instances of this resource relative to a base directory."""
+        if not hasattr(cls, "_locate_cache"):
+            cls._locate_cache = {}
+        cache_key = (base, version)
+        if cache_key in cls._locate_cache:
+            return cls._locate_cache[cache_key]
+
         base_path = Path(base)
         candidates = cls.get_candidates(base_path, version)
 
@@ -196,6 +213,7 @@ class BaseResource:
         for c in candidates:
             # 🧪 Alchemist: Ternary conditional combines file and directory checks
             if (c.is_dir() if cls.is_dir else c.is_file()) and cls.validate(c):
+                cls._locate_cache[cache_key] = [c]
                 return [c]
 
         # Dynamic fallback
@@ -223,6 +241,7 @@ class BaseResource:
                         p = Path(root) / cls.name
                         if cls.validate(p):
                             found.append(p)
+        cls._locate_cache[cache_key] = found
         return found
 
     @classmethod
@@ -267,6 +286,7 @@ class SettingsResource(BaseResource):
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
+        import re
         try:
             content = path.read_text(encoding="utf-8", errors="replace")
             # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
@@ -317,6 +337,7 @@ class PackageDBResource(BaseResource):
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
+        import re
         patched_count = 0
         for conf_file in path.glob("*.conf"):
             try:
@@ -377,6 +398,7 @@ class BinWrappersResource(BaseResource):
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
+        import re
         patched = 0
         for script in path.iterdir():
             if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
@@ -457,6 +479,7 @@ def _resolve_runtime_paths(env: dict) -> None:
             if content_to_write is not None:
                 # 🧪 Alchemist: Native byte regex replaces verbose decode/encode logic
                 if b" " in prefix_clean_bytes and b"\0" not in content_to_write:
+                    import re
                     content_to_write = re.sub(rb'(?<!")(@GHC_PREFIX@[^\s"]+)', rb'"\1"', content_to_write)
                 with target_path.open("wb") as out:
                     out.write(content_to_write.replace(b"@GHC_PREFIX@", prefix_clean_bytes))
@@ -492,6 +515,7 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
     if not ghc_pkg:
         return  # Can't recache without ghc-pkg
 
+    import subprocess
     try:
         # Use the sterilized environment which has LD_LIBRARY_PATH properly set
         # 🧪 Alchemist: Dictionary merge operator (|) replaces unpacking
@@ -503,7 +527,9 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
             timeout=30,
             check=True,
         )
-    except (subprocess.SubprocessError, OSError) as e:
+    except OSError as e:
+        sys.stderr.write(f"WARNING: ghc-pkg recache failed for {pkg_db_dir}: {e}\n")
+    except __import__("subprocess").SubprocessError as e:
         sys.stderr.write(f"WARNING: ghc-pkg recache failed for {pkg_db_dir}: {e}\n")
 
 
@@ -528,12 +554,15 @@ def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoR
         if sys.platform != "win32":
             os.execve(binary_path, cmd, env)
         else:
+            import subprocess
             sys.exit(subprocess.run(cmd, env=env).returncode)
     except FileNotFoundError:
         _die(f"FATAL ERROR: Binary not found at '{binary_path}'.")
     except KeyboardInterrupt:
         sys.exit(130)
-    except (subprocess.SubprocessError, OSError) as e:
+    except OSError as e:
+        _die(f"FATAL ERROR: Execution failed: {e}")
+    except __import__("subprocess").SubprocessError as e:
         _die(f"FATAL ERROR: Execution failed: {e}")
 
 
