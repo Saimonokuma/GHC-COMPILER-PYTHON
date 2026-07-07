@@ -12,3 +12,7 @@ Deleted test script files that I added during my debugging phase.
 - Unhandled `PermissionError` (a subclass of `OSError`) caused crashes during path resolution when `iterdir()` was called on unreadable directories in `wrapper.py`. Added proper `try...except OSError` fallback.
 - Prevented a fatal crash (`sys.exit(1)`) triggered by missing `ghc-pkg` during recache by splitting binary resolution into a safe `_try_resolve_binary` method.
 - Replaced a stubbed verification string with proper `otool -l` execution checks inside `scripts/fix_macos_rpaths.sh`. Ensured to use `grep -E` (Extended Regular Expressions) for BSD `grep` compatibility on macOS when alternating values.
+### Critical Learnings (2025-05-19):
+- Discovered that Alchemist agent optimized `ghc_compiler_python/wrapper.py` by introducing Python 3.10 `match ... case` syntax and Python 3.9 dictionary merge `|` syntax.
+- However, `pyproject.toml` lists `requires-python = ">=3.8"`. Using these new features caused `SyntaxError` and `TypeError` when run under Python 3.8 environments.
+- Reverted the structural pattern matching to `if ... elif ... else` blocks and dictionary merges to `**` unpacking to restore Python 3.8 compatibility while maintaining the underlying optimizations. Always ensure that syntax features used fall within the minimum supported version defined in package configurations.
