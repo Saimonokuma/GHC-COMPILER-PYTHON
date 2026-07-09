@@ -123,8 +123,8 @@ def _sterilize_environment() -> dict:
             if str(path) != ".":
                 path.mkdir(parents=True, exist_ok=True)
                 return path
-        except (OSError, RuntimeError):
-            pass
+        except (OSError, RuntimeError) as e:
+            sys.stderr.write(f"WARNING: Failed to create directory {path}: {e}\n")
         return None
 
     # 🧪 Alchemist: Declarative fallback chain replaces nested try-except blocks.
@@ -421,8 +421,8 @@ def _resolve_runtime_paths(env: dict) -> None:
     try:
         if marker_file.is_file() and marker_file.read_text(encoding="utf-8") == prefix_clean:
             return
-    except OSError:
-        pass
+    except OSError as e:
+        sys.stderr.write(f"WARNING: Failed to read marker file {marker_file}: {e}\n")
 
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
     # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
@@ -477,8 +477,8 @@ def _resolve_runtime_paths(env: dict) -> None:
     try:
         marker_file.parent.mkdir(parents=True, exist_ok=True)
         marker_file.write_text(prefix_clean, encoding="utf-8")
-    except OSError:
-        pass
+    except OSError as e:
+        sys.stderr.write(f"WARNING: Failed to write marker file {marker_file}: {e}\n")
 
 
 def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
