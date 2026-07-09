@@ -22,7 +22,8 @@ import functools
 import mmap
 import re
 from pathlib import Path
-from typing import Any, List, NoReturn, Optional, Type
+from contextlib import suppress
+from typing import Any, List, NoReturn, Optional
 
 
 GHC_VERSION = "9.4.8"
@@ -56,12 +57,9 @@ def _die(msg: str) -> NoReturn:
 
 def _is_text_file(filepath: Path) -> bool:
     """Check if a file is a text file by looking for null bytes in the first 1024 bytes."""
-    try:
-        with filepath.open("rb") as f:
-            chunk = f.read(1024)
-            return b"\0" not in chunk
-    except OSError:
-        return False
+    with suppress(OSError), filepath.open("rb") as f:
+        return b"\0" not in f.read(1024)
+    return False
 
 
 def _try_resolve_binary(name: str) -> Optional[str]:
@@ -78,6 +76,7 @@ def _try_resolve_binary(name: str) -> Optional[str]:
         (str(p) for p in candidates if p.exists()),
         shutil.which(binary_name)
     )
+
 
 def _resolve_binary(name: str) -> str:
     """Resolve the absolute path to a bundled native binary."""
@@ -119,12 +118,10 @@ def _sterilize_environment() -> dict:
             return Path()
 
     def _try_mkdir(path: Path) -> Optional[Path]:
-        try:
+        with suppress(OSError, RuntimeError):
             if str(path) != ".":
                 path.mkdir(parents=True, exist_ok=True)
                 return path
-        except (OSError, RuntimeError):
-            pass
         return None
 
     # 🧪 Alchemist: Declarative fallback chain replaces nested try-except blocks.
@@ -172,7 +169,6 @@ def _sterilize_environment() -> dict:
             )
 
     return env
-
 
 
 class BaseResource:
@@ -259,11 +255,10 @@ class SettingsResource(BaseResource):
 
     @classmethod
     def validate(cls, path: Path) -> bool:
-        try:
+        with suppress(OSError):
             content = path.read_text(encoding="utf-8", errors="replace")
             return '"C compiler command"' in content or '"C preprocessor command"' in content
-        except OSError:
-            return False
+        return False
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
@@ -303,17 +298,15 @@ class PackageDBResource(BaseResource):
 
     @classmethod
     def validate(cls, path: Path) -> bool:
-        try:
+        with suppress(OSError):
             return any(f.name.endswith(".conf") for f in path.iterdir())
-        except OSError:
-            return False
+        return False
 
     @classmethod
     def extract_targets(cls, path: Path) -> List[str]:
-        try:
+        with suppress(OSError):
             return [str(f) for f in path.iterdir() if f.name.endswith(".conf") and not f.is_symlink()]
-        except OSError:
-            return []
+        return []
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
@@ -367,13 +360,12 @@ class BinWrappersResource(BaseResource):
 
     @classmethod
     def extract_targets(cls, path: Path) -> List[str]:
-        try:
+        with suppress(OSError):
             return [
                 str(f) for f in path.iterdir()
                 if f.is_file() and not f.is_symlink() and not f.name.endswith(".exe") and _is_text_file(f)
             ]
-        except OSError:
-            return []
+        return []
 
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
@@ -406,6 +398,8 @@ class BinWrappersResource(BaseResource):
             except OSError as e:
                 sys.stderr.write(f"WARNING: Failed to patch {script}: {e}\n")
         return patched
+
+
 def _resolve_runtime_paths(env: dict) -> None:
     """Dynamically replace @GHC_PREFIX@ with the active sys.prefix at runtime,
     then regenerate package.cache.
@@ -418,11 +412,9 @@ def _resolve_runtime_paths(env: dict) -> None:
     # ⚡ Bolt: Fast-path to avoid scanning and patching on every invocation.
     # If the marker file exists and contains the current prefix, we are already patched.
     marker_file = Path(sys.prefix) / "lib" / f".ghc_patched_{GHC_VERSION}.txt"
-    try:
-        if marker_file.is_file() and marker_file.read_text(encoding="utf-8") == prefix_clean:
+    with suppress(OSError):
+        if marker_file.read_text(encoding="utf-8") == prefix_clean:
             return
-    except OSError:
-        pass
 
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
     # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
@@ -474,11 +466,9 @@ def _resolve_runtime_paths(env: dict) -> None:
             _ghc_pkg_recache(str(pkg_db), env)
 
     # ⚡ Bolt: Write marker file to indicate this prefix has been successfully patched
-    try:
+    with suppress(OSError):
         marker_file.parent.mkdir(parents=True, exist_ok=True)
         marker_file.write_text(prefix_clean, encoding="utf-8")
-    except OSError:
-        pass
 
 
 def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:

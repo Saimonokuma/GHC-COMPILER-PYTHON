@@ -37,3 +37,8 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2026-05-18 - contextlib.suppress refactor
+**Transformation:** Replaced numerous explicit `try: ... except OSError: pass` and similar boilerplate try-except blocks across `ghc_compiler_python/wrapper.py` with the more succinct and Pythonic `contextlib.suppress(OSError)`. This was applied to file reading logic, marker file operations, directory creation, and various validation checks where catching an expected exception to return a fallback value or continue execution was the norm.
+**Result:** Code size reduced, execution equivalent, readability improved by removing verbose exception handling blocks.
+**Lesson:** `contextlib.suppress` combined with default return values provides a much cleaner declarative flow for I/O operations where exceptions indicate an absence of data or capability, rather than an error condition requiring handling.
