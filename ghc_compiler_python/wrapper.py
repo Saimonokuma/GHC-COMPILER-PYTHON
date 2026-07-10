@@ -102,7 +102,11 @@ def _find_platform_lib_subdir() -> str:
         return ""
 
     # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
-    return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    try:
+        return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    except OSError as e:
+        sys.stderr.write(f"WARNING: Failed to iterate {ghc_lib_dir}: {e}\n")
+        return ""
 
 
 def _sterilize_environment() -> dict:
@@ -123,8 +127,8 @@ def _sterilize_environment() -> dict:
             if str(path) != ".":
                 path.mkdir(parents=True, exist_ok=True)
                 return path
-        except (OSError, RuntimeError):
-            pass
+        except (OSError, RuntimeError) as e:
+            sys.stderr.write(f"WARNING: Failed to create {path}: {e}\n")
         return None
 
     # 🧪 Alchemist: Declarative fallback chain replaces nested try-except blocks.
@@ -132,7 +136,8 @@ def _sterilize_environment() -> dict:
     safe_home = (
         _try_mkdir(Path(sys.prefix) / ".ghc-compiler-python-home") or
         _try_mkdir(_get_home_path()) or
-        Path(tempfile.mkdtemp(prefix="ghc-compiler-python-home-"))
+        _try_mkdir(Path(tempfile.gettempdir()) / "ghc-compiler-python-home") or
+        Path(tempfile.gettempdir())
     )
 
     env["HOME"] = str(safe_home)
@@ -378,7 +383,12 @@ class BinWrappersResource(BaseResource):
     @classmethod
     def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
         patched = 0
-        for script in path.iterdir():
+        try:
+            scripts = list(path.iterdir())
+        except OSError as e:
+            sys.stderr.write(f"WARNING: Failed to iterate {path}: {e}\n")
+            return 0
+        for script in scripts:
             if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
                 continue
             try:
@@ -421,8 +431,8 @@ def _resolve_runtime_paths(env: dict) -> None:
     try:
         if marker_file.is_file() and marker_file.read_text(encoding="utf-8") == prefix_clean:
             return
-    except OSError:
-        pass
+    except OSError as e:
+        sys.stderr.write(f"WARNING: Failed to read marker file {marker_file}: {e}\n")
 
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
     # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
@@ -477,8 +487,8 @@ def _resolve_runtime_paths(env: dict) -> None:
     try:
         marker_file.parent.mkdir(parents=True, exist_ok=True)
         marker_file.write_text(prefix_clean, encoding="utf-8")
-    except OSError:
-        pass
+    except OSError as e:
+        sys.stderr.write(f"WARNING: Failed to write marker file {marker_file}: {e}\n")
 
 
 def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
