@@ -12,3 +12,8 @@ Deleted test script files that I added during my debugging phase.
 - Unhandled `PermissionError` (a subclass of `OSError`) caused crashes during path resolution when `iterdir()` was called on unreadable directories in `wrapper.py`. Added proper `try...except OSError` fallback.
 - Prevented a fatal crash (`sys.exit(1)`) triggered by missing `ghc-pkg` during recache by splitting binary resolution into a safe `_try_resolve_binary` method.
 - Replaced a stubbed verification string with proper `otool -l` execution checks inside `scripts/fix_macos_rpaths.sh`. Ensured to use `grep -E` (Extended Regular Expressions) for BSD `grep` compatibility on macOS when alternating values.
+
+### Critical Learnings (YYYY-MM-DD):
+- Replaced naked `pass` blocks with proper `sys.stderr.write` logging in `ghc_compiler_python/wrapper.py` exception handlers (`_try_mkdir`, `marker_file.read_text`, `marker_file.write_text`).
+- Added missing `try...except OSError` handling for `ghc_lib_dir.iterdir()` and `path.iterdir()` inside `ghc_compiler_python/wrapper.py`.
+- Prevented a potential `tempfile.mkdtemp` leak in `safe_home` fallback sequence by resolving the path to `tempfile.gettempdir() / "ghc-compiler-python-home"` and `tempfile.gettempdir()` itself, avoiding creating unbounded temporary directories per execution.
