@@ -58,8 +58,7 @@ def _is_text_file(filepath: Path) -> bool:
     """Check if a file is a text file by looking for null bytes in the first 1024 bytes."""
     try:
         with filepath.open("rb") as f:
-            chunk = f.read(1024)
-            return b"\0" not in chunk
+            return b"\0" not in f.read(1024)
     except OSError:
         return False
 
@@ -97,12 +96,11 @@ def _find_platform_lib_subdir() -> str:
     On macOS:   lib/ghc-9.4.8/lib/aarch64-osx-ghc-9.4.8/ (or similar)
     On Windows: Does not exist (DLLs are in mingw/bin/)
     """
-    ghc_lib_dir = Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib"
-    if not ghc_lib_dir.is_dir():
+    try:
+        # 🧪 Alchemist: try-except safely combines Path.is_dir check and iteration
+        return next((str(c) for c in (Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib").iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    except OSError:
         return ""
-
-    # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
-    return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
 
 
 def _sterilize_environment() -> dict:
@@ -164,12 +162,8 @@ def _sterilize_environment() -> dict:
     if lib_dirs_str := os.pathsep.join(
         str(p) for p in candidates if p.is_dir() and str(p) != "."
     ):
-        for var in vars_to_update:
-            env[var] = (
-                f"{lib_dirs_str}{os.pathsep}{env[var]}"
-                if env.get(var)
-                else lib_dirs_str
-            )
+        # 🧪 Alchemist: Dictionary merge with comprehension replaces explicit for-loop mutation
+        env |= {var: f"{lib_dirs_str}{os.pathsep}{env[var]}" if env.get(var) else lib_dirs_str for var in vars_to_update}
 
     return env
 
@@ -213,16 +207,10 @@ class BaseResource:
                     and not d.startswith(("python", "pypy"))
                 ]
 
-                if cls.is_dir:
-                    if cls.name in dirs:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
-                else:
-                    if cls.name in files:
-                        p = Path(root) / cls.name
-                        if cls.validate(p):
-                            found.append(p)
+                # 🧪 Alchemist: Target abstraction eliminates redundant conditional branching
+                targets = dirs if cls.is_dir else files
+                if cls.name in targets and cls.validate(p := Path(root) / cls.name):
+                    found.append(p)
         return found
 
     @classmethod
@@ -274,13 +262,8 @@ class SettingsResource(BaseResource):
                 r"/(?:usr/local/lib|usr/lib|opt|ghc-prefix)/ghc(?:-|/)" + re.escape(version) + r"|/ghc-prefix"
             )
 
-            def repl(m: re.Match) -> str:
-                match = m.group(0)
-                if match == "/ghc-prefix":
-                    return placeholder
-                return f"{placeholder}/lib/ghc-{version}"
-
-            new_content = pattern.sub(repl, content)
+            # 🧪 Alchemist: Inline lambda replaces verbose nested function definition
+            new_content = pattern.sub(lambda m: placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}", content)
             if new_content != content:
                 path.write_text(new_content, encoding="utf-8")
                 return 1
@@ -326,13 +309,8 @@ class PackageDBResource(BaseResource):
                     r"(dynamic-library-dirs:\s*|library-dirs:\s*|include-dirs:\s*)/[^\s]+|/ghc-prefix/lib/ghc-" + re.escape(version) + r"|/ghc-prefix"
                 )
 
-                def repl(m: re.Match) -> str:
-                    g1 = m.group(1)
-                    if g1:
-                        return f"{g1}{placeholder}/lib/ghc-{version}{'/include' if 'include' in g1 else ''}"
-                    return placeholder if m.group(0) == "/ghc-prefix" else f"{placeholder}/lib/ghc-{version}"
-
-                content = pattern.sub(repl, original)
+                # 🧪 Alchemist: Inline lambda replaces nested function definition
+                content = pattern.sub(lambda m: f"{m.group(1)}{placeholder}/lib/ghc-{version}" + ('/include' if 'include' in m.group(1) else '') if m.group(1) else (placeholder if m.group(0) == '/ghc-prefix' else f"{placeholder}/lib/ghc-{version}"), original)
 
                 if content != original:
                     conf_file.write_text(content, encoding="utf-8")
@@ -395,10 +373,8 @@ class BinWrappersResource(BaseResource):
                     re.escape(abs_staging) + r"|" + re.escape(abs_staging_win)
                 )
 
-                def repl(m: re.Match) -> str:
-                    return f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder
-
-                content = pattern.sub(repl, content)
+                # 🧪 Alchemist: Inline lambda replaces verbose nested function definition
+                content = pattern.sub(lambda m: f"{placeholder}/lib/ghc-{version}" if m.group(0).startswith(f"/usr/local/lib/ghc-{version}") else placeholder, content)
 
                 if content != original:
                     script.write_text(content, encoding="utf-8")
@@ -465,12 +441,10 @@ def _resolve_runtime_paths(env: dict) -> None:
         except OSError as e:
             sys.stderr.write(f"WARNING: Failed to resolve runtime paths for {target_path}: {e}\n")
 
-    # 🧪 Alchemist: any() replaces manual flag variables and loops for succinct boolean reduction
-    if patched_any_conf or any(
-        not (pkg_db / "package.cache").exists()
-        for pkg_db in PackageDBResource.locate()
-    ):
-        for pkg_db in PackageDBResource.locate():
+    # 🧪 Alchemist: succinct boolean reduction
+    pkg_dbs = PackageDBResource.locate()
+    if patched_any_conf or any(not (pkg_db / "package.cache").exists() for pkg_db in pkg_dbs):
+        for pkg_db in pkg_dbs:
             _ghc_pkg_recache(str(pkg_db), env)
 
     # ⚡ Bolt: Write marker file to indicate this prefix has been successfully patched
@@ -547,10 +521,8 @@ def __getattr__(name: str) -> Any:
         tool_name = name[8:].replace("_", "-")
         extra_args = ["-v0"] if tool_name == "ghc" else None
 
-        def executor() -> NoReturn:
-            _execute_tool(tool_name, extra_args=extra_args)
-
-        executor.__name__ = name
+        # 🧪 Alchemist: Inline lambda and attribute assignment compress dynamic function generation
+        (executor := lambda: _execute_tool(tool_name, extra_args=extra_args)).__name__ = name
         return executor
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
