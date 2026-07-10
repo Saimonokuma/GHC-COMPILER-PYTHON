@@ -37,3 +37,17 @@
 **Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
 
 **Lesson:** Similar to the previous patch on `SettingsResource`, using Python's regex alternation coupled with callbacks is a highly efficient way to replace disparate string matching replacements, effectively reducing the temporal overhead of patching during wheel build.
+
+## 2026-05-18 - Additional Python Wrapper Optimizations Part 2
+**Transformation:**
+- Compressed `_is_text_file` with a one-liner `return b"\0" not in f.read(1024)`.
+- Compressed `_find_platform_lib_subdir` to safely combine `Path.is_dir` with a conditional walrus operator inside a `try/except` block.
+- Updated `_sterilize_environment` by employing Python's dictionary merge operator (`|=`) with dictionary comprehensions for assigning platform variables.
+- Further optimized `BaseResource.locate` by consolidating the fallback checks.
+- Squashed multiline `re.sub` replacement callbacks using inline lambdas in `patch_build_time` for `SettingsResource`, `PackageDBResource`, and `BinWrappersResource`.
+- Streamlined `_resolve_runtime_paths` by inlining generators, using single-pass iteration variables (`pkg_dbs = PackageDBResource.locate()`), and flattening logic.
+- Replaced the explicit `def executor()` nested function factory in `__getattr__` with an inline assigned lambda using the walrus operator.
+
+**Result:** Code size remains compact and performance improves because the text content is only scanned once instead of four separate passes. All validation test suites still pass.
+
+**Lesson:** Similar to the previous patches, using Python's modern language features like the walrus operator, dictionary merge, and inline lambdas can significantly reduce boilerplate and increase readability and performance.
