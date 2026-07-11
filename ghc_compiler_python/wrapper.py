@@ -13,16 +13,14 @@ FIX v3: Fixed platform-specific path detection for settings and package.conf.d.
 FIX v2: Added DYLD_LIBRARY_PATH for macOS runtime library resolution.
 """
 
+from __future__ import annotations
 import os
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any, List, NoReturn, Optional, Type
+    import pathlib
 import sys
-import shutil
-import subprocess
-import tempfile
-import functools
-import mmap
-import re
-from pathlib import Path
-from typing import Any, List, NoReturn, Optional, Type
 
 
 GHC_VERSION = "9.4.8"
@@ -66,6 +64,9 @@ def _is_text_file(filepath: Path) -> bool:
 
 def _try_resolve_binary(name: str) -> Optional[str]:
     """Resolve the absolute path to a bundled native binary without dying."""
+    import shutil
+    import pathlib
+    Path = pathlib.Path
     binary_name = f"{name}.exe" if sys.platform == "win32" else name
     bin_dir = "Scripts" if sys.platform == "win32" else "bin"
 
@@ -86,6 +87,7 @@ def _resolve_binary(name: str) -> str:
 
 def _validate_c_linker() -> None:
     """Pre-flight validation: assert the existence of a host C-linker."""
+    import shutil
     if not shutil.which("gcc") and not shutil.which("clang"):
         _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
 
@@ -97,6 +99,8 @@ def _find_platform_lib_subdir() -> str:
     On macOS:   lib/ghc-9.4.8/lib/aarch64-osx-ghc-9.4.8/ (or similar)
     On Windows: Does not exist (DLLs are in mingw/bin/)
     """
+    import pathlib
+    Path = pathlib.Path
     ghc_lib_dir = Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib"
     if not ghc_lib_dir.is_dir():
         return ""
@@ -107,18 +111,21 @@ def _find_platform_lib_subdir() -> str:
 
 def _sterilize_environment() -> dict:
     """Create a sterilized subprocess environment with proper library paths."""
+    import tempfile
+    import pathlib
+    Path = pathlib.Path
     global _HOME_ORIGINAL
     env = {k: v for k, v in os.environ.items() if k not in HASKELL_POLLUTION_VARS}
 
     _HOME_ORIGINAL = os.environ.get("HOME", os.environ.get("USERPROFILE", ""))
 
-    def _get_home_path() -> Path:
+    def _get_home_path() -> 'pathlib.Path':
         try:
             return Path.home() / ".ghc-compiler-python-home"
         except RuntimeError:
             return Path()
 
-    def _try_mkdir(path: Path) -> Optional[Path]:
+    def _try_mkdir(path: 'pathlib.Path') -> Optional['pathlib.Path']:
         try:
             if str(path) != ".":
                 path.mkdir(parents=True, exist_ok=True)
@@ -185,10 +192,17 @@ class BaseResource:
         super().__init_subclass__(**kwargs)
         cls.registry.append(cls)
 
+    _locate_cache = {}
+
     @classmethod
-    @functools.lru_cache(maxsize=None)
-    def locate(cls, base: str = sys.prefix, version: str = GHC_VERSION) -> List[Path]:
+    def locate(cls, base: str = sys.prefix, version: str = GHC_VERSION) -> List['pathlib.Path']:
         """Locate all instances of this resource relative to a base directory."""
+        cache_key = (cls, base, version)
+        if cache_key in BaseResource._locate_cache:
+            return BaseResource._locate_cache[cache_key]
+
+        import pathlib
+        Path = pathlib.Path
         base_path = Path(base)
         candidates = cls.get_candidates(base_path, version)
 
@@ -223,10 +237,11 @@ class BaseResource:
                         p = Path(root) / cls.name
                         if cls.validate(p):
                             found.append(p)
+        BaseResource._locate_cache[cache_key] = found
         return found
 
     @classmethod
-    def get_candidates(cls, base: Path, version: str) -> List[Path]:
+    def get_candidates(cls, base: Path, version: str) -> List['pathlib.Path']:
         return []
 
     @classmethod
@@ -241,7 +256,7 @@ class BaseResource:
         return []
 
     @classmethod
-    def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
+    def patch_build_time(cls, path: 'pathlib.Path', version: str, placeholder: str) -> int:
         """Patch the resource for relocatability during build."""
         return 0
 
@@ -250,7 +265,7 @@ class SettingsResource(BaseResource):
     name = "settings"
 
     @classmethod
-    def get_candidates(cls, base: Path, version: str) -> List[Path]:
+    def get_candidates(cls, base: Path, version: str) -> List['pathlib.Path']:
         return [
             base / "lib" / f"ghc-{version}" / "lib" / "settings",
             base / "lib" / "settings",
@@ -266,7 +281,8 @@ class SettingsResource(BaseResource):
             return False
 
     @classmethod
-    def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
+    def patch_build_time(cls, path: 'pathlib.Path', version: str, placeholder: str) -> int:
+        import re
         try:
             content = path.read_text(encoding="utf-8", errors="replace")
             # 🧪 Alchemist: Combine regex patterns into a single pass using alternation
@@ -294,7 +310,7 @@ class PackageDBResource(BaseResource):
     is_dir = True
 
     @classmethod
-    def get_candidates(cls, base: Path, version: str) -> List[Path]:
+    def get_candidates(cls, base: Path, version: str) -> List['pathlib.Path']:
         return [
             base / "lib" / f"ghc-{version}" / "lib" / "package.conf.d",
             base / "lib" / "package.conf.d",
@@ -316,7 +332,8 @@ class PackageDBResource(BaseResource):
             return []
 
     @classmethod
-    def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
+    def patch_build_time(cls, path: 'pathlib.Path', version: str, placeholder: str) -> int:
+        import re
         patched_count = 0
         for conf_file in path.glob("*.conf"):
             try:
@@ -353,7 +370,7 @@ class BinWrappersResource(BaseResource):
     is_dir = True
 
     @classmethod
-    def get_candidates(cls, base: Path, version: str) -> List[Path]:
+    def get_candidates(cls, base: Path, version: str) -> List['pathlib.Path']:
         return [
             base / ("Scripts" if sys.platform == "win32" else "bin"),
             base / "lib" / f"ghc-{version}" / "bin",
@@ -376,7 +393,8 @@ class BinWrappersResource(BaseResource):
             return []
 
     @classmethod
-    def patch_build_time(cls, path: Path, version: str, placeholder: str) -> int:
+    def patch_build_time(cls, path: 'pathlib.Path', version: str, placeholder: str) -> int:
+        import re
         patched = 0
         for script in path.iterdir():
             if not script.is_file() or script.is_symlink() or script.name.endswith(".exe") or not _is_text_file(script):
@@ -417,12 +435,20 @@ def _resolve_runtime_paths(env: dict) -> None:
 
     # ⚡ Bolt: Fast-path to avoid scanning and patching on every invocation.
     # If the marker file exists and contains the current prefix, we are already patched.
-    marker_file = Path(sys.prefix) / "lib" / f".ghc_patched_{GHC_VERSION}.txt"
+    marker_file_path = os.path.join(sys.prefix, "lib", f".ghc_patched_{GHC_VERSION}.txt")
     try:
-        if marker_file.is_file() and marker_file.read_text(encoding="utf-8") == prefix_clean:
-            return
+        if os.path.isfile(marker_file_path):
+            with open(marker_file_path, "r", encoding="utf-8") as f:
+                if f.read() == prefix_clean:
+                    return
     except OSError:
         pass
+
+    import pathlib
+    import re
+    import mmap
+    Path = pathlib.Path
+    marker_file = Path(marker_file_path)
 
     # 🐍 Ouroboros: Iterate over the BaseResource registry to locate all path targets dynamically
     # 🧪 Alchemist: List comprehension condenses nested loops for dynamic target extraction
@@ -488,6 +514,7 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
             pkg_db_dir: Path to the package.conf.d directory.
             env: The sterilized environment dict with proper LD_LIBRARY_PATH set.
     """
+    import subprocess
     ghc_pkg = _try_resolve_binary("ghc-pkg")
     if not ghc_pkg:
         return  # Can't recache without ghc-pkg
@@ -509,6 +536,7 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
 
 def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoReturn:
     """Generic subprocess proxy for bundled Haskell tooling."""
+    import subprocess
     _validate_c_linker()
     env = _sterilize_environment()
     _resolve_runtime_paths(env)
