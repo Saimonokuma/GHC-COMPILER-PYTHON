@@ -396,3 +396,81 @@ class TestDownloadFailures:
         assert bootstrap.platform_tag() in hint
         assert hint.rstrip().endswith(".whl")
         assert f"/v{bootstrap.RELEASE_VERSION}/" in hint, "asset URLs are tag-scoped"
+
+
+class TestCacheInventory:
+    """The cache reporter.
+
+    Deliberately reporting-only. These tests assert that as a property, not as
+    a comment: a pruner that misfires destroys user data on a machine nobody
+    can inspect, so until the policy is settled the code must be incapable of
+    deleting anything.
+    """
+
+    def _make(self, tmp_path, version, platform="win_amd64", complete=True,
+              payload=b"x" * 2048):
+        d = tmp_path / "cache" / version / platform
+        d.mkdir(parents=True)
+        (d / "bin").mkdir()
+        (d / "bin" / "ghc").write_bytes(payload)
+        if complete:
+            (d / ".complete").write_text("x", encoding="utf-8")
+        return d
+
+    def test_empty_cache_reports_empty_and_does_not_raise(self):
+        assert bootstrap.cache_entries() == []
+        assert "empty" in bootstrap.cache_report()
+
+    def test_lists_every_version_present(self, tmp_path):
+        self._make(tmp_path, "9.4.8")
+        self._make(tmp_path, "9.4.9")
+        self._make(tmp_path, bootstrap.RELEASE_VERSION)
+        versions = {e.version for e in bootstrap.cache_entries()}
+        assert versions == {"9.4.8", "9.4.9", bootstrap.RELEASE_VERSION}
+
+    def test_current_release_is_distinguished_from_superseded(self, tmp_path):
+        self._make(tmp_path, "9.4.8")
+        self._make(tmp_path, bootstrap.RELEASE_VERSION)
+        by_version = {e.version: e for e in bootstrap.cache_entries()}
+        assert by_version[bootstrap.RELEASE_VERSION].is_current is True
+        assert by_version["9.4.8"].is_current is False
+
+    def test_incomplete_entry_is_flagged(self, tmp_path):
+        self._make(tmp_path, "9.4.8", complete=False)
+        entry = bootstrap.cache_entries()[0]
+        assert entry.complete is False
+        assert "INCOMPLETE" in bootstrap.cache_report()
+
+    def test_size_is_measured_not_guessed(self, tmp_path):
+        self._make(tmp_path, "9.4.8", payload=b"y" * 4096)
+        entry = bootstrap.cache_entries()[0]
+        # 4096 payload + the .complete stamp; assert the payload dominates
+        # rather than pinning an exact total that stamp changes would break.
+        assert entry.bytes >= 4096
+        assert entry.bytes < 4096 + 1024
+
+    def test_reporting_never_deletes(self, tmp_path):
+        """The whole contract, asserted rather than trusted."""
+        d = self._make(tmp_path, "9.4.8")
+        before = sorted(p.name for p in d.rglob("*"))
+        bootstrap.cache_entries()
+        bootstrap.cache_report()
+        bootstrap._main(["--cache-info"])
+        after = sorted(p.name for p in d.rglob("*"))
+        assert before == after, "the cache reporter modified the cache"
+        assert d.is_dir()
+
+    def test_no_deletion_primitive_is_reachable_from_the_cli(self):
+        """A future maintainer adding `--prune` must also revisit these tests.
+
+        Guards the stated policy at the level of the source: the CLI accepts
+        exactly one flag, and it is read-only.
+        """
+        assert bootstrap._main(["--cache-info"]) == 0
+        assert bootstrap._main(["--help"]) == 0
+        assert bootstrap._main(["--prune"]) == 2
+        assert bootstrap._main(["--delete", "9.4.8"]) == 2
+
+    def test_report_names_the_root_so_a_user_can_find_it(self, tmp_path):
+        self._make(tmp_path, "9.4.8")
+        assert str(bootstrap.cache_root()) in bootstrap.cache_report()
