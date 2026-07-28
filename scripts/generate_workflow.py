@@ -857,6 +857,35 @@ jobs:
             exit 1
           fi
           echo "zero sorry confirmed"
+
+      - name: Assert No native_decide
+        working-directory: lean
+        run: |
+          # `native_decide` closes a goal by trusting the compiled binary
+          # instead of the kernel. It is not a proof of the same kind as
+          # everything else in this directory, so it may not appear silently.
+          if grep -rn --include="*.lean" 'native_decide' Proofs/; then
+            echo "::error::native_decide bypasses the kernel -- these are not kernel-checked proofs"
+            exit 1
+          fi
+          echo "no native_decide confirmed"
+
+      - name: Cross-check The Proofs Against The Shipped Code
+        working-directory: lean
+        run: |
+          # A proof about a model proves nothing about a program unless
+          # something binds the two. This emits the corpus and the model's
+          # verdicts from Lean, materialises each modelled toolchain root on
+          # disk, runs the REAL wrapper._bundled_c_linker over them, and diffs.
+          # It also reads the _execute_tool ordering out of the source, which
+          # is the second half of the defect Linker.lean proves.
+          #
+          # Verified red against four deliberate mutations of wrapper.py:
+          # catalogue entry removed, ordering reverted, _validate_c_linker
+          # losing its root parameter, and _bundled_c_linker never finding
+          # anything. A cross-check nobody has broken on purpose is decoration.
+          lake env lean crosscheck/Corpus.lean > verdicts.txt
+          python3 crosscheck/crosscheck.py .. verdicts.txt
 """
 
 
