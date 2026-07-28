@@ -30,7 +30,7 @@ Only if you need an **offline or air-gapped** install:
 
 | You are on | Download | Size |
 |:--|:--|--:|
-| 🐧 **Linux** (glibc ≥ 2.39) | `ghc_compiler_python-9.4.8-py3-none-manylinux_2_39_x86_64.whl` | ~370 MB |
+| 🐧 **Linux** (glibc ≥ 2.38) | `ghc_compiler_python-9.4.8-py3-none-manylinux_2_38_x86_64.manylinux_2_39_x86_64.whl` | ~188 MB |
 | 🍎 **macOS** (Apple Silicon) | `ghc_compiler_python-9.4.8-py3-none-macosx_11_0_arm64.whl` | ~191 MB |
 | 🪟 **Windows** (x86_64) | `ghc_compiler_python-9.4.8-py3-none-win_amd64.whl` | ~350 MB |
 
@@ -40,7 +40,7 @@ pip install ./ghc_compiler_python-9.4.8-py3-none-<your-platform>.whl
 
 These bundle the whole toolchain and **never contact the network**.
 
-> On a Linux older than Ubuntu 24.04, use `pip install ghc-compiler-python` instead. GHC is built on glibc 2.39 and the offline wheel says so honestly rather than installing and failing later.
+> On a Linux with glibc older than 2.38, use `pip install ghc-compiler-python` instead. auditwheel derives that floor from the versioned symbols the binaries actually reference, and the wheel states it honestly rather than installing and failing later.
 
 <details>
 <summary><b>🔍 Toolchain payloads (advanced)</b></summary>

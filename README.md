@@ -47,12 +47,12 @@ The PyPI package is **~17 KiB**. It fetches the toolchain for your platform on f
 Self-contained wheels with the toolchain already bundled live on the [releases page](https://github.com/Saimonokuma/GHC-COMPILER-PYTHON/releases). These never contact the network:
 
 ```bash
-pip install ghc_compiler_python-9.4.8-py3-none-manylinux_2_39_x86_64.whl   # Linux
+pip install ghc_compiler_python-9.4.8-py3-none-manylinux_2_38_x86_64.manylinux_2_39_x86_64.whl   # Linux
 pip install ghc_compiler_python-9.4.8-py3-none-macosx_11_0_arm64.whl       # macOS
 pip install ghc_compiler_python-9.4.8-py3-none-win_amd64.whl               # Windows
 ```
 
-> The Linux offline wheel is tagged `manylinux_2_39` because GHC is built on Ubuntu 24.04 and genuinely requires glibc 2.39 — a lower tag would install where the toolchain then fails at runtime. On older distributions use the thin wheel; its payload is a plain tarball and carries no such constraint.
+> The Linux offline wheel carries the tags `manylinux_2_38` **and** `manylinux_2_39`, so it installs on glibc 2.38 or newer. That floor is not chosen — auditwheel derives it by inspecting the versioned symbols the binaries actually reference. A tag lower than the binaries support would install on systems where the toolchain then fails at runtime, so the build states what is true rather than what would be convenient. On older distributions use the thin wheel; its payload is a plain tarball and carries no such constraint.
 
 ### 🔧 Requirements
 
