@@ -11,7 +11,7 @@
 [![Nova-Violet Role](https://img.shields.io/badge/Nova--Violet-Role-9b59b6?style=for-the-badge)](https://github.com/Nova-Violet-Role)
 [![License](https://img.shields.io/badge/License-MIT-764ba2?style=for-the-badge)](LICENSE)
 
-[![GHC](https://img.shields.io/badge/GHC-9.4.8-5e5086?style=flat-square&logo=haskell&logoColor=white)](https://www.haskell.org/ghc/)
+[![GHC](https://img.shields.io/badge/GHC-9.6.1-5e5086?style=flat-square&logo=haskell&logoColor=white)](https://www.haskell.org/ghc/)
 [![Cabal](https://img.shields.io/badge/Cabal-3.10.3.0-5e5086?style=flat-square)](https://www.haskell.org/cabal/)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![Proved in Lean 4](https://img.shields.io/badge/Proved%20in-Lean%204-2C3E50?style=flat-square)](lean/)
@@ -28,7 +28,7 @@ A Haskell toolchain is normally installed by its own ecosystem installer, which 
 
 - ✅ `pip install ghc-compiler-python`
 - ✅ Windows · macOS · Linux
-- ✅ Full GHC 9.4.8 compiler
+- ✅ Full GHC 9.6.1 compiler
 - ✅ Complete Cabal 3.10.3.0 support
 - ✅ Any AI with Python execution can now compile Haskell
 
@@ -36,16 +36,20 @@ A Haskell toolchain is normally installed by its own ecosystem installer, which 
 
 ## 🔢 Two version numbers, and what each one means
 
-This trips people up, so it is stated once, plainly:
-
-| | example | what it is |
+| | 9.6.1 | what it is |
 |---|---|---|
-| **package version** | `9.5.0` | *this project* — the wheel you `pip install`. Ours to bump. |
-| **compiler version** | `9.4.8` | *GHC itself* — the Haskell compiler you get. Not ours to invent. |
+| **package version** | `9.6.1` | *this project* — the wheel you `pip install`. Ours to bump. |
+| **compiler version** | `9.6.1` | *GHC itself* — the Haskell compiler you get. Not ours to invent. |
 
-`ghc-wrapper --numeric-version` answers **9.4.8**, because you are asking it which Haskell compiler you have.
+**In this release they agree, and that is the normal, healthy state.** `ghc-wrapper --numeric-version` answers `9.6.1` because that is genuinely the compiler inside.
 
-The two used to be one number, which broke the moment they had to disagree. The 9.4.8 wheel could not compile on Windows, PyPI does not permit replacing a published version, and the last GHC in the 9.4 line *is* 9.4.8 — so shipping a fix and claiming a new compiler were the same edit. They are now separate, and `lean/Proofs/Payload.lean` proves they can never be confused again: a package bump renames every asset and changes nothing you are told about the compiler.
+They are still two separate constants, and that matters. In 9.4.9 and 9.5.0 they *disagreed* — those releases shipped GHC 9.4.8 under a higher package number, because the 9.4.8 wheel could not compile on Windows, PyPI does not permit replacing a published version, and there is no GHC 9.4.9 to ship. One constant would have made "publish a fixed wheel" and "claim a compiler that does not exist" the same edit.
+
+So the rule is not *they must differ* and not *they must match* — it is that **each must be free to move without dragging the other**. `lean/Proofs/Payload.lean` proves exactly that, over any pair of versions:
+
+- `download_ignores_the_compiler_axis` — changing the compiler renames nothing you download
+- `report_ignores_the_release_axis` — changing the package claims no new compiler
+- `resolves_iff_claim_matches_artifact` — **the compiler we name is the compiler we ship**, because the toolchain path is built from the claimed version. Naming a different one is not a white lie, it is an install that cannot resolve.
 
 ---
 
@@ -72,9 +76,9 @@ The PyPI package is **~17 KiB**. It fetches the toolchain for your platform on f
 Self-contained wheels with the toolchain already bundled live on the [releases page](https://github.com/Saimonokuma/GHC-COMPILER-PYTHON/releases). These never contact the network:
 
 ```bash
-pip install ghc_compiler_python-9.5.0-py3-none-manylinux_2_38_x86_64.manylinux_2_39_x86_64.whl   # Linux
-pip install ghc_compiler_python-9.5.0-py3-none-macosx_11_0_arm64.whl       # macOS
-pip install ghc_compiler_python-9.5.0-py3-none-win_amd64.whl               # Windows
+pip install ghc_compiler_python-9.6.1-py3-none-manylinux_2_38_x86_64.manylinux_2_39_x86_64.whl   # Linux
+pip install ghc_compiler_python-9.6.1-py3-none-macosx_11_0_arm64.whl       # macOS
+pip install ghc_compiler_python-9.6.1-py3-none-win_amd64.whl               # Windows
 ```
 
 > The Linux offline wheel carries the tags `manylinux_2_38` **and** `manylinux_2_39`, so it installs on glibc 2.38 or newer. That floor is not chosen — auditwheel derives it by inspecting the versioned symbols the binaries actually reference. A tag lower than the binaries support would install on systems where the toolchain then fails at runtime, so the build states what is true rather than what would be convenient. On older distributions use the thin wheel; its payload is a plain tarball and carries no such constraint.
@@ -109,7 +113,7 @@ python -m ghc_compiler_python.bootstrap --cache-info
 cache root: C:\Users\you\AppData\Local\ghc-compiler-python\Cache
   9.4.8/win_amd64                 1.8 GiB  [superseded]
   9.4.9/win_amd64                 1.8 GiB  [superseded]
-  9.5.0/win_amd64                 1.8 GiB  [current]
+  9.6.1/win_amd64                 1.8 GiB  [current]
   --------------------------------------
   total                           5.4 GiB
   superseded (not deleted)        3.5 GiB
@@ -134,7 +138,7 @@ cabal-wrapper build
 
 Wrappers sterilize the environment on every call, so a global `~/.ghc/` or `GHC_PACKAGE_PATH` cannot leak into your build.
 
-Resolution is **hermetic**: a GHC already on your PATH is deliberately *ignored*, so you always get the pinned 9.4.8 rather than whatever the host happens to have.
+Resolution is **hermetic**: a GHC already on your PATH is deliberately *ignored*, so you always get the pinned 9.6.1 rather than whatever the host happens to have.
 
 ---
 
@@ -142,11 +146,11 @@ Resolution is **hermetic**: a GHC already on your PATH is deliberately *ignored*
 
 | OS | Architecture | Toolchain |
 |:--|:--|:--|
-| 🐧 **Linux** | x86_64 | GHC 9.4.8 · Cabal 3.10.3.0 |
-| 🍎 **macOS** | ARM64 (Apple Silicon) | GHC 9.4.8 · Cabal 3.10.3.0 |
-| 🪟 **Windows** | x86_64 | GHC 9.4.8 · Cabal 3.10.3.0 |
+| 🐧 **Linux** | x86_64 | GHC 9.6.1 · Cabal 3.10.3.0 |
+| 🍎 **macOS** | ARM64 (Apple Silicon) | GHC 9.6.1 · Cabal 3.10.3.0 |
+| 🪟 **Windows** | x86_64 | GHC 9.6.1 · Cabal 3.10.3.0 |
 
-Every release is proven on all three: each platform installs the wheel, compiles a Haskell program, **runs** it, and asserts its output — and checks the reported compiler is the pinned 9.4.8 — before anything is published. Builds ≠ installs ≠ compiles ≠ delivered.
+Every release is proven on all three: each platform installs the wheel, compiles a Haskell program, **runs** it, and asserts its output — and checks the reported compiler is the pinned 9.6.1 — before anything is published. Builds ≠ installs ≠ compiles ≠ delivered.
 
 ---
 
@@ -166,7 +170,9 @@ theorem no_escape_without_dotdot : ∀ member base, ¬ member.contains ".." → 
 
 ## 📊 What is in the payload
 
-Measured from the real 9.4.8 distribution — 9,870 entries, 2,017 MB extracted:
+Measured on the GHC 9.4.8 distribution — 9,870 entries, 2,017 MB extracted. The
+shape is what matters and it is stable across releases; the absolute figures will
+be re-measured for 9.6.1 rather than quietly carried over:
 
 | Component | Size | Share | Kept |
 |:--|--:|--:|:--|

@@ -39,33 +39,58 @@ class TestPlatformIdentity:
         assert bootstrap.RELEASE_VERSION in name
         assert bootstrap.platform_tag() in name
 
-    def test_payload_name_uses_the_release_axis_not_the_compiler_axis(self):
-        """Asset names are addressed by the release, never by the compiler.
+    def test_payload_name_is_built_from_the_release_axis(self):
+        """Asset names are addressed by the release constant.
 
-        These were one constant through 9.4.8, which read fine while the two
-        agreed. When the 9.4.8 wheel turned out to be unusable on Windows and
-        PyPI refused to take a replacement, that single constant made
-        "publish a fixed wheel" and "rename every payload asset" the same
-        edit. This test fails if they are ever merged back.
+        CORRECTED at 9.6.1. This test used to open with
+
+            assert bootstrap.RELEASE_VERSION != bootstrap.GHC_VERSION
+
+        and then assert that GHC_VERSION was absent from the name. Both were
+        wrong, in the same way the Lean spec was wrong: they took a fact that
+        happened to hold for 9.4.9 and 9.5.0 -- a package version ahead of its
+        compiler -- and treated it as an invariant. When the compiler was
+        upgraded and both axes honestly named 9.6.1, this test failed on a
+        release that was entirely correct.
+
+        What actually matters is that the name is *derived from* the release
+        constant, so it tracks that constant wherever it goes. Asserted by
+        moving it, which no coincidence of equal version strings can satisfy.
         """
-        assert bootstrap.RELEASE_VERSION != bootstrap.GHC_VERSION, (
-            "this test is vacuous while the two versions agree -- give it a "
-            "release whose version differs from the compiler's"
-        )
-        name = bootstrap.payload_name()
-        assert bootstrap.RELEASE_VERSION in name
-        assert bootstrap.GHC_VERSION not in name
+        assert bootstrap.RELEASE_VERSION in bootstrap.payload_name()
+        with patch.object(bootstrap, "RELEASE_VERSION", "0.0.0-probe"):
+            assert "0.0.0-probe" in bootstrap.payload_name(), (
+                "payload_name ignored RELEASE_VERSION; asset names are no "
+                "longer addressed by the release axis"
+            )
 
     def test_cache_is_keyed_by_release_so_a_new_release_never_reuses_a_payload(self):
         """A payload rebuilt under a new tag is not byte-identical to the old
-        one, so its digest differs. If the cache were keyed by the compiler
-        version, 9.4.9 would find 9.4.8's extracted tree already stamped
-        `.complete` and skip the download entirely -- serving the payload
-        whose wrapper this release exists to replace.
+        one, so its digest differs. If the cache were keyed by anything that
+        does not move with the release, a new release would find the previous
+        tree already stamped `.complete` and skip the download entirely --
+        with no digest check, because nothing would be downloaded to check.
+
+        Also corrected at 9.6.1: asserted by moving the constant rather than by
+        requiring the two version strings to differ.
         """
-        assert bootstrap.RELEASE_VERSION != bootstrap.GHC_VERSION
         assert bootstrap.payload_root().parent.name == bootstrap.RELEASE_VERSION
-        assert bootstrap.payload_root().parent.name != bootstrap.GHC_VERSION
+        with patch.object(bootstrap, "RELEASE_VERSION", "0.0.0-probe"):
+            assert bootstrap.payload_root().parent.name == "0.0.0-probe", (
+                "the cache directory did not follow RELEASE_VERSION"
+            )
+
+    def test_compiler_axis_is_reported_independently_of_the_release(self):
+        """Moving the release constant must not change what compiler we claim.
+
+        The mirror of the test above, and the pair together is what "two
+        independent axes" means operationally. Proved in general in
+        lean/Proofs/Payload.lean as report_ignores_the_release_axis; asserted
+        here against the real module.
+        """
+        before = bootstrap.GHC_VERSION
+        with patch.object(bootstrap, "RELEASE_VERSION", "0.0.0-probe"):
+            assert bootstrap.GHC_VERSION == before
 
     def test_every_platform_ships_the_same_archive_format(self):
         """One format everywhere, as of 9.5.0.

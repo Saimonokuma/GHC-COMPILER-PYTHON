@@ -56,14 +56,24 @@ PYTHON_VERSION = "3.13"
 
 # The compiler inside the payload. Drives the `ghc-wrapper --numeric-version`
 # assertions, which must keep answering for the compiler.
-GHC_VERSION = "9.4.8"
+GHC_VERSION = "9.6.1"
 
 # The distribution coordinate: git tag, release, payload asset names, wheel
-# version. Diverged from GHC_VERSION at 9.4.9, because the 9.4.8 wheel on PyPI
-# is unusable on Windows and PyPI does not allow replacing a version. Keep the
-# two apart: renaming a payload asset and claiming a new compiler release must
-# never be the same edit again.
-RELEASE_VERSION = "9.5.0"
+# version.
+#
+# It diverged from GHC_VERSION at 9.4.9 -- the 9.4.8 wheel on PyPI was unusable
+# on Windows and PyPI does not allow replacing a published version, so a fix had
+# to carry a new distribution number while the compiler stayed put. At 9.6.1 the
+# two COINCIDE again, because the compiler itself was upgraded and both axes
+# honestly name it.
+#
+# Coinciding is not a regression and must not be "fixed". The point of two
+# constants is that they CAN move independently, not that they must differ; an
+# earlier version of the Lean spec asserted they always differ and would have
+# refused to compile on exactly this release. What must never happen again is
+# one constant, where renaming a payload asset and claiming a new compiler
+# release are the same edit.
+RELEASE_VERSION = "9.6.1"
 
 
 # Removes every system C compiler from PATH for the remainder of ONE step.
@@ -243,10 +253,24 @@ echo "C:\\msys64\\mingw64\\bin" | Out-File -FilePath $env:GITHUB_PATH -Append"""
 
     add_step(name="Install Python Build Dependencies", run="python -m pip install --upgrade pip\npip install build hatchling wheel")
     add_step(name="Fetch and Verify GHC/Cabal Binaries", shell="bash", run="bash scripts/fetch_binaries.sh")
-    add_step(name="Verify Shared Libraries", shell="bash", run="""echo "=== Checking for required .so files ==="
+    # NOTE: this run body is an f-string, because the lib directory is named
+    # after the compiler version. It was previously a plain string with 9.4.8
+    # baked in, which meant that after any compiler upgrade the `ls` pointed at
+    # a directory that no longer existed, printed nothing, and passed -- a
+    # diagnostic that silently stops diagnosing is worse than none.
+    #
+    # Every literal brace below must therefore be doubled.
+    add_step(name="Verify Shared Libraries", shell="bash", run=f"""echo "=== Checking for required .so files ==="
 find ghc-bindist -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" -o -name "libgmp*" || true
 echo "=== Full lib directory ==="
-ls -la ghc-bindist/lib/ghc-9.4.8/*.so* 2>/dev/null || true
+ls -la ghc-bindist/lib/ghc-{GHC_VERSION}/*.so* 2>/dev/null || true
+
+# The lib directory is named after the compiler, so its absence means the
+# bindist that was unpacked is not the one this pipeline claims to ship.
+if [ ! -d "ghc-bindist/lib/ghc-{GHC_VERSION}" ]; then
+    echo "::error::ghc-bindist/lib/ghc-{GHC_VERSION} is missing -- the payload does not contain the compiler this build claims"
+    exit 1
+fi
 
 # Check if internal libraries actually extracted properly
 if [ -z "$(find ghc-bindist -name "libtinfo*.so.*")" ]; then

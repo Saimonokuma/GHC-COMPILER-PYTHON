@@ -62,7 +62,7 @@ jobs:
         run: |
           # These are two axes and this asserts the one that matters to a user
           # writing Haskell. The distribution version moved to 9.4.9 to ship a
-          # packaging fix; the compiler is still GHC 9.4.8 and has to say so.
+          # packaging fix; the compiler is still GHC 9.6.1 and has to say so.
           if [ "$RUNNER_OS" = "Windows" ]; then
             KEEP=""
             IFS=':' read -ra PARTS <<< "$PATH"
@@ -88,8 +88,8 @@ jobs:
           fi
           REPORTED=$(ghc-wrapper --numeric-version)
           echo "ghc-wrapper --numeric-version -> $REPORTED"
-          if [ "$REPORTED" != "9.4.8" ]; then
-            echo "::error::expected GHC 9.4.8, got '$REPORTED'"
+          if [ "$REPORTED" != "9.6.1" ]; then
+            echo "::error::expected GHC 9.6.1, got '$REPORTED'"
             exit 1
           fi
 

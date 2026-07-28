@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any, List, NoReturn, Optional, Type
 
 
-GHC_VERSION = "9.4.8"
+GHC_VERSION = "9.6.1"
 CABAL_VERSION = "3.10.3.0"
 
 HASKELL_POLLUTION_VARS = frozenset(

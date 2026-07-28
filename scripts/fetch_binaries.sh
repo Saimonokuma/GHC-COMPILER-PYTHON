@@ -16,7 +16,7 @@ trap '' PIPE
 # Handle SIGINT (Ctrl+C)
 trap 'echo "Interrupted"; exit 130' INT
 
-GHC_VERSION="9.4.8"
+GHC_VERSION="9.6.1"
 CABAL_VERSION="3.10.3.0"
 STAGING_DIR="ghc-bindist"
 BUILD_DIR="build_artifacts"

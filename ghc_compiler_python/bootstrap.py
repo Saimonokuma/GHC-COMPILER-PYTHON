@@ -41,7 +41,7 @@ from typing import List, NamedTuple, NoReturn, Optional
 
 #: The compiler actually inside the payload. This is GHC's own version and it
 #: moves only when the bindist does.
-GHC_VERSION = "9.4.8"
+GHC_VERSION = "9.6.1"
 
 #: The distribution coordinate: the git tag, the release, the payload asset
 #: names, the cache directory, and the version on PyPI.
@@ -56,7 +56,7 @@ GHC_VERSION = "9.4.8"
 #: They are now separate axes. The package version is 9.4.9; the compiler it
 #: installs is, and reports itself as, 9.4.8. `ghc-wrapper --numeric-version`
 #: answers for the compiler, never for the package.
-RELEASE_VERSION = "9.5.0"
+RELEASE_VERSION = "9.6.1"
 
 #: Release assets are addressed by tag, so a wheel always fetches the payload
 #: built alongside it rather than whatever happens to be newest.

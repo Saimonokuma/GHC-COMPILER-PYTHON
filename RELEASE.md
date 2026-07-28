@@ -1,8 +1,8 @@
 <div align="center">
 
-# ⚡ GHC Compiler Python · v9.5.0
+# ⚡ GHC Compiler Python · v9.6.1
 
-**GHC 9.4.8 · Cabal 3.10.3.0 · Windows · macOS · Linux**
+**GHC 9.6.1 · Cabal 3.10.3.0 · Windows · macOS · Linux**
 
 *The first pip-installable Glasgow Haskell Compiler*
 
@@ -14,6 +14,25 @@
 
 ---
 
+> ### 🚀 New in 9.6.1: the compiler itself is upgraded — GHC 9.4.8 → 9.6.1
+>
+> Every release up to 9.5.0 shipped GHC **9.4.8**, the last of the 9.4 line. 9.6.1 ships **GHC 9.6.1** on all three platforms.
+>
+> **The two version numbers now agree, and that is the point.** 9.4.9 and 9.5.0 carried a package number ahead of their compiler, because the 9.4.8 wheel was broken on Windows and PyPI does not allow replacing a published version — there was no GHC 9.4.9 to ship, so the axes had to diverge. With the compiler genuinely upgraded, both axes name 9.6.1 honestly.
+>
+> Coinciding is not a regression, and the spec had to learn that the hard way: `Proofs/Payload.lean` previously asserted `releaseVersion ≠ ghcVersion` and **would have refused to compile on this release**. That theorem encoded a fact about two past releases as if it were an invariant. It is replaced by properties quantified over any pair of versions, which hold whether the axes agree or not.
+>
+> **And a new class of theorem, prompted by a request to simply edit the claimed version:**
+>
+> ```lean
+> theorem resolves_iff_claim_matches_artifact (b : Build) :
+>     resolves b ↔ b.claimed = b.fetched
+> ```
+>
+> `wrapper.py` builds the toolchain path out of the version it claims — `lib/ghc-<GHC_VERSION>/`. So naming a compiler we did not ship is not a cosmetic dishonesty with an ethics argument attached; it points the launcher at a directory that does not exist. `crosscheck.py` phase 9 now reads `fetch_binaries.sh` and fails if the version we claim is not the version we download.
+>
+> ---
+>
 > ### 📉 New in 9.5.0: the Windows download is 148 MB smaller
 >
 > The Windows payload shipped as a zip through 9.4.9 and now ships as `.tar.xz`, like the other two. Measured on the real toolchain — 1814 MB, 8311 files:
@@ -68,12 +87,12 @@ Only if you need an **offline or air-gapped** install:
 
 | You are on | Download | Size |
 |:--|:--|--:|
-| 🐧 **Linux** (glibc ≥ 2.38) | `ghc_compiler_python-9.5.0-py3-none-manylinux_2_38_x86_64.manylinux_2_39_x86_64.whl` | ~188 MB |
-| 🍎 **macOS** (Apple Silicon) | `ghc_compiler_python-9.5.0-py3-none-macosx_11_0_arm64.whl` | ~191 MB |
-| 🪟 **Windows** (x86_64) | `ghc_compiler_python-9.5.0-py3-none-win_amd64.whl` | ~403 MB |
+| 🐧 **Linux** (glibc ≥ 2.38) | `ghc_compiler_python-9.6.1-py3-none-manylinux_2_38_x86_64.manylinux_2_39_x86_64.whl` | ~188 MB |
+| 🍎 **macOS** (Apple Silicon) | `ghc_compiler_python-9.6.1-py3-none-macosx_11_0_arm64.whl` | ~191 MB |
+| 🪟 **Windows** (x86_64) | `ghc_compiler_python-9.6.1-py3-none-win_amd64.whl` | ~403 MB |
 
 ```bash
-pip install ./ghc_compiler_python-9.5.0-py3-none-<your-platform>.whl
+pip install ./ghc_compiler_python-9.6.1-py3-none-<your-platform>.whl
 ```
 
 These bundle the whole toolchain and **never contact the network**.
@@ -102,7 +121,7 @@ Each is published with a `.sha256` companion. The digests are embedded in the th
 Every asset here was produced by the same workflow run that proved, **on each operating system separately**:
 
 1. the wheel installs
-2. `ghc-wrapper --numeric-version` reports **9.4.8** — our pinned compiler, not one that happened to be on the runner
+2. `ghc-wrapper --numeric-version` reports **9.6.1** — our pinned compiler, not one that happened to be on the runner
 3. a Haskell program compiles
 4. the compiled binary **runs**
 5. its output matches exactly

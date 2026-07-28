@@ -200,20 +200,54 @@ for label, axis in (("release", release_axis), ("compiler", compiler_axis)):
     else:
         print(f"ok   {label} axis agrees across {len(axis)} files: {values.pop()}")
 
-# And the two axes must not have quietly become the same number again, which
-# would make every theorem above vacuously true rather than false.
-checks += 1
 r = release_axis["bootstrap.RELEASE_VERSION"]
 g = compiler_axis["bootstrap.GHC_VERSION"]
+
+# An earlier revision failed here when the two axes were EQUAL, on the theory
+# that equality made `versions_differ` false and every theorem resting on it
+# vacuous. That check was wrong, and it would have blocked a legitimate
+# release: when the bundled compiler is itself upgraded, both axes naming that
+# compiler is the honest outcome, not a regression.
+#
+# The Lean side was corrected the same way -- the invariants are now the
+# independence theorems, which hold whether or not the axes agree. So equality
+# is reported, not punished.
+checks += 1
 if r is None or g is None:
     fails += 1
     print("FAIL could not read both axes")
 elif r == g:
-    fails += 1
-    print(f"FAIL both axes are {r} -- versions_differ is now false and every "
-          f"theorem resting on it is vacuous")
+    print(f"ok   axes coincide at {r} (a compiler upgrade; permitted)")
 else:
-    print(f"ok   axes are distinct: release={r} compiler={g}")
+    print(f"ok   axes are independent: release={r} compiler={g}")
+
+# Phase 9: THE COMPILER WE CLAIM IS THE COMPILER WE DOWNLOAD.
+#
+# This is the check that matters most, and it did not exist until someone asked
+# for the claimed version to be edited to a number no GHC release carries.
+# Proofs/Payload.lean proves that claiming a compiler other than the one
+# fetched cannot resolve -- `wrapper.py` builds the toolchain path out of the
+# version it claims (lib/ghc-<GHC_VERSION>/), so a mismatch is a broken install
+# and not merely a false statement. That theorem is about the model; this binds
+# it to the shell script that does the downloading.
+checks += 1
+fetch = (REPO / "scripts" / "fetch_binaries.sh").read_text(encoding="utf-8")
+m = re.search(r'(?m)^GHC_VERSION="([^"]+)"', fetch)
+fetched = m.group(1) if m else None
+claimed = compiler_axis["wrapper.GHC_VERSION"]
+if fetched is None:
+    fails += 1
+    print("FAIL could not read GHC_VERSION from scripts/fetch_binaries.sh")
+elif fetched != claimed:
+    fails += 1
+    print(f"FAIL the compiler claimed is not the compiler fetched: "
+          f"wrapper.GHC_VERSION={claimed} but fetch_binaries.sh downloads "
+          f"{fetched}. wrapper.py resolves lib/ghc-{claimed}/, which the "
+          f"payload will not contain -- see "
+          f"Payload.lean resolves_iff_claim_matches_artifact")
+else:
+    print(f"ok   claimed compiler is the fetched compiler: {fetched} "
+          f"(lib/ghc-{fetched}/ will exist in the payload)")
 
 print(f"\n{checks - fails}/{checks} checks passed")
 sys.exit(1 if fails else 0)
