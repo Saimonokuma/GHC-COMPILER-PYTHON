@@ -14,11 +14,22 @@
 
 ---
 
-> ### ⚠️ 9.4.8 does not work on Windows. Upgrade.
+> ### ⚠️ 9.4.8 does not work on Windows **or Linux**. Upgrade.
 >
 > The 9.4.8 wheel aborted with `FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang)` on any Windows machine without a system compiler — which is nearly all of them. The Windows payload ships its own toolchain (`mingw/bin/clang.exe`, and it is why that payload is 396 MB), but the wrapper checked only the system `PATH` and gave up before it ever looked inside. It also ran the check *before* downloading the payload, so there was nothing to find either way.
 >
 > CI never caught it because `windows-latest` installs mingw via chocolatey, so a system `gcc` is always present there. It was found on the first genuine end-user install.
+>
+> **Linux was broken too, and for the same kind of reason.** Installing 9.4.8 on a stock Ubuntu 24.04 downloads and extracts the payload correctly, and then the compiler will not start:
+>
+> ```
+> ghc-9.4.8: error while loading shared libraries: libtinfo.so.5:
+> cannot open shared object file: No such file or directory
+> ```
+>
+> GHC 9.4.8 links against ncurses 5; Ubuntu 24.04 ships ncurses 6 and has no `libtinfo.so.5` at all. `auditwheel` vendored that library into the **offline** wheel, but it ran after the payload archive was built — so the payload carried nothing, and every job in the pipeline validated the artifact nobody installing from PyPI receives. In 9.4.9 the payload carries its own `libtinfo.so.5`, `libgmp.so.10` and `libffi.so.8`, exactly as the Windows payload has always carried its own mingw.
+>
+> Both defects were invisible for the same structural reason: **nothing had ever run the path a real user takes.** The gate that finds it, `verify-delivered-install`, did not exist when 9.4.8 was tagged. It now runs on all three operating systems before anything can publish, and it caught the Linux defect on its very first execution.
 >
 > ```bash
 > pip install --upgrade ghc-compiler-python
@@ -85,7 +96,17 @@ Every asset here was produced by the same workflow run that proved, **on each op
 
 Builds ≠ installs ≠ compiles ≠ delivered. All five links are asserted before anything is published.
 
-**New in 9.4.9: the Windows leg now removes every system `gcc`/`clang` from `PATH` before it compiles**, and fails loudly if one survives. That single difference between the runner and a real machine is what let 9.4.8 ship green and broken. A runner better equipped than the machine it certifies is not a test, it is a rehearsal.
+**New in 9.4.9: the Windows leg now removes every system `gcc`/`clang` from `PATH` before it compiles**, and fails loudly if one survives. That single difference between the runner and a real machine is what let 9.4.8 ship green and broken. A runner better equipped than the machine it certifies is not a test, it is a rehearsal. On the run that published this release it dropped three of them — `C:\mingw64\bin`, `C:\Strawberry\c\bin` and `C:\Program Files\LLVM\bin` — and compiled anyway, on the payload's own toolchain.
+
+**Also new: the claim on this page is checked against the index you actually install from.** `verify-pypi.yml` installs the published wheel from pypi.org on all three operating systems, compiles a Haskell program and asserts its output. Verified for 9.4.9 in run [30345687335](https://github.com/Saimonokuma/GHC-COMPILER-PYTHON/actions/runs/30345687335):
+
+| OS | distribution | compiler | program output |
+|---|---|---|---|
+| ubuntu-latest | 9.4.9 | 9.4.8 | `Installed From PyPI: [1,2,3]` |
+| macos-latest | 9.4.9 | 9.4.8 | `Installed From PyPI: [1,2,3]` |
+| windows-latest | 9.4.9 | 9.4.8 | `Installed From PyPI: [1,2,3]` |
+
+**And the ordering that caused the Linux defect is now proved, not tested.** `lean/Proofs/Vendor.lean` proves that no build which omits the vendoring step can produce a payload that starts — for every ordering of every other step, not merely the orderings someone thought to test. `crosscheck.py` then verifies the generated `build.yml` really does vendor before it archives, so the proof cannot drift away from the workflow it describes.
 
 The Lean 4 proofs build with zero `sorry` in the same pipeline. The linker fix is covered by `lean/Proofs/Linker.lean`, whose model is diffed against the real `wrapper.py` by a cross-check that materialises toolchain roots on disk and runs the shipped code over them.
 

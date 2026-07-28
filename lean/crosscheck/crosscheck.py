@@ -95,5 +95,49 @@ if params != ["root"]:
 else:
     print("ok   _validate_c_linker takes a root")
 
+# Phase 6: Proofs/Vendor.lean proves a payload cannot be self-contained unless
+# the tree is vendored BEFORE it is snapshotted (no_vendor_no_selfContained,
+# vendor_after_archive_is_too_late). A proof about an ordering is worth nothing
+# if the shipped workflow orders it the other way, so read the generated YAML
+# and check the real thing.
+#
+# Deliberately textual, and that is not a shortcut. It needs no YAML parser --
+# so the proofs job keeps zero Python dependencies -- and both step names are
+# unique in the file, which makes byte offsets a sound proxy for order.
+WORKFLOW = REPO / ".github" / "workflows" / "build.yml"
+VENDOR_STEP = "Vendor Shared Libraries Into The Payload (Linux)"
+ARCHIVE_STEP = "Build Toolchain Payload Archive"
+
+checks += 1
+if not WORKFLOW.is_file():
+    fails += 1
+    print(f"FAIL {WORKFLOW} not found")
+else:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    i_vendor = text.find(VENDOR_STEP)
+    i_archive = text.find(ARCHIVE_STEP)
+    if i_vendor < 0 or i_archive < 0:
+        fails += 1
+        print(f"FAIL step missing from build.yml: "
+              f"vendor={i_vendor >= 0} archive={i_archive >= 0}")
+    elif i_vendor > i_archive:
+        fails += 1
+        print("FAIL build.yml vendors AFTER archiving -- Vendor.lean proves the "
+              "payload that results cannot start (vendor_after_archive_is_too_late)")
+    else:
+        print(f"ok   build.yml vendors before archiving "
+              f"({VENDOR_STEP!r} at {i_vendor} < {ARCHIVE_STEP!r} at {i_archive})")
+
+# Phase 7: vendoring into the payload accomplishes nothing unless the launcher
+# looks there. The payload carrying a library the wrapper never puts on
+# LD_LIBRARY_PATH fails exactly like carrying no library at all.
+checks += 1
+sterilize_src = inspect.getsource(w._sterilize_environment)
+if 'ghc_root / "vendor-lib"' not in sterilize_src:
+    fails += 1
+    print("FAIL wrapper never adds the payload's vendor-lib to LD_LIBRARY_PATH")
+else:
+    print("ok   wrapper adds the payload's vendor-lib to LD_LIBRARY_PATH")
+
 print(f"\n{checks - fails}/{checks} checks passed")
 sys.exit(1 if fails else 0)
