@@ -40,6 +40,38 @@ class TestSterilizeEnvironment:
             result = _sterilize_environment()
         assert "ghc-compiler-python" in result["HOME"] or sys.prefix in result["PATH"]
 
+    def test_payload_vendor_lib_reaches_ld_library_path(self, tmp_path):
+        """The payload's own shared libraries must be findable at runtime.
+
+        GHC 9.4.8 links against ncurses 5. Ubuntu 24.04 ships ncurses 6 and has
+        no libtinfo.so.5, so a payload that carries the library but a launcher
+        that never looks at it fails identically to carrying nothing:
+
+            ghc-9.4.8: error while loading shared libraries: libtinfo.so.5
+
+        That is precisely how the delivered install failed on Linux while every
+        job validating the offline wheel passed -- auditwheel had vendored the
+        library into ghc_compiler_python.libs, which only the offline wheel has.
+
+        sys.platform is patched rather than the test being skipped off Linux.
+        A test that only runs on the platform where the bug already shipped is
+        a test nobody sees fail until it is too late; this way all three CI
+        legs and a developer laptop all check it.
+        """
+        root = tmp_path / "payload-root"
+        (root / "vendor-lib").mkdir(parents=True)
+        (root / "vendor-lib" / "libtinfo.so.5").write_bytes(b"\x7fELF")
+
+        with patch("ghc_compiler_python.wrapper.sys.platform", "linux"):
+            with patch("ghc_compiler_python.wrapper._ghc_root_or_prefix", return_value=root):
+                with patch.dict(os.environ, {"HOME": "/tmp", "PATH": "/usr/bin"}, clear=True):
+                    result = _sterilize_environment()
+
+        assert str(root / "vendor-lib") in result.get("LD_LIBRARY_PATH", ""), (
+            "the payload's vendor-lib is not on LD_LIBRARY_PATH, so a toolchain "
+            "that ships its own libtinfo would still fail to start"
+        )
+
 
 class TestValidateCLinker:
     """Tests for C-linker validation."""

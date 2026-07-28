@@ -76,6 +76,86 @@ jobs:
       - name: Patch GHC Paths for Relocatability
         shell: bash
         run: python scripts/patch_ghc_paths.py
+      - name: Vendor Shared Libraries Into The Payload (Linux)
+        shell: bash
+        run: |
+          # The payload has to be as self-contained as the Windows one, and it was not.
+          #
+          # `auditwheel repair` vendors GHC's shared-library dependencies -- but it runs
+          # further down, it operates on the WHEEL, and the payload archive is built
+          # above it. So the offline wheel carried libtinfo.so.5 in
+          # ghc_compiler_python.libs while the payload carried nothing, and every job
+          # that validated the offline wheel passed. The delivered path failed on a
+          # stock runner with:
+          #
+          #   ghc-9.4.8: error while loading shared libraries: libtinfo.so.5:
+          #   cannot open shared object file: No such file or directory
+          #
+          # GHC 9.4.8's Linux bindist links against ncurses 5. Ubuntu 24.04 ships
+          # ncurses 6 and has no libtinfo.so.5 at all, so this is not an edge case --
+          # it is most current Linux machines. The build job manufactures one; a user
+          # does not, and that difference is the whole bug.
+          #
+          # What is actually vendored, stated plainly rather than implied: `apt-get
+          # install libtinfo5` fails on 24.04 ("Unable to locate package libtinfo5"),
+          # and the fallback above symlinks libtinfo.so.5 -> libtinfo.so.6. So `cp -L`
+          # copies ncurses 6 content under the ncurses 5 name. That is not a true
+          # libtinfo5, and calling it one would be a lie in a comment.
+          #
+          # It is nevertheless the right thing to ship here: it is exactly what
+          # auditwheel already vendors into the offline wheel, and that wheel compiles
+          # and runs Haskell in the E2E job on every build. GHC uses a small enough
+          # slice of terminfo that the two are compatible in practice. The honest
+          # framing is that this makes the payload carry the same library the offline
+          # tier has always carried -- not that the ABI question has been resolved.
+          set -euo pipefail
+
+          VENDOR=ghc-bindist/vendor-lib
+          mkdir -p "$VENDOR"
+
+          # Deliberately an allowlist, never "copy everything ldd prints". Vendoring
+          # libc/libm/libpthread would be actively harmful: a binary that loads a foreign
+          # libc beside the host's dynamic loader is undefined behaviour, and it would
+          # break the very systems this is meant to support. These four are the ones GHC
+          # needs and modern distributions no longer guarantee.
+          ALLOW='libtinfo\.so|libncursesw?\.so|libgmp\.so|libffi\.so'
+
+          : > /tmp/needed.txt
+          while IFS= read -r f; do
+            head -c 4 "$f" 2>/dev/null | grep -q ELF || continue
+            ldd "$f" 2>/dev/null | awk '{print $3}' | grep -E "$ALLOW" >> /tmp/needed.txt || true
+          done < <(find ghc-bindist -type f -perm -u+x)
+
+          sort -u /tmp/needed.txt | grep -v '^$' > /tmp/needed.uniq || true
+
+          if [ ! -s /tmp/needed.uniq ]; then
+            echo "::error::no vendorable libraries resolved -- either the allowlist stopped matching or ldd found nothing, and shipping the payload now would repeat the libtinfo.so.5 failure"
+            exit 1
+          fi
+
+          while IFS= read -r lib; do
+            base=$(basename "$lib")
+            # -L dereferences: several of these are symlinks on the runner and a
+            # dangling link inside a payload extracted on someone else's machine
+            # points at nothing at all.
+            cp -Lv "$lib" "$VENDOR/$base"
+            if [ ! -f "$VENDOR/$base" ] || [ ! -s "$VENDOR/$base" ]; then
+              echo "::error::$base was not vendored as a real non-empty file"
+              exit 1
+            fi
+          done < /tmp/needed.uniq
+
+          echo "vendored into the payload:"
+          ls -la "$VENDOR"
+
+          # The failure this exists to prevent is specifically libtinfo.so.5, so assert
+          # it by name rather than trusting the loop. A silent miss here reappears as a
+          # user's first command failing.
+          if ! ls "$VENDOR" | grep -q '^libtinfo\.so\.5'; then
+            echo "::error::libtinfo.so.5 was not vendored -- this is the exact library whose absence broke the delivered install"
+            exit 1
+          fi
+          echo "libtinfo.so.5 present in the payload"
       - name: Build Toolchain Payload Archive
         shell: bash
         run: |
