@@ -138,18 +138,66 @@ if [[ "${OS}" == "Linux" || "${OS}" == "Darwin" ]]; then
 	tar -xf "${CABAL_TAR}"
 	cp cabal "../${STAGING_DIR}/bin/" 2>/dev/null || true
 else
-	# Windows: Relocatable by default, simple copy
-	echo "Windows detected: Performing native extraction..."
-	cp -a "${GHC_EXTRACTED_DIR}/bin/"* "../${STAGING_DIR}/bin/" 2>/dev/null || true
-	cp -a "${GHC_EXTRACTED_DIR}/lib/"* "../${STAGING_DIR}/lib/" 2>/dev/null || true
-	cp -a "${GHC_EXTRACTED_DIR}/share/"* "../${STAGING_DIR}/share/" 2>/dev/null || true
-	cp -a "${GHC_EXTRACTED_DIR}/settings" "../${STAGING_DIR}/" 2>/dev/null || true
-	cp -a "${GHC_EXTRACTED_DIR}/package.conf.d" "../${STAGING_DIR}/" 2>/dev/null || true
+	# Windows: relocatable by default, so staging is a move rather than a build.
+	#
+	# This used `cp -a`, which copied all 2.4 GB a second time -- extraction had
+	# just written it. Measured from the run 30332033016 job log, "Unpacking
+	# archives into staging directory" accounted for 498s of an 888s fetch step,
+	# the single most expensive operation in the entire pipeline.
+	#
+	# `mv` is a rename: GHC_EXTRACTED_DIR and STAGING_DIR are both inside the
+	# workspace, so no bytes move. GHC_EXTRACTED_DIR is never read after this
+	# block, so moving out of it is safe. `cp -a` remains as a fallback for the
+	# case where the two land on different filesystems -- there mv would
+	# degrade to a copy anyway, so the fallback costs nothing it did not
+	# already cost.
+	#
+	# The old form ended every line with `2>/dev/null || true`, which cannot
+	# distinguish "this bindist has no share/ directory" from "the move
+	# failed". That is the same shape as the documentation step that silently
+	# freed zero bytes on Windows, so each item now declares whether it is
+	# required and says what it staged.
+	echo "Windows detected: staging by move (no second copy)..."
 
-	# Fix Windows mingw toolchain location
-	if [ -d "${GHC_EXTRACTED_DIR}/mingw" ]; then
-		cp -a "${GHC_EXTRACTED_DIR}/mingw" "../${STAGING_DIR}/" 2>/dev/null || true
-	fi
+	stage_contents() {
+		_src="${GHC_EXTRACTED_DIR}/$1"
+		_dst="../${STAGING_DIR}/$1"
+		if [ ! -d "${_src}" ]; then
+			if [ "$2" = "required" ]; then
+				echo "FATAL: ${_src} missing from the Windows bindist" >&2
+				exit 4
+			fi
+			echo "   absent, skipped: $1/"
+			return 0
+		fi
+		mkdir -p "${_dst}"
+		if ! find "${_src}" -mindepth 1 -maxdepth 1 -exec mv {} "${_dst}/" \; 2>/dev/null; then
+			echo "   move failed for $1/, falling back to copy" >&2
+			cp -a "${_src}/." "${_dst}/"
+		fi
+		echo "   staged $1/"
+	}
+
+	stage_item() {
+		_src="${GHC_EXTRACTED_DIR}/$1"
+		if [ ! -e "${_src}" ]; then
+			if [ "$2" = "required" ]; then
+				echo "FATAL: ${_src} missing from the Windows bindist" >&2
+				exit 4
+			fi
+			echo "   absent, skipped: $1"
+			return 0
+		fi
+		mv "${_src}" "../${STAGING_DIR}/" 2>/dev/null || cp -a "${_src}" "../${STAGING_DIR}/"
+		echo "   staged $1"
+	}
+
+	stage_contents bin   required
+	stage_contents lib   required
+	stage_contents share optional
+	stage_item settings       optional
+	stage_item package.conf.d optional
+	stage_item mingw          optional
 
 	# Extract Cabal for Windows
 	unzip -q "${CABAL_TAR}" -d "../${STAGING_DIR}/bin/"
