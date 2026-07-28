@@ -49,7 +49,7 @@ ACTIONS = {
     "upload_artifact": "actions/upload-artifact@v7",
     "download_artifact": "actions/download-artifact@v8",
     "pypi_publish": "pypa/gh-action-pypi-publish@release/v1",
-    "gh_release": "softprops/action-gh-release@v2",
+    "gh_release": "softprops/action-gh-release@v3",
 }
 
 PYTHON_VERSION = "3.13"

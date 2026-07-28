@@ -566,7 +566,7 @@ jobs:
         run: ls -la release/
 
       - name: Attach To Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: release/*
           fail_on_unmatched_files: true
