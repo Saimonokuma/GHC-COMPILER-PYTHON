@@ -583,6 +583,11 @@ jobs:
       contents: write
 
     steps:
+      # Needed for RELEASE.md, which becomes the release body. Without a
+      # checkout the release page would be empty and a visitor would have to
+      # guess which of six assets applies to them.
+      - uses: actions/checkout@v7
+
       - uses: actions/download-artifact@v8
         with:
           pattern: payload-*
@@ -602,6 +607,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           files: release/*
+          body_path: RELEASE.md
           fail_on_unmatched_files: true
 
 

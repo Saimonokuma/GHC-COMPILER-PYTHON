@@ -459,6 +459,11 @@ def generate_release_job():
       contents: write
 
     steps:
+      # Needed for RELEASE.md, which becomes the release body. Without a
+      # checkout the release page would be empty and a visitor would have to
+      # guess which of six assets applies to them.
+      - uses: {ACTIONS['checkout']}
+
       - uses: {ACTIONS['download_artifact']}
         with:
           pattern: payload-*
@@ -478,6 +483,7 @@ def generate_release_job():
         uses: {ACTIONS['gh_release']}
         with:
           files: release/*
+          body_path: RELEASE.md
           fail_on_unmatched_files: true
 """
 

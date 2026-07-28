@@ -1,59 +1,79 @@
-# GHC-COMPILER-PYTHON
+<div align="center">
 
-Native GHC 9.4.8 compiler and Cabal 3.10.3.0 tooling, installed with `pip`.
+# ⚡ GHC Compiler Python
 
-Add a real Haskell toolchain to a Python environment (`venv`, `conda`, CI image) with a single `pip install` — no system-wide GHC, no `ghcup`, no mutation of global host state.
+**The bridge between Haskell and Python**
 
-## Purpose
+*The first pip-installable Glasgow Haskell Compiler — one command, three platforms, the full toolchain*
 
-A Haskell toolchain is normally installed by a separate ecosystem-specific installer that writes to `~/.ghc`, `~/.cabal` and the system PATH. That is awkward inside a Python project, hostile inside CI, and impossible in an environment where the global state is not yours to change.
+[![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/saimonokuma)
+[![PyPI](https://img.shields.io/badge/PyPI-ghc--compiler--python-3775A9?style=for-the-badge&logo=pypi&logoColor=white)](https://pypi.org/project/ghc-compiler-python/)
+[![Nova-Violet Role](https://img.shields.io/badge/Nova--Violet-Role-9b59b6?style=for-the-badge)](https://github.com/Nova-Violet-Role)
+[![License](https://img.shields.io/badge/License-MIT-764ba2?style=for-the-badge)](LICENSE)
 
-This package delivers GHC through the packaging mechanism Python already has. The compiler lives inside the environment, the wrappers sterilize the environment before every invocation, and removing the environment removes the toolchain.
+[![GHC](https://img.shields.io/badge/GHC-9.4.8-5e5086?style=flat-square&logo=haskell&logoColor=white)](https://www.haskell.org/ghc/)
+[![Cabal](https://img.shields.io/badge/Cabal-3.10.3.0-5e5086?style=flat-square)](https://www.haskell.org/cabal/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![Proved in Lean 4](https://img.shields.io/badge/Proved%20in-Lean%204-2C3E50?style=flat-square)](lean/)
 
-## Installation
+</div>
+
+---
+
+## 📜 About
+
+A Haskell toolchain is normally installed by its own ecosystem installer, which writes to `~/.ghc`, `~/.cabal` and the system PATH. That is awkward inside a Python project, hostile inside CI, and impossible where the global state is not yours to change.
+
+**GHC Compiler Python** delivers GHC through the packaging mechanism Python already has. The compiler lives inside the environment, the wrappers sterilize the environment before every call, and removing the environment removes the toolchain.
+
+- ✅ `pip install ghc-compiler-python`
+- ✅ Windows · macOS · Linux
+- ✅ Full GHC 9.4.8 compiler
+- ✅ Complete Cabal 3.10.3.0 support
+- ✅ Any AI with Python execution can now compile Haskell
+
+---
+
+## 🚀 Installation
 
 ```bash
 pip install ghc-compiler-python
 ```
 
-The PyPI package is small (~17 KiB) and fetches the toolchain for your platform on first use, verifying it against a SHA-256 digest embedded in the wheel.
+The PyPI package is **~17 KiB**. It fetches the toolchain for your platform on first use and verifies it against a SHA-256 digest embedded in the wheel — a tampered or truncated download cannot install.
 
-### Offline / air-gapped install
+### 📦 Offline / air-gapped
 
-If the machine has no network access, install a self-contained wheel with the toolchain already bundled. These are published on the [releases page](https://github.com/Saimonokuma/GHC-COMPILER-PYTHON/releases) — pick the one matching your platform:
+Self-contained wheels with the toolchain already bundled live on the [releases page](https://github.com/Saimonokuma/GHC-COMPILER-PYTHON/releases). These never contact the network:
 
 ```bash
-pip install ghc_compiler_python-9.4.8-py3-none-manylinux_2_39_x86_64.whl   # Linux (glibc >= 2.39)
-pip install ghc_compiler_python-9.4.8-py3-none-macosx_11_0_arm64.whl       # macOS Apple Silicon
+pip install ghc_compiler_python-9.4.8-py3-none-manylinux_2_39_x86_64.whl   # Linux
+pip install ghc_compiler_python-9.4.8-py3-none-macosx_11_0_arm64.whl       # macOS
 pip install ghc_compiler_python-9.4.8-py3-none-win_amd64.whl               # Windows
 ```
 
-These never contact the network.
+> The Linux offline wheel is tagged `manylinux_2_39` because GHC is built on Ubuntu 24.04 and genuinely requires glibc 2.39 — a lower tag would install where the toolchain then fails at runtime. On older distributions use the thin wheel; its payload is a plain tarball and carries no such constraint.
 
-The Linux offline wheel is tagged `manylinux_2_39`, because GHC is built on
-Ubuntu 24.04 and genuinely requires glibc 2.39 — a lower tag would install on
-systems where the toolchain then fails at runtime. On older distributions use
-the thin wheel instead: its payload is a plain tarball and carries no such
-constraint.
+### 🔧 Requirements
 
-### Requirements
+| | |
+|:--|:--|
+| 🐍 **Python** | `>= 3.10` |
+| 🔗 **C-Linker** | `gcc` or `clang` on the host |
+| 🐧 Linux | `sudo apt-get install gcc` |
+| 🍎 macOS | `xcode-select --install` |
+| 🪟 Windows | MinGW-w64 or MSYS2 |
 
-- **Python:** `>= 3.10`
-- **C-Linker:** `gcc` or `clang` must be present on the host.
-  - Linux: `sudo apt-get install gcc`
-  - macOS: `xcode-select --install`
-  - Windows: MinGW-w64 or MSYS2
-
-### Configuration
+### ⚙️ Configuration
 
 | Variable | Effect |
-| :--- | :--- |
+|:--|:--|
 | `GHC_COMPILER_PYTHON_HOME` | Where the toolchain is cached. Defaults to the platform cache directory. |
 | `GHC_COMPILER_PYTHON_OFFLINE` | Set to `1` to refuse network access entirely. |
 
-## Usage
+---
 
-The package installs subprocess proxies onto your environment's PATH:
+## 💻 Usage
 
 ```bash
 # Compile a Haskell file
@@ -66,34 +86,87 @@ ghci-wrapper
 cabal-wrapper build
 ```
 
-Wrappers sterilize the environment on every call, so a global `~/.ghc/` or `GHC_PACKAGE_PATH` cannot leak into your build. Resolution is hermetic: a GHC already on your PATH is deliberately **ignored**, so you always get the pinned 9.4.8 rather than whatever the host happens to have.
+Wrappers sterilize the environment on every call, so a global `~/.ghc/` or `GHC_PACKAGE_PATH` cannot leak into your build.
 
-## Supported Platforms
+Resolution is **hermetic**: a GHC already on your PATH is deliberately *ignored*, so you always get the pinned 9.4.8 rather than whatever the host happens to have.
+
+---
+
+## 🖥️ Supported Platforms
 
 | OS | Architecture | Toolchain |
-| :--- | :--- | :--- |
-| Linux | x86_64 | GHC 9.4.8, Cabal 3.10.3.0 |
-| macOS | ARM64 (Apple Silicon) | GHC 9.4.8, Cabal 3.10.3.0 |
-| Windows | x86_64 | GHC 9.4.8, Cabal 3.10.3.0 |
+|:--|:--|:--|
+| 🐧 **Linux** | x86_64 | GHC 9.4.8 · Cabal 3.10.3.0 |
+| 🍎 **macOS** | ARM64 (Apple Silicon) | GHC 9.4.8 · Cabal 3.10.3.0 |
+| 🪟 **Windows** | x86_64 | GHC 9.4.8 · Cabal 3.10.3.0 |
 
-Every release is proven on all three: each platform installs the wheel, compiles a Haskell program, **runs** it, and asserts its output before anything is published.
+Every release is proven on all three: each platform installs the wheel, compiles a Haskell program, **runs** it, and asserts its output — and checks the reported compiler is the pinned 9.4.8 — before anything is published. Builds ≠ installs ≠ compiles ≠ delivered.
 
-## What is in the payload
+---
 
-The bundled toolchain is trimmed from the stock 2,017 MB GHC distribution to 863 MB by removing profiling libraries (`*_p.a`, 29.9%) and prebuilt Haddock documentation (28.4%). Neither participates in compiling or running Haskell.
+## 📐 What is proved, not merely tested
 
-Retained deliberately: static archives (linking is static by default), shared objects (GHCi and TemplateHaskell load them), and interface files (imports cannot resolve without them).
+Some properties must hold for *every* input, not for the inputs a test happens to supply. Those are proved in **Lean 4** — machine-checked, zero `sorry`, verified in CI.
 
-If you need profiling or offline docs, build the payload yourself with `GHC_KEEP_PROFILING=1` or `GHC_KEEP_DOCS=1`.
+```lean
+theorem payloadKey_injective (p q : Platform) : payloadKey p = payloadKey q → p = q
+theorem no_partial_state (s : CacheState) (steps : List Step) : ...
+theorem no_escape_without_dotdot : ∀ member base, ¬ member.contains ".." → isWithin base member
+```
 
-## Support
+**Injective** — no two platforms share a payload identity, so one platform can never run another's binaries. **Atomic** — under any interleaving, the cache is observable only as absent or complete, never half-installed. **Contained** — an archive member without `..` cannot escape the destination, for any base and any depth.
 
-If this saved you time, you can support the work here:
+---
 
-**[☕ ko-fi.com/saimonokuma](https://ko-fi.com/saimonokuma)**
+## 📊 What is in the payload
 
-## License
+Measured from the real 9.4.8 distribution — 9,870 entries, 2,017 MB extracted:
+
+| Component | Size | Share | Kept |
+|:--|--:|--:|:--|
+| Profiling libraries | 602 MB | 29.9% | ❌ |
+| Documentation / haddock | 574 MB | 28.4% | ❌ |
+| Static archives | 331 MB | 16.4% | ✅ |
+| Shared objects | 173 MB | 8.6% | ✅ |
+| Executables | 169 MB | 8.4% | ✅ |
+| Interface files | 166 MB | 8.2% | ✅ |
+
+Removing the first two: **2,017 → 863 MB** extracted, **164 → 91 MB** compressed. Linking is static by default, GHCi and TemplateHaskell load the shared objects, and imports cannot resolve without interface files — so those stay. Restore the rest with `GHC_KEEP_PROFILING=1` or `GHC_KEEP_DOCS=1`.
+
+---
+
+## 🤝 Contributing
+
+| Area | How you can help |
+|:--|:--|
+| 💻 **Code** | Platform support, packaging, wrapper robustness |
+| 🧪 **Testing** | Try it on your distribution and report what breaks |
+| 📐 **Proofs** | Extend the Lean 4 formalization |
+| 📖 **Documentation** | Improve guides and examples |
+| 💡 **Ideas** | Tell us what a pip-installable compiler should do next |
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how delivery works and why.
+
+---
+
+## 📄 License
 
 MIT License. See [LICENSE](LICENSE) for details.
 
+---
+
+<div align="center">
+
+### ⚡ GHC Compiler Python
+
+*One command. Three platforms. The full Haskell toolchain.*
+
+[![Support Our Journey](https://img.shields.io/badge/🔗_Support_Our_Journey-Ko--fi-FF5E5B?style=for-the-badge)](https://ko-fi.com/saimonokuma)
+
 [PyPI](https://pypi.org/project/ghc-compiler-python/) · [Releases](https://github.com/Saimonokuma/GHC-COMPILER-PYTHON/releases) · [Issues](https://github.com/Saimonokuma/GHC-COMPILER-PYTHON/issues)
+
+© 2026 Nova-Violet Role · Non-Profit Organization
+
+*Created with ❤️ for the advancement of human understanding*
+
+</div>
