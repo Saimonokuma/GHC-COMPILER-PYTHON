@@ -14,6 +14,13 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Without this, pushing three times to a branch leaves three full matrices
+# building GHC simultaneously, competing for the same runner pool and making
+# every one of them slower. Tag runs are never cancelled -- those publish.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 

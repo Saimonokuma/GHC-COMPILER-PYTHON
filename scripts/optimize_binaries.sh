@@ -163,24 +163,47 @@ MISSING=0
 # paths fit in the pipe buffer before grep exits — so the check passes for a
 # handful of binaries and fails for 1,599 interface files. `-print -quit` stops
 # find itself at the first hit: no pipe, no race, and it short-circuits.
+#
+# `-type f` is also wrong on its own. In a tree produced by `make install`,
+# bin/ghc is a SYMLINK to the versioned binary (ghc-9.4.8), and `-type f` does
+# not match symlinks — so the guard reported the compiler missing while the
+# compiler was sitting right there. It passed locally only because the raw
+# extracted bindist has a real file at that path; the installed tree has a
+# different shape. Match files and symlinks both, and accept the versioned
+# names, since which one exists depends on how the tree was produced.
 first_match() {
-	find "${STAGING_DIR}" -type f -name "$1" -print -quit 2>/dev/null
+	find "${STAGING_DIR}" \( -type f -o -type l \) -name "$1" -print -quit 2>/dev/null
 }
 
+# Positive control: report what was actually found, so a future failure is
+# diagnosable from the log instead of requiring a local reproduction.
 for tool in ghc ghc-pkg; do
-	if [ -z "$(first_match "${tool}")" ] && [ -z "$(first_match "${tool}.exe")" ]; then
+	FOUND="$(first_match "${tool}")"
+	[ -n "${FOUND}" ] || FOUND="$(first_match "${tool}-*")"
+	[ -n "${FOUND}" ] || FOUND="$(first_match "${tool}.exe")"
+
+	if [ -z "${FOUND}" ]; then
 		echo "   FATAL: '${tool}' is missing after optimization!" >&2
 		MISSING=1
+	else
+		echo "   found ${tool}: ${FOUND}"
 	fi
 done
 
-if [ -z "$(first_match '*.hi')" ]; then
+HI_FOUND="$(first_match '*.hi')"
+if [ -z "${HI_FOUND}" ]; then
 	echo "   FATAL: no interface (.hi) files survived — imports would fail!" >&2
 	MISSING=1
+else
+	echo "   found interfaces: ${HI_FOUND}"
 fi
 
 if [ "${MISSING}" -ne 0 ]; then
 	echo "Optimization removed something essential. Refusing to continue." >&2
+	echo "--- staging tree layout for diagnosis ---" >&2
+	find "${STAGING_DIR}" -maxdepth 2 \( -type f -o -type l -o -type d \) 2>/dev/null | head -n 40 >&2
+	echo "--- anything named ghc* ---" >&2
+	find "${STAGING_DIR}" \( -type f -o -type l \) -name 'ghc*' 2>/dev/null | head -n 20 >&2
 	exit 5
 fi
 
