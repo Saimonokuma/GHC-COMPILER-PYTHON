@@ -133,6 +133,17 @@ jobs:
           fi
 
           pip install dist/*.whl
+
+          # Assert this is OUR pinned toolchain, not whatever GHC the runner had.
+          # `wrapper.py` used to fall back to shutil.which(), which silently resolved to
+          # a system GHC and still reported success -- a green E2E that proved nothing
+          # about the wheel. Checking the version closes that hole in CI.
+          REPORTED=$(ghc-wrapper --numeric-version)
+          echo "ghc-wrapper --numeric-version -> $REPORTED"
+          if [ "$REPORTED" != "9.4.8" ]; then
+            echo "FATAL: expected GHC 9.4.8, got '$REPORTED' -- resolved the wrong toolchain" >&2
+            exit 1
+          fi
           echo "=== Debug Library Paths ==="
           find test-env -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" || true
           ls -la test-env/lib/ghc-9.4.8/bin || true
@@ -273,6 +284,17 @@ jobs:
           fi
 
           pip install dist/*.whl
+
+          # Assert this is OUR pinned toolchain, not whatever GHC the runner had.
+          # `wrapper.py` used to fall back to shutil.which(), which silently resolved to
+          # a system GHC and still reported success -- a green E2E that proved nothing
+          # about the wheel. Checking the version closes that hole in CI.
+          REPORTED=$(ghc-wrapper --numeric-version)
+          echo "ghc-wrapper --numeric-version -> $REPORTED"
+          if [ "$REPORTED" != "9.4.8" ]; then
+            echo "FATAL: expected GHC 9.4.8, got '$REPORTED' -- resolved the wrong toolchain" >&2
+            exit 1
+          fi
           echo "=== Debug Library Paths ==="
           find test-env -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" || true
           ls -la test-env/lib/ghc-9.4.8/bin || true
@@ -407,6 +429,17 @@ jobs:
           fi
 
           pip install dist/*.whl
+
+          # Assert this is OUR pinned toolchain, not whatever GHC the runner had.
+          # `wrapper.py` used to fall back to shutil.which(), which silently resolved to
+          # a system GHC and still reported success -- a green E2E that proved nothing
+          # about the wheel. Checking the version closes that hole in CI.
+          REPORTED=$(ghc-wrapper --numeric-version)
+          echo "ghc-wrapper --numeric-version -> $REPORTED"
+          if [ "$REPORTED" != "9.4.8" ]; then
+            echo "FATAL: expected GHC 9.4.8, got '$REPORTED' -- resolved the wrong toolchain" >&2
+            exit 1
+          fi
           echo "=== Debug Library Paths ==="
           find test-env -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" || true
           ls -la test-env/lib/ghc-9.4.8/bin || true

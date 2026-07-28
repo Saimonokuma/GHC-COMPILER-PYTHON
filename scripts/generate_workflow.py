@@ -289,7 +289,7 @@ PYEOF""")
     # ---------------------------------------------------------------
     # Proof: installs, compiles, and RUNS. Builds are not deliveries.
     # ---------------------------------------------------------------
-    add_step(name="End-to-End Compilation Validation", shell="bash", run="""python -m venv test-env
+    add_step(name="End-to-End Compilation Validation", shell="bash", run=f"""python -m venv test-env
 if [ -f test-env/Scripts/activate ]; then
   source test-env/Scripts/activate
 else
@@ -297,6 +297,17 @@ else
 fi
 
 pip install dist/*.whl
+
+# Assert this is OUR pinned toolchain, not whatever GHC the runner had.
+# `wrapper.py` used to fall back to shutil.which(), which silently resolved to
+# a system GHC and still reported success -- a green E2E that proved nothing
+# about the wheel. Checking the version closes that hole in CI.
+REPORTED=$(ghc-wrapper --numeric-version)
+echo "ghc-wrapper --numeric-version -> $REPORTED"
+if [ "$REPORTED" != "{GHC_VERSION}" ]; then
+  echo "FATAL: expected GHC {GHC_VERSION}, got '$REPORTED' -- resolved the wrong toolchain" >&2
+  exit 1
+fi
 echo "=== Debug Library Paths ==="
 find test-env -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" || true
 ls -la test-env/lib/ghc-9.4.8/bin || true
