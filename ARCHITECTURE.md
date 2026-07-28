@@ -82,12 +82,20 @@ Measured from the real 9.4.8 Linux bindist — 9,870 entries, 2,017 MB extracted
 
 | Component | Size | Share | Kept |
 | :--- | ---: | ---: | :--- |
-| Profiling libraries (`*_p.a`, `*.p_hi`) | 602 MB | 29.9% | no |
-| Documentation / haddock | 574 MB | 28.4% | no |
+| Profiling libraries (`*_p.a`, `*.p_hi`, `*.p_o`) | 602 MB | 29.9% | no |
+| Documentation / haddock | 580 MB | 28.7% | no |
 | Static archives (`.a`) | 331 MB | 16.4% | **yes** |
-| Shared objects (`.so`) | 173 MB | 8.6% | **yes** |
-| Executables | 169 MB | 8.4% | **yes** |
-| Interface files (`.hi`, `.dyn_hi`) | 166 MB | 8.2% | **yes** |
+| Shared objects (`.so`) | 174 MB | 8.6% | **yes** |
+| Executables | 165 MB | 8.2% | **yes** |
+| Interface files (`.hi`) | 82 MB | 4.1% | **yes** |
+| Interface files (`.dyn_hi`) | 82 MB | 4.1% | **yes** |
+| Other | 1 MB | 0.1% | **yes** |
+| **Total** | **2,017 MB** | **100.0%** | |
+
+Classified from the archive listing of all 9,870 entries (9,329 regular files;
+the remainder are directories and symlinks, which carry no payload). Every
+byte is attributed — the categories sum to the total exactly, so nothing is
+hidden in an unexamined remainder.
 
 Removing the first two: 2,017 → 863 MB extracted, **164 → 91 MB compressed**.
 Verified by extracting, trimming, recompressing and measuring — not estimated.

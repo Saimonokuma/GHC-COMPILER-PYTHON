@@ -125,11 +125,14 @@ Measured from the real 9.4.8 distribution — 9,870 entries, 2,017 MB extracted:
 | Component | Size | Share | Kept |
 |:--|--:|--:|:--|
 | Profiling libraries | 602 MB | 29.9% | ❌ |
-| Documentation / haddock | 574 MB | 28.4% | ❌ |
+| Documentation / haddock | 580 MB | 28.7% | ❌ |
 | Static archives | 331 MB | 16.4% | ✅ |
-| Shared objects | 173 MB | 8.6% | ✅ |
-| Executables | 169 MB | 8.4% | ✅ |
-| Interface files | 166 MB | 8.2% | ✅ |
+| Shared objects | 174 MB | 8.6% | ✅ |
+| Executables | 165 MB | 8.2% | ✅ |
+| Interface files (static) | 82 MB | 4.1% | ✅ |
+| Interface files (dynamic) | 82 MB | 4.1% | ✅ |
+| Other | 1 MB | 0.1% | ✅ |
+| **Total** | **2,017 MB** | **100.0%** | |
 
 Removing the first two: **2,017 → 863 MB** extracted, **164 → 91 MB** compressed. Linking is static by default, GHCi and TemplateHaskell load the shared objects, and imports cannot resolve without interface files — so those stay. Restore the rest with `GHC_KEEP_PROFILING=1` or `GHC_KEEP_DOCS=1`.
 
