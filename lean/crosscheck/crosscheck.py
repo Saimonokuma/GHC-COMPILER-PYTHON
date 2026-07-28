@@ -139,5 +139,81 @@ if 'ghc_root / "vendor-lib"' not in sterilize_src:
 else:
     print("ok   wrapper adds the payload's vendor-lib to LD_LIBRARY_PATH")
 
+# Phase 8: EVERYTHING MATCHES.
+#
+# Proofs/Payload.lean proves the two version axes are independent coordinates
+# (download_ignores_the_compiler_axis, report_ignores_the_release_axis). That
+# is a statement about the MODEL. It buys nothing if the six files that
+# actually carry these strings have drifted apart from each other.
+#
+# So every version-bearing declaration in the repository is read off disk and
+# required to agree. Six places, two axes, one truth each.
+import ast
+
+def read_assign(rel, name):
+    """Value of a module-level `NAME = "literal"` in a real source file."""
+    tree = ast.parse((REPO / rel).read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name) and t.id == name:
+                    if isinstance(node.value, ast.Constant):
+                        return node.value.value
+    return None
+
+def read_lean_def(rel, name):
+    m = re.search(rf'def {name} : String := "([^"]+)"',
+                  (REPO / rel).read_text(encoding="utf-8"))
+    return m.group(1) if m else None
+
+def read_toml_version(rel):
+    m = re.search(r'(?m)^version\s*=\s*"([^"]+)"',
+                  (REPO / rel).read_text(encoding="utf-8"))
+    return m.group(1) if m else None
+
+release_axis = {
+    "bootstrap.RELEASE_VERSION": read_assign("ghc_compiler_python/bootstrap.py", "RELEASE_VERSION"),
+    "generate_workflow.RELEASE_VERSION": read_assign("scripts/generate_workflow.py", "RELEASE_VERSION"),
+    "__init__.__version__": read_assign("ghc_compiler_python/__init__.py", "__version__"),
+    "pyproject.version": read_toml_version("pyproject.toml"),
+    "Payload.lean releaseVersion": read_lean_def("lean/Proofs/Payload.lean", "releaseVersion"),
+}
+compiler_axis = {
+    "bootstrap.GHC_VERSION": read_assign("ghc_compiler_python/bootstrap.py", "GHC_VERSION"),
+    "generate_workflow.GHC_VERSION": read_assign("scripts/generate_workflow.py", "GHC_VERSION"),
+    "wrapper.GHC_VERSION": read_assign("ghc_compiler_python/wrapper.py", "GHC_VERSION"),
+    "__init__.__ghc_version__": read_assign("ghc_compiler_python/__init__.py", "__ghc_version__"),
+    "Payload.lean ghcVersion": read_lean_def("lean/Proofs/Payload.lean", "ghcVersion"),
+}
+
+for label, axis in (("release", release_axis), ("compiler", compiler_axis)):
+    checks += 1
+    missing = [k for k, v in axis.items() if v is None]
+    values = set(v for v in axis.values() if v is not None)
+    if missing:
+        fails += 1
+        print(f"FAIL {label} axis unreadable in: {missing}")
+    elif len(values) != 1:
+        fails += 1
+        print(f"FAIL {label} axis disagrees: "
+              + ", ".join(f"{k}={v}" for k, v in sorted(axis.items())))
+    else:
+        print(f"ok   {label} axis agrees across {len(axis)} files: {values.pop()}")
+
+# And the two axes must not have quietly become the same number again, which
+# would make every theorem above vacuously true rather than false.
+checks += 1
+r = release_axis["bootstrap.RELEASE_VERSION"]
+g = compiler_axis["bootstrap.GHC_VERSION"]
+if r is None or g is None:
+    fails += 1
+    print("FAIL could not read both axes")
+elif r == g:
+    fails += 1
+    print(f"FAIL both axes are {r} -- versions_differ is now false and every "
+          f"theorem resting on it is vacuous")
+else:
+    print(f"ok   axes are distinct: release={r} compiler={g}")
+
 print(f"\n{checks - fails}/{checks} checks passed")
 sys.exit(1 if fails else 0)

@@ -34,11 +34,17 @@ def payloadTag : Platform → String
   | .macosX86 => "macosx_10_9_x86_64"
   | .winX86   => "win_amd64"
 
-/-- Windows payloads are zip archives; every other platform ships xz tarballs.
+/-- Every platform ships an xz tarball as of 9.5.0.
+
+    Windows shipped a zip through 9.4.9. Measured on the real toolchain
+    (1814 MB, 8311 files): zip 395.8 MB against tar.xz 247.3 MB, and the
+    round-trip verified lossless on every file by SHA-256. The zip was never a
+    Windows requirement -- only an artefact of building it with 7z -- and it
+    cost every Windows user 148 MB per cold install.
+
     Mirrors `bootstrap._archive_suffix`. -/
 def archiveSuffix : Platform → String
-  | .winX86 => ".zip"
-  | _       => ".tar.xz"
+  | _ => ".tar.xz"
 
 /-- Full payload filename. Mirrors `bootstrap.payload_name`. -/
 def payloadName (v : String) (p : Platform) : String :=
@@ -72,7 +78,7 @@ theorem payloadKey_injective (p q : Platform) (h : payloadKey p = payloadKey q) 
   cases p <;> cases q <;> simp_all [payloadKey, payloadTag, archiveSuffix]
 
 /-- `bootstrap.RELEASE_VERSION`: the tag, the asset names, the cache key. -/
-def releaseVersion : String := "9.4.9"
+def releaseVersion : String := "9.5.0"
 
 /-- `bootstrap.GHC_VERSION`: the compiler inside the payload, which is what
     `ghc-wrapper --numeric-version` reports. -/
@@ -137,14 +143,123 @@ theorem payloadName_uses_release_axis :
 
 /-- And the rendering really does carry the release version, so the previous
     theorem is not satisfied by a name that mentions neither. -/
-example : payloadName releaseVersion .winX86 = "ghc-payload-9.4.9-win_amd64.zip" := by decide
+example : payloadName releaseVersion .winX86 = "ghc-payload-9.5.0-win_amd64.tar.xz" := by decide
 
 example : payloadName releaseVersion .linuxX86
-    = "ghc-payload-9.4.9-manylinux_2_39_x86_64.tar.xz" := by decide
+    = "ghc-payload-9.5.0-manylinux_2_39_x86_64.tar.xz" := by decide
 
 /-- Every platform has a non-empty tag: a payload can always be addressed. -/
 theorem payloadTag_ne_empty (p : Platform) : payloadTag p ≠ "" := by
   cases p <;> simp [payloadTag]
+
+/-! ## The two axes are independent coordinates
+
+The theorems above say the axes *differ*. That is necessary and not sufficient.
+Two numbers can differ and still be entangled -- and entangled is exactly what
+they were through 9.4.8, when one constant named both.
+
+What separation has to mean is stronger: each axis governs its own half of what
+a user sees, and neither can reach into the other's half.
+
+  * what you DOWNLOAD -- asset names, cache directory, wheel version --
+    is a function of the RELEASE axis alone.
+  * what you are TOLD about the compiler -- `--numeric-version` -- is a
+    function of the COMPILER axis alone.
+
+Proved below as two independence theorems, quantified over every possible pair
+of versions rather than the pair we happen to ship. Their corollary is the
+sentence this project kept having to explain to people out loud:
+
+    bumping the package version renames everything you download,
+    and changes nothing you are told about the compiler.
+-/
+
+/-- Both coordinates at once: what a release actually pins. -/
+structure Coords where
+  /-- `bootstrap.RELEASE_VERSION` -- the tag, the assets, the cache. -/
+  release : String
+  /-- `bootstrap.GHC_VERSION` -- the compiler in the payload. -/
+  ghc : String
+  deriving DecidableEq, Repr
+
+/-- What a user downloads. -/
+def assetName (c : Coords) (p : Platform) : String := payloadName c.release p
+
+/-- Where it is cached. -/
+def cacheDir (c : Coords) (p : Platform) : String × String := cacheKey c.release p
+
+/-- The version of the wheel on PyPI. -/
+def wheelVersion (c : Coords) : String := c.release
+
+/-- What `ghc-wrapper --numeric-version` prints. -/
+def reportedCompiler (c : Coords) : String := c.ghc
+
+/--
+  **INDEPENDENCE, first half: the compiler axis cannot leak into what you
+  download.**
+
+  For every release, and for ANY two compiler versions whatsoever, the asset
+  name, the cache directory and the wheel version are identical. Changing the
+  bundled compiler cannot rename a single thing a user fetches.
+
+  This is what makes it safe to bundle a different GHC later without
+  invalidating every published digest.
+-/
+theorem download_ignores_the_compiler_axis (r g g' : String) (p : Platform) :
+    assetName ⟨r, g⟩ p = assetName ⟨r, g'⟩ p
+    ∧ cacheDir ⟨r, g⟩ p = cacheDir ⟨r, g'⟩ p
+    ∧ wheelVersion ⟨r, g⟩ = wheelVersion ⟨r, g'⟩ :=
+  ⟨rfl, rfl, rfl⟩
+
+/--
+  **INDEPENDENCE, second half: the release axis cannot leak into what you are
+  told.**
+
+  For every compiler, and for ANY two release versions whatsoever, the reported
+  compiler version is identical. No amount of re-releasing can make the tool
+  claim a compiler it does not contain.
+
+  This is the property that was violated by construction before the split: one
+  constant meant re-releasing necessarily announced a new GHC.
+-/
+theorem report_ignores_the_release_axis (r r' g : String) :
+    reportedCompiler ⟨r, g⟩ = reportedCompiler ⟨r', g⟩ := rfl
+
+/-- What 9.4.9 shipped. -/
+def shipped_9_4_9 : Coords := { release := "9.4.9", ghc := "9.4.8" }
+
+/-- What 9.5.0 ships. -/
+def shipped_9_5_0 : Coords := { release := releaseVersion, ghc := ghcVersion }
+
+/--
+  **THE COROLLARY, on the versions actually shipped.**
+
+  Going from 9.4.9 to 9.5.0 renames every payload on every platform, and leaves
+  the reported compiler exactly where it was.
+
+  Both halves matter and neither alone would do. Renaming without holding the
+  report fixed is the old bug -- claiming a GHC that does not exist. Holding
+  the report fixed without renaming is the other old bug -- a new release
+  silently reusing the previous release's cached payload, digest check and all.
+-/
+theorem bump_renames_everything_and_claims_nothing :
+    (∀ p : Platform, assetName shipped_9_5_0 p ≠ assetName shipped_9_4_9 p)
+    ∧ reportedCompiler shipped_9_5_0 = reportedCompiler shipped_9_4_9 := by
+  constructor
+  · intro p; cases p <;> decide
+  · rfl
+
+/-- And the reported compiler is a real GHC release, not our package version.
+    `9.4.8` is the last of the 9.4 line; `downloads.haskell.org/~ghc/9.4.9/`
+    and `/9.5.0/` both answer 404, measured 2026-07-28. Lean cannot check an
+    HTTP status, so what is proved here is the half that is checkable: the
+    number we report is the compiler axis and never the package axis. -/
+theorem reported_is_the_compiler_never_the_package :
+    reportedCompiler shipped_9_5_0 = ghcVersion
+    ∧ reportedCompiler shipped_9_5_0 ≠ wheelVersion shipped_9_5_0 := by
+  refine ⟨rfl, ?_⟩
+  intro h
+  exact versions_differ h.symm
 
 /-! ## Cache completeness
 

@@ -4,7 +4,7 @@
 # longer agree. 9.4.8 published a wrapper that rejected every Windows machine
 # without a system gcc; PyPI forbids re-uploading a version, so the fix ships
 # as 9.4.9. The compiler inside is still GHC 9.4.8 and still says so.
-__version__ = "9.4.9"
+__version__ = "9.5.0"
 __ghc_version__ = "9.4.8"
 __cabal_version__ = "3.10.3.0"
 __author__ = "ghc-compiler-python contributors"
