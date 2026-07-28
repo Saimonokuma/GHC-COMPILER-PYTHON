@@ -78,11 +78,11 @@ theorem payloadKey_injective (p q : Platform) (h : payloadKey p = payloadKey q) 
   cases p <;> cases q <;> simp_all [payloadKey, payloadTag, archiveSuffix]
 
 /-- `bootstrap.RELEASE_VERSION`: the tag, the asset names, the cache key. -/
-def releaseVersion : String := "9.5.0"
+def releaseVersion : String := "9.6.1"
 
 /-- `bootstrap.GHC_VERSION`: the compiler inside the payload, which is what
     `ghc-wrapper --numeric-version` reports. -/
-def ghcVersion : String := "9.4.8"
+def ghcVersion : String := "9.6.1"
 
 /-- For the version actually shipped, the rendered filenames are pairwise
     distinct too. Checked by evaluation rather than assumed. -/
@@ -105,27 +105,35 @@ asset and silently claimed a GHC release that does not exist.
 properties below are what that separation has to buy.
 -/
 
-/-- The axes are distinct. Every theorem below is vacuous if this fails, so it
-    is stated first and checked by evaluation. -/
-theorem versions_differ : releaseVersion ≠ ghcVersion := by decide
+/-! ### Correction: the axes are allowed to coincide
+
+An earlier revision of this file proved
+
+    theorem versions_differ : releaseVersion ≠ ghcVersion := by decide
+
+and made `cacheKey_separates_releases` and `payloadName_uses_release_axis`
+depend on it. That was a **modelling error, and a costly one**: it took a fact
+that happened to be true of 9.4.9 and 9.5.0 -- releases that shipped a compiler
+older than their own version number -- and encoded it as an invariant.
+
+It is not an invariant. When the bundled compiler is itself upgraded, the
+natural and honest thing is for both axes to name that compiler, and they
+coincide. The old spec would have *refused to compile* on such a release: a
+green build would have been impossible for the most normal event in the
+project's life.
+
+Two numbers being equal is not the failure mode. Being *entangled* is -- one
+constant that cannot be moved independently. That distinction is what the
+independence theorems further down capture, and they hold whether or not the
+axes happen to agree today.
+
+So the theorems below are restated over arbitrary versions. Nothing here now
+depends on the two being different.
+-/
 
 /-- The cache directory `bootstrap.payload_root()` resolves to, as the pair it
     is actually built from: `cache_root() / RELEASE_VERSION / platform_tag()`. -/
 def cacheKey (v : String) (p : Platform) : String × String := (v, payloadTag p)
-
-/--
-  **A new release never reuses an old release's extracted payload.**
-
-  Payloads rebuilt under a new tag are not byte-identical to the old ones, so
-  their digests differ. Were the cache keyed by the compiler version, 9.4.9
-  would find 9.4.8's tree already stamped `.complete`, skip the download, and
-  run the very wrapper this release exists to replace -- with no digest check
-  in sight, because nothing would be downloaded to check.
--/
-theorem cacheKey_separates_releases (p q : Platform) :
-    cacheKey releaseVersion p ≠ cacheKey ghcVersion q := by
-  intro h
-  exact versions_differ (congrArg Prod.fst h)
 
 /-- Cache keys collide only for the same release on the same platform. -/
 theorem cacheKey_injective (v w : String) (p q : Platform)
@@ -133,20 +141,47 @@ theorem cacheKey_injective (v w : String) (p q : Platform)
   ⟨congrArg Prod.fst h, payloadTag_injective p q (congrArg Prod.snd h)⟩
 
 /--
-  **Asset names are addressed by the release, never by the compiler.**
+  **A new release never reuses an old release's extracted payload.**
 
-  Checked on every platform rather than on the one that happened to break.
+  Payloads rebuilt under a new tag are not byte-identical to the old ones, so
+  their digests differ. If two distinct releases could share a cache directory,
+  the second would find the first's tree already stamped `.complete`, skip the
+  download, and run it -- with no digest check in sight, because nothing would
+  have been downloaded to check.
+
+  Now stated for **any** two distinct releases, which is the property that was
+  always meant. The previous version said only that *this* release differed
+  from *this* compiler, which is a much weaker claim wearing the same name.
 -/
-theorem payloadName_uses_release_axis :
-    ∀ p : Platform, payloadName releaseVersion p ≠ payloadName ghcVersion p := by
-  intro p; cases p <;> decide
+theorem distinct_releases_never_share_a_cache
+    (v w : String) (p q : Platform) (hvw : v ≠ w) :
+    cacheKey v p ≠ cacheKey w q := by
+  intro h
+  exact hvw (cacheKey_injective v w p q h).1
 
-/-- And the rendering really does carry the release version, so the previous
-    theorem is not satisfied by a name that mentions neither. -/
-example : payloadName releaseVersion .winX86 = "ghc-payload-9.5.0-win_amd64.tar.xz" := by decide
+/-- Asset identity, as the tuple the name is rendered from. -/
+def payloadKeyOf (v : String) (p : Platform) : String × String × String :=
+  (v, payloadTag p, archiveSuffix p)
+
+/--
+  **Distinct releases have distinct payload identities, on every platform.**
+
+  Stated over the key rather than the rendered string for the reason given at
+  `payloadKey_injective`: proving it over the flat name needs right-cancellation
+  of `String.append`, which Lean core does not provide, and the tuple is the
+  more faithful model of what the cache actually keys on.
+-/
+theorem payloadKeyOf_injective (v w : String) (p q : Platform)
+    (h : payloadKeyOf v p = payloadKeyOf w q) : v = w ∧ p = q := by
+  refine ⟨congrArg Prod.fst h, ?_⟩
+  exact payloadTag_injective p q (congrArg (fun t => t.2.1) h)
+
+/-- And the rendering really does carry the release version, so the theorems
+    above are not satisfied by a name that mentions neither axis. -/
+example : payloadName releaseVersion .winX86 = "ghc-payload-9.6.1-win_amd64.tar.xz" := by decide
 
 example : payloadName releaseVersion .linuxX86
-    = "ghc-payload-9.5.0-manylinux_2_39_x86_64.tar.xz" := by decide
+    = "ghc-payload-9.6.1-manylinux_2_39_x86_64.tar.xz" := by decide
 
 /-- Every platform has a non-empty tag: a payload can always be addressed. -/
 theorem payloadTag_ne_empty (p : Platform) : payloadTag p ≠ "" := by
@@ -225,41 +260,276 @@ theorem download_ignores_the_compiler_axis (r g g' : String) (p : Platform) :
 theorem report_ignores_the_release_axis (r r' g : String) :
     reportedCompiler ⟨r, g⟩ = reportedCompiler ⟨r', g⟩ := rfl
 
-/-- What 9.4.9 shipped. -/
-def shipped_9_4_9 : Coords := { release := "9.4.9", ghc := "9.4.8" }
+/-- What 9.5.0 shipped: a package version ahead of its compiler. -/
+def shipped_9_5_0 : Coords := { release := "9.5.0", ghc := "9.4.8" }
 
-/-- What 9.5.0 ships. -/
-def shipped_9_5_0 : Coords := { release := releaseVersion, ghc := ghcVersion }
+/-- What 9.6.1 ships: both axes naming the same, real, upgraded compiler. -/
+def shipped_9_6_1 : Coords := { release := releaseVersion, ghc := ghcVersion }
+
+/-- Asset identity of a build, as the tuple the filename renders from. -/
+def assetKey (c : Coords) (p : Platform) : String × String × String :=
+  payloadKeyOf c.release p
 
 /--
-  **THE COROLLARY, on the versions actually shipped.**
+  **A package-only bump renames everything and claims nothing.**
 
-  Going from 9.4.9 to 9.5.0 renames every payload on every platform, and leaves
-  the reported compiler exactly where it was.
-
-  Both halves matter and neither alone would do. Renaming without holding the
-  report fixed is the old bug -- claiming a GHC that does not exist. Holding
-  the report fixed without renaming is the other old bug -- a new release
-  silently reusing the previous release's cached payload, digest check and all.
+  Quantified over any two distinct release versions and any compiler, rather
+  than over the pair that happened to ship. The earlier version of this theorem
+  was stated about the literal 9.4.9 and 9.5.0 coordinates, and 9.6.1 made it
+  FALSE -- that release moves both axes at once, because the compiler itself
+  was upgraded. A theorem about two constants expires; this one does not.
 -/
-theorem bump_renames_everything_and_claims_nothing :
-    (∀ p : Platform, assetName shipped_9_5_0 p ≠ assetName shipped_9_4_9 p)
-    ∧ reportedCompiler shipped_9_5_0 = reportedCompiler shipped_9_4_9 := by
-  constructor
-  · intro p; cases p <;> decide
-  · rfl
+theorem package_only_bump_renames_everything_and_claims_nothing
+    (r r' g : String) (hr : r ≠ r') :
+    (∀ p : Platform, assetKey ⟨r, g⟩ p ≠ assetKey ⟨r', g⟩ p)
+    ∧ reportedCompiler ⟨r, g⟩ = reportedCompiler ⟨r', g⟩ := by
+  refine ⟨fun p h => ?_, rfl⟩
+  exact hr (payloadKeyOf_injective r r' p p h).1
 
-/-- And the reported compiler is a real GHC release, not our package version.
-    `9.4.8` is the last of the 9.4 line; `downloads.haskell.org/~ghc/9.4.9/`
-    and `/9.5.0/` both answer 404, measured 2026-07-28. Lean cannot check an
-    HTTP status, so what is proved here is the half that is checkable: the
-    number we report is the compiler axis and never the package axis. -/
-theorem reported_is_the_compiler_never_the_package :
-    reportedCompiler shipped_9_5_0 = ghcVersion
-    ∧ reportedCompiler shipped_9_5_0 ≠ wheelVersion shipped_9_5_0 := by
-  refine ⟨rfl, ?_⟩
+/--
+  **A compiler upgrade is the other shape, and it moves both axes.**
+
+  9.6.1 is exactly this: the compiler was upgraded from 9.4.8, so the reported
+  version changes too. Recorded because the previous theorem must not be read
+  as "the reported compiler never changes" -- it changes precisely when the
+  compiler does, which is the whole point of keeping the axes separate.
+-/
+theorem compiler_upgrade_moves_the_report (r g g' : String) (hg : g ≠ g') :
+    reportedCompiler ⟨r, g⟩ ≠ reportedCompiler ⟨r, g'⟩ := hg
+
+/-- The reported compiler is read off the compiler axis, by construction. -/
+theorem reported_is_the_compiler_axis :
+    reportedCompiler shipped_9_6_1 = ghcVersion := rfl
+
+/-! ## Why the claimed compiler cannot simply be edited
+
+The maintainer asked, reasonably, for the compiler version to be set to a
+number that no GHC release carries -- so that it would match the package
+version and stop looking wrong on the project page.
+
+The refusal is usually argued as honesty: printing `9.5.0` while shipping
+`9.4.8` is a lie told by our own tool. True, but weak, because it is a claim
+about taste. There is a mechanical reason underneath it, and it is stated here
+so nobody has to relitigate the taste.
+
+`wrapper.py` resolves the toolchain through a path that **contains the version
+it claims**:
+
+    lib/ghc-<GHC_VERSION>/bin/ghc
+
+while the payload contains whatever directory the *downloaded bindist* created:
+
+    lib/ghc-<fetched>/...
+
+Those are the same string only when the claim matches the artifact. Editing the
+constant does not merely misreport -- it points the launcher at a directory
+that does not exist, and the install stops working. That is proved below, for
+every pair of versions, rather than argued.
+-/
+
+/-! ### The bindist layout is not uniform, and GHC 9.6.1 proved it
+
+Measured in CI on 2026-07-28, upgrading GHC 9.4.8 -> 9.6.1:
+
+  Linux, macOS   lib/ghc-9.6.1/lib/x86_64-linux-ghc-9.6.1/     (unchanged)
+  Windows        lib/x86_64-windows-ghc-9.6.1/                 (CHANGED)
+
+The Windows bindist dropped the `ghc-<version>` level entirely. An earlier
+revision of this file modelled the compiler directory as `"lib/ghc-" ++ v` on
+every platform, which is simply false for the Windows tree that 9.6 ships.
+
+The consequence is sharper than a wrong path, and it is the reason this section
+exists rather than a one-line fix: **on the flat layout the directory no longer
+carries the version**, so "the toolchain resolved" stops implying "the version
+we claim is the version we shipped". The safety property that
+`resolves_iff_claim_matches_artifact` relied on degrades to nothing.
+
+What survives both layouts is the *platform* library directory, which carries
+the version in either shape:
+
+  lib/ghc-9.6.1/lib/x86_64-windows-ghc-9.6.1     versioned
+  lib/x86_64-windows-ghc-9.6.1                   flat
+
+So the version check is anchored there instead. That is a strictly stronger
+place to anchor it, and it was found by an upgrade rather than by inspection.
+-/
+
+/-- How a bindist arranges its compiler directory. -/
+inductive Layout where
+  /-- `lib/ghc-<version>/...` -- GHC 9.4 everywhere, and 9.6 on Unix. -/
+  | versioned
+  /-- `lib/...` -- the GHC 9.6 Windows bindist. -/
+  | flat
+  deriving DecidableEq, Repr
+
+/-- The compiler directory inside a payload, per layout. -/
+def libDirOf : Layout → String → String
+  | .versioned, fetched => "lib/ghc-" ++ fetched
+  | .flat,      _       => "lib"
+
+/-- The compiler directory `wrapper.py` looks for, given what it claims. Only
+    meaningful under the versioned layout; retained because the theorem about
+    it is what the flat layout takes away. -/
+def libDirClaimed (claimed : String) : String := "lib/ghc-" ++ claimed
+
+/--
+  **The flat layout does not encode the version.**
+
+  Two different compilers produce the same directory name, so no amount of
+  looking at that path can tell you which one you have. Stated as a theorem
+  because it is the load-bearing negative result: it says why the check had to
+  move, rather than leaving that as a comment.
+-/
+theorem flat_layout_forgets_the_version (v w : String) :
+    libDirOf .flat v = libDirOf .flat w := rfl
+
+/-- The versioned layout, by contrast, determines it. -/
+theorem versioned_layout_determines_the_version (v w : String)
+    (h : libDirOf .versioned v = libDirOf .versioned w) : v = w :=
+  String.append_right_inj "lib/ghc-" |>.mp h
+
+/-- The platform library directory, which exists under both layouts and carries
+    the version in both. `tri` is the target triple, e.g.
+    `x86_64-windows`. Mirrors what `wrapper._find_platform_lib_subdir` looks
+    for -- a directory whose name ends in `-ghc-<version>`. -/
+def platformLibDir (l : Layout) (tri : String) (v : String) : String :=
+  (match l with
+   | .versioned => "lib/ghc-" ++ v ++ "/lib/"
+   | .flat      => "lib/") ++ tri ++ "-ghc-" ++ v
+
+/-- The *name* of the platform library directory -- the basename, which is what
+    `wrapper._find_platform_lib_subdir` actually matches on when it scans
+    directory entries for one ending in `-ghc-<version>`. Modelling the name
+    rather than the full path is deliberate: the parent differs by layout, the
+    name does not, and the name is the object the code inspects. -/
+def platformLibName (tri v : String) : String := tri ++ "-ghc-" ++ v
+
+/--
+  **The version survives in the platform directory name under EVERY layout.**
+
+  This is what makes a single check correct on both Unix and Windows, and it is
+  the property the build gate and `wrapper._find_platform_lib_subdir` now rely
+  on instead of the `lib/ghc-<v>` path that Windows no longer has.
+-/
+theorem platformLibName_determines_the_version (tri v w : String)
+    (h : platformLibName tri v = platformLibName tri w) : v = w := by
+  unfold platformLibName at h
+  exact String.append_right_inj (tri ++ "-ghc-") |>.mp (by
+    simpa [String.append_assoc] using h)
+
+/-- And the name appears under either layout, so a scan finds it in both. -/
+theorem platformLibDir_ends_with_the_name (l : Layout) (tri v : String) :
+    ∃ parent : String, platformLibDir l tri v = parent ++ platformLibName tri v := by
+  cases l with
+  | versioned => exact ⟨"lib/ghc-" ++ v ++ "/lib/", by simp [platformLibDir,
+      platformLibName, String.append_assoc]⟩
+  | flat => exact ⟨"lib/", by simp [platformLibDir, platformLibName,
+      String.append_assoc]⟩
+
+/-- A build pairs what was downloaded with what the wrapper will claim, and the
+    layout the bindist happened to use. -/
+structure Build where
+  /-- The version in the bindist URL `fetch_binaries.sh` downloads. -/
+  fetched : String
+  /-- `wrapper.GHC_VERSION` -- what `--numeric-version` prints. -/
+  claimed : String
+  /-- Which shape the unpacked bindist has. Not ours to choose: GHC changed it
+      under us between 9.4.8 and 9.6.1 on Windows. -/
+  layout : Layout
+  deriving DecidableEq, Repr
+
+/-- The old resolution rule: look for `lib/ghc-<claimed>`. Kept because the
+    theorem about it is exactly what the flat layout destroys. -/
+def resolvesByLibDir (b : Build) : Prop :=
+  libDirClaimed b.claimed = libDirOf b.layout b.fetched
+
+instance (b : Build) : Decidable (resolvesByLibDir b) := by
+  unfold resolvesByLibDir; infer_instance
+
+/--
+  **Under the versioned layout, resolving proves the claim matches the artifact.**
+
+  The contrapositive is the useful direction: if the toolchain resolves at all,
+  the version claimed is the version downloaded. Lying about the compiler is not
+  a cosmetic choice with an honesty cost -- it is a broken install, detectable
+  by the package itself.
+
+  Proved for every pair of strings, not for the pair anyone had in mind.
+-/
+theorem resolves_iff_claim_matches_artifact (fetched claimed : String) :
+    resolvesByLibDir ⟨fetched, claimed, .versioned⟩ ↔ claimed = fetched := by
+  unfold resolvesByLibDir libDirClaimed libDirOf
+  -- The two paths share the literal prefix "lib/ghc-", so they are equal
+  -- exactly when the version components are. `String.append_right_inj` is the
+  -- cancellation core actually provides; an earlier attempt reasoned via
+  -- `String.drop` and could not close, since nothing simplifies
+  -- `(a ++ b).drop a.length` to `b`.
+  exact String.append_right_inj "lib/ghc-"
+
+/--
+  **Under the flat layout the old rule resolves NOTHING.**
+
+  First written as "the flat layout resolves any claim" -- that the guarantee
+  degraded to vacuous. Lean refused it, and the refusal was correct: the goal
+  reduced to `False`, because `"lib/ghc-" ++ claimed` cannot equal `"lib"` for
+  any claim at all. The rule does not weaken on the flat layout, it fails
+  outright, for every version including the right one.
+
+  Which is precisely what CI reported when GHC 9.6.1 was first built for
+  Windows: the directory was simply missing. The guess was that lying would
+  become undetectable; the truth is that the honest case breaks too. Recorded
+  because the theorem corrected the hypothesis, not the other way round.
+-/
+theorem flat_layout_never_resolves_by_libdir (fetched claimed : String) :
+    ¬ resolvesByLibDir ⟨fetched, claimed, .flat⟩ := by
   intro h
-  exact versions_differ h.symm
+  unfold resolvesByLibDir libDirClaimed libDirOf at h
+  -- Length is enough: the claimed path is at least 8 characters, "lib" is 3.
+  -- `simp` alone leaves the literal lengths unreduced, so they are pinned by
+  -- `rfl` and the contradiction handed to `omega`.
+  have hlen := congrArg String.length h
+  simp only [String.length_append] at hlen
+  have h8 : "lib/ghc-".length = 8 := rfl
+  have h3 : "lib".length = 3 := rfl
+  rw [h8, h3] at hlen
+  omega
+
+/-- The honest build on the layout this release uses for Unix. -/
+def honestBuild : Build := ⟨ghcVersion, ghcVersion, .versioned⟩
+
+/-- It resolves, and the check is by evaluation rather than by assumption. -/
+theorem honest_build_resolves : resolvesByLibDir honestBuild := by decide
+
+/--
+  **The specific edit that was requested, refuted by evaluation.**
+
+  Claiming `9.5.0` while the payload was built from GHC `9.4.8` does not
+  resolve. This is the concrete instance of the general theorem, kept because a
+  general theorem is easy to nod at and a failing example is not.
+-/
+theorem claiming_9_5_0_while_shipping_9_4_8_breaks_resolution :
+    ¬ resolvesByLibDir ⟨"9.4.8", "9.5.0", .versioned⟩ := by decide
+
+/-- The same edit against the compiler this release actually ships. -/
+theorem claiming_anything_else_breaks_resolution (claimed : String)
+    (h : claimed ≠ ghcVersion) :
+    ¬ resolvesByLibDir ⟨ghcVersion, claimed, .versioned⟩ := by
+  intro hr
+  exact h ((resolves_iff_claim_matches_artifact _ _).mp hr)
+
+/--
+  **The check that works on both layouts.**
+
+  Scanning for a directory named `<triple>-ghc-<claimed>` determines the
+  version under either shape, so it is correct on Unix and on the Windows tree
+  that no longer has `lib/ghc-<v>`. This is the invariant the build gate and
+  the wrapper now use.
+-/
+theorem version_check_by_name_is_layout_independent
+    (_l : Layout) (tri claimed fetched : String)
+    (h : platformLibName tri claimed = platformLibName tri fetched) :
+    claimed = fetched :=
+  platformLibName_determines_the_version tri claimed fetched h
 
 /-! ## Cache completeness
 

@@ -56,14 +56,24 @@ PYTHON_VERSION = "3.13"
 
 # The compiler inside the payload. Drives the `ghc-wrapper --numeric-version`
 # assertions, which must keep answering for the compiler.
-GHC_VERSION = "9.4.8"
+GHC_VERSION = "9.6.1"
 
 # The distribution coordinate: git tag, release, payload asset names, wheel
-# version. Diverged from GHC_VERSION at 9.4.9, because the 9.4.8 wheel on PyPI
-# is unusable on Windows and PyPI does not allow replacing a version. Keep the
-# two apart: renaming a payload asset and claiming a new compiler release must
-# never be the same edit again.
-RELEASE_VERSION = "9.5.0"
+# version.
+#
+# It diverged from GHC_VERSION at 9.4.9 -- the 9.4.8 wheel on PyPI was unusable
+# on Windows and PyPI does not allow replacing a published version, so a fix had
+# to carry a new distribution number while the compiler stayed put. At 9.6.1 the
+# two COINCIDE again, because the compiler itself was upgraded and both axes
+# honestly name it.
+#
+# Coinciding is not a regression and must not be "fixed". The point of two
+# constants is that they CAN move independently, not that they must differ; an
+# earlier version of the Lean spec asserted they always differ and would have
+# refused to compile on exactly this release. What must never happen again is
+# one constant, where renaming a payload asset and claiming a new compiler
+# release are the same edit.
+RELEASE_VERSION = "9.6.1"
 
 
 # Removes every system C compiler from PATH for the remainder of ONE step.
@@ -243,10 +253,39 @@ echo "C:\\msys64\\mingw64\\bin" | Out-File -FilePath $env:GITHUB_PATH -Append"""
 
     add_step(name="Install Python Build Dependencies", run="python -m pip install --upgrade pip\npip install build hatchling wheel")
     add_step(name="Fetch and Verify GHC/Cabal Binaries", shell="bash", run="bash scripts/fetch_binaries.sh")
-    add_step(name="Verify Shared Libraries", shell="bash", run="""echo "=== Checking for required .so files ==="
+    # NOTE: this run body is an f-string, because the lib directory is named
+    # after the compiler version. It was previously a plain string with 9.4.8
+    # baked in, which meant that after any compiler upgrade the `ls` pointed at
+    # a directory that no longer existed, printed nothing, and passed -- a
+    # diagnostic that silently stops diagnosing is worse than none.
+    #
+    # Every literal brace below must therefore be doubled.
+    add_step(name="Verify Shared Libraries", shell="bash", run=f"""echo "=== Checking for required .so files ==="
 find ghc-bindist -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" -o -name "libgmp*" || true
 echo "=== Full lib directory ==="
-ls -la ghc-bindist/lib/ghc-9.4.8/*.so* 2>/dev/null || true
+ls -la ghc-bindist/lib/ghc-{GHC_VERSION}/*.so* 2>/dev/null || true
+
+# The compiler version must be present in the unpacked tree, or the payload
+# does not contain the compiler this pipeline claims to ship.
+#
+# NOT checked as lib/ghc-<version>/. That path exists on Linux and macOS and
+# does NOT exist on the GHC 9.6 Windows bindist, which dropped the versioned
+# level: 9.4.8 unpacked to lib/ghc-9.4.8/lib/x86_64-windows-ghc-9.4.8/, while
+# 9.6.1 unpacks to lib/x86_64-windows-ghc-9.6.1/. A check written against the
+# old shape fails on a correct Windows build.
+#
+# What survives BOTH layouts is the platform library directory, whose name
+# carries the version either way. Proved layout-independent in
+# lean/Proofs/Payload.lean as platformLibName_determines_the_version, with
+# flat_layout_never_resolves_by_libdir recording why the old check had to go.
+if ! find ghc-bindist -maxdepth 5 -type d -name "*-ghc-{GHC_VERSION}" | grep -q .; then
+    echo "::error::no directory matching *-ghc-{GHC_VERSION} under ghc-bindist -- the payload does not contain the compiler this build claims"
+    echo "what is actually present:"
+    find ghc-bindist -maxdepth 3 -type d -name "*ghc-*" || true
+    exit 1
+fi
+echo "compiler {GHC_VERSION} confirmed present in the unpacked bindist:"
+find ghc-bindist -maxdepth 5 -type d -name "*-ghc-{GHC_VERSION}"
 
 # Check if internal libraries actually extracted properly
 if [ -z "$(find ghc-bindist -name "libtinfo*.so.*")" ]; then

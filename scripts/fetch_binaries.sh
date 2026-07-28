@@ -16,7 +16,7 @@ trap '' PIPE
 # Handle SIGINT (Ctrl+C)
 trap 'echo "Interrupted"; exit 130' INT
 
-GHC_VERSION="9.4.8"
+GHC_VERSION="9.6.1"
 CABAL_VERSION="3.10.3.0"
 STAGING_DIR="ghc-bindist"
 BUILD_DIR="build_artifacts"
@@ -214,17 +214,60 @@ for dir in bin lib; do
 	fi
 done
 
-# Verify GHC lib directory has expected content
+# Verify the staged tree actually contains the compiler this script fetched.
+#
+# The bindist layout is NOT uniform across platforms, and GHC changed it at 9.6:
+#
+#   lib/ghc-<ver>/lib/<triple>-ghc-<ver>/   Linux, macOS       (versioned)
+#   lib/<triple>-ghc-<ver>/                 Windows 9.6+       (flat)
+#
+# Checking for lib/ghc-<ver> alone therefore reports a missing toolchain on a
+# perfectly good Windows build. The directory NAME carries the version under
+# both layouts, so that is what is checked -- proved layout-independent in
+# lean/Proofs/Payload.lean (platformLibName_determines_the_version).
 GHC_LIB_DIR="${STAGING_DIR}/lib/ghc-${GHC_VERSION}"
-if [ -d "${GHC_LIB_DIR}" ]; then
-	DYLIB_COUNT=$(find "${GHC_LIB_DIR}" -name "*.dylib" 2>/dev/null | wc -l || echo "0")
-	SO_COUNT=$(find "${GHC_LIB_DIR}" -name "*.so" 2>/dev/null | wc -l || echo "0")
-	echo "GHC lib directory: ${GHC_LIB_DIR}"
+# Depth measured, not guessed. From the staging root:
+#   flat       lib/<triple>-ghc-<ver>                      -> 2
+#   versioned  lib/ghc-<ver>/lib/<triple>-ghc-<ver>        -> 4
+# maxdepth 3 was an off-by-one that found the flat tree and missed the
+# versioned one, so Linux failed on a correct build. 5 leaves headroom
+# without reaching into per-package directories, which do not carry the
+# -ghc-<ver> suffix anyway.
+#
+# Documentation directories carry the same name -- the Windows bindist has both
+# lib/doc/x86_64-windows-ghc-9.6.1 and lib/x86_64-windows-ghc-9.6.1, and a bare
+# `head -1` reported the doc one. That did not change the pass/fail decision,
+# since the version is genuinely present either way, but a check that reports
+# the wrong directory teaches the next person to debug the wrong directory.
+PLATFORM_LIB_DIR=$(find "${STAGING_DIR}" -maxdepth 5 -type d -name "*-ghc-${GHC_VERSION}" 2>/dev/null \
+	| grep -v "/doc/" | head -1)
+if [ -z "${PLATFORM_LIB_DIR}" ]; then
+	# Every match was under doc/. Fall back rather than declare the compiler
+	# missing: presence is what this check is for.
+	PLATFORM_LIB_DIR=$(find "${STAGING_DIR}" -maxdepth 5 -type d -name "*-ghc-${GHC_VERSION}" 2>/dev/null | head -1)
+fi
+
+if [ -n "${PLATFORM_LIB_DIR}" ]; then
+	if [ -d "${GHC_LIB_DIR}" ]; then
+		echo "Layout: versioned (lib/ghc-${GHC_VERSION}/)"
+		SCAN_DIR="${GHC_LIB_DIR}"
+	else
+		echo "Layout: flat (no lib/ghc-${GHC_VERSION} level; GHC 9.6+ Windows shape)"
+		SCAN_DIR="${STAGING_DIR}/lib"
+	fi
+	DYLIB_COUNT=$(find "${SCAN_DIR}" -name "*.dylib" 2>/dev/null | wc -l || echo "0")
+	SO_COUNT=$(find "${SCAN_DIR}" -name "*.so" 2>/dev/null | wc -l || echo "0")
+	echo "Compiler ${GHC_VERSION} confirmed at: ${PLATFORM_LIB_DIR}"
 	echo "	Dynamic libraries found: ${DYLIB_COUNT} dylibs, ${SO_COUNT} shared objects"
 else
-	echo "WARNING: Expected GHC lib directory not found at ${GHC_LIB_DIR}"
-	echo "Available directories in ${STAGING_DIR}/lib/:"
-	ls -la "${STAGING_DIR}/lib/" 2>/dev/null || echo "	(lib directory empty or missing)"
+	# No directory carries the version under EITHER layout. That is not a
+	# layout question -- the staged tree does not contain the compiler this
+	# script just downloaded, so failing here beats shipping the payload.
+	echo "FATAL: no directory matching *-ghc-${GHC_VERSION} under ${STAGING_DIR}" >&2
+	echo "The staged tree does not contain the compiler this script fetched." >&2
+	echo "Available directories in ${STAGING_DIR}/lib/:" >&2
+	ls -la "${STAGING_DIR}/lib/" 2>/dev/null || echo "	(lib directory empty or missing)" >&2
+	exit 1
 fi
 
 echo "Binary acquisition complete."

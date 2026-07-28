@@ -64,7 +64,29 @@ jobs:
           echo "=== Checking for required .so files ==="
           find ghc-bindist -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" -o -name "libgmp*" || true
           echo "=== Full lib directory ==="
-          ls -la ghc-bindist/lib/ghc-9.4.8/*.so* 2>/dev/null || true
+          ls -la ghc-bindist/lib/ghc-9.6.1/*.so* 2>/dev/null || true
+
+          # The compiler version must be present in the unpacked tree, or the payload
+          # does not contain the compiler this pipeline claims to ship.
+          #
+          # NOT checked as lib/ghc-<version>/. That path exists on Linux and macOS and
+          # does NOT exist on the GHC 9.6 Windows bindist, which dropped the versioned
+          # level: 9.4.8 unpacked to lib/ghc-9.4.8/lib/x86_64-windows-ghc-9.4.8/, while
+          # 9.6.1 unpacks to lib/x86_64-windows-ghc-9.6.1/. A check written against the
+          # old shape fails on a correct Windows build.
+          #
+          # What survives BOTH layouts is the platform library directory, whose name
+          # carries the version either way. Proved layout-independent in
+          # lean/Proofs/Payload.lean as platformLibName_determines_the_version, with
+          # flat_layout_never_resolves_by_libdir recording why the old check had to go.
+          if ! find ghc-bindist -maxdepth 5 -type d -name "*-ghc-9.6.1" | grep -q .; then
+              echo "::error::no directory matching *-ghc-9.6.1 under ghc-bindist -- the payload does not contain the compiler this build claims"
+              echo "what is actually present:"
+              find ghc-bindist -maxdepth 3 -type d -name "*ghc-*" || true
+              exit 1
+          fi
+          echo "compiler 9.6.1 confirmed present in the unpacked bindist:"
+          find ghc-bindist -maxdepth 5 -type d -name "*-ghc-9.6.1"
 
           # Check if internal libraries actually extracted properly
           if [ -z "$(find ghc-bindist -name "libtinfo*.so.*")" ]; then
@@ -161,16 +183,16 @@ jobs:
         run: |
           mkdir -p payload
           if command -v xz >/dev/null 2>&1; then
-            tar -C ghc-bindist -cf - . | xz -T0 -6 -c > "payload/ghc-payload-9.5.0-manylinux_2_39_x86_64.tar.xz"
+            tar -C ghc-bindist -cf - . | xz -T0 -6 -c > "payload/ghc-payload-9.6.1-manylinux_2_39_x86_64.tar.xz"
           else
             echo "xz not found; falling back to 7z -txz"
-            tar -C ghc-bindist -cf - . | 7z a -txz -si -mmt=on "payload/ghc-payload-9.5.0-manylinux_2_39_x86_64.tar.xz" > /dev/null
+            tar -C ghc-bindist -cf - . | 7z a -txz -si -mmt=on "payload/ghc-payload-9.6.1-manylinux_2_39_x86_64.tar.xz" > /dev/null
           fi
           python -c "
           import hashlib, pathlib
-          p = pathlib.Path('payload/ghc-payload-9.5.0-manylinux_2_39_x86_64.tar.xz')
+          p = pathlib.Path('payload/ghc-payload-9.6.1-manylinux_2_39_x86_64.tar.xz')
           h = hashlib.sha256(p.read_bytes()).hexdigest()
-          pathlib.Path('payload/ghc-payload-9.5.0-manylinux_2_39_x86_64.tar.xz.sha256').write_text(h + '  ghc-payload-9.5.0-manylinux_2_39_x86_64.tar.xz\n')
+          pathlib.Path('payload/ghc-payload-9.6.1-manylinux_2_39_x86_64.tar.xz.sha256').write_text(h + '  ghc-payload-9.6.1-manylinux_2_39_x86_64.tar.xz\n')
           print('SHA-256', h)
           print('size', p.stat().st_size // 1048576, 'MB')
           "
@@ -179,7 +201,7 @@ jobs:
         run: |
           # A payload that exceeds the distribution ceiling must fail here, loudly,
           # rather than at upload time after the whole matrix has run.
-          SIZE=$(python -c "import pathlib; print(pathlib.Path('payload/ghc-payload-9.5.0-manylinux_2_39_x86_64.tar.xz').stat().st_size)")
+          SIZE=$(python -c "import pathlib; print(pathlib.Path('payload/ghc-payload-9.6.1-manylinux_2_39_x86_64.tar.xz').stat().st_size)")
           LIMIT=$((100 * 1024 * 1024))
           echo "payload: $((SIZE / 1048576)) MB (ceiling $((LIMIT / 1048576)) MB)"
           if [ "$SIZE" -gt "$LIMIT" ]; then
@@ -225,8 +247,8 @@ jobs:
           # about the wheel. Checking the version closes that hole in CI.
           REPORTED=$(ghc-wrapper --numeric-version)
           echo "ghc-wrapper --numeric-version -> $REPORTED"
-          if [ "$REPORTED" != "9.4.8" ]; then
-            echo "FATAL: expected GHC 9.4.8, got '$REPORTED' -- resolved the wrong toolchain" >&2
+          if [ "$REPORTED" != "9.6.1" ]; then
+            echo "FATAL: expected GHC 9.6.1, got '$REPORTED' -- resolved the wrong toolchain" >&2
             exit 1
           fi
           echo "=== Debug Library Paths ==="
@@ -297,7 +319,29 @@ jobs:
           echo "=== Checking for required .so files ==="
           find ghc-bindist -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" -o -name "libgmp*" || true
           echo "=== Full lib directory ==="
-          ls -la ghc-bindist/lib/ghc-9.4.8/*.so* 2>/dev/null || true
+          ls -la ghc-bindist/lib/ghc-9.6.1/*.so* 2>/dev/null || true
+
+          # The compiler version must be present in the unpacked tree, or the payload
+          # does not contain the compiler this pipeline claims to ship.
+          #
+          # NOT checked as lib/ghc-<version>/. That path exists on Linux and macOS and
+          # does NOT exist on the GHC 9.6 Windows bindist, which dropped the versioned
+          # level: 9.4.8 unpacked to lib/ghc-9.4.8/lib/x86_64-windows-ghc-9.4.8/, while
+          # 9.6.1 unpacks to lib/x86_64-windows-ghc-9.6.1/. A check written against the
+          # old shape fails on a correct Windows build.
+          #
+          # What survives BOTH layouts is the platform library directory, whose name
+          # carries the version either way. Proved layout-independent in
+          # lean/Proofs/Payload.lean as platformLibName_determines_the_version, with
+          # flat_layout_never_resolves_by_libdir recording why the old check had to go.
+          if ! find ghc-bindist -maxdepth 5 -type d -name "*-ghc-9.6.1" | grep -q .; then
+              echo "::error::no directory matching *-ghc-9.6.1 under ghc-bindist -- the payload does not contain the compiler this build claims"
+              echo "what is actually present:"
+              find ghc-bindist -maxdepth 3 -type d -name "*ghc-*" || true
+              exit 1
+          fi
+          echo "compiler 9.6.1 confirmed present in the unpacked bindist:"
+          find ghc-bindist -maxdepth 5 -type d -name "*-ghc-9.6.1"
 
           # Check if internal libraries actually extracted properly
           if [ -z "$(find ghc-bindist -name "libtinfo*.so.*")" ]; then
@@ -317,16 +361,16 @@ jobs:
         run: |
           mkdir -p payload
           if command -v xz >/dev/null 2>&1; then
-            tar -C ghc-bindist -cf - . | xz -T0 -6 -c > "payload/ghc-payload-9.5.0-macosx_11_0_arm64.tar.xz"
+            tar -C ghc-bindist -cf - . | xz -T0 -6 -c > "payload/ghc-payload-9.6.1-macosx_11_0_arm64.tar.xz"
           else
             echo "xz not found; falling back to 7z -txz"
-            tar -C ghc-bindist -cf - . | 7z a -txz -si -mmt=on "payload/ghc-payload-9.5.0-macosx_11_0_arm64.tar.xz" > /dev/null
+            tar -C ghc-bindist -cf - . | 7z a -txz -si -mmt=on "payload/ghc-payload-9.6.1-macosx_11_0_arm64.tar.xz" > /dev/null
           fi
           python -c "
           import hashlib, pathlib
-          p = pathlib.Path('payload/ghc-payload-9.5.0-macosx_11_0_arm64.tar.xz')
+          p = pathlib.Path('payload/ghc-payload-9.6.1-macosx_11_0_arm64.tar.xz')
           h = hashlib.sha256(p.read_bytes()).hexdigest()
-          pathlib.Path('payload/ghc-payload-9.5.0-macosx_11_0_arm64.tar.xz.sha256').write_text(h + '  ghc-payload-9.5.0-macosx_11_0_arm64.tar.xz\n')
+          pathlib.Path('payload/ghc-payload-9.6.1-macosx_11_0_arm64.tar.xz.sha256').write_text(h + '  ghc-payload-9.6.1-macosx_11_0_arm64.tar.xz\n')
           print('SHA-256', h)
           print('size', p.stat().st_size // 1048576, 'MB')
           "
@@ -335,7 +379,7 @@ jobs:
         run: |
           # A payload that exceeds the distribution ceiling must fail here, loudly,
           # rather than at upload time after the whole matrix has run.
-          SIZE=$(python -c "import pathlib; print(pathlib.Path('payload/ghc-payload-9.5.0-macosx_11_0_arm64.tar.xz').stat().st_size)")
+          SIZE=$(python -c "import pathlib; print(pathlib.Path('payload/ghc-payload-9.6.1-macosx_11_0_arm64.tar.xz').stat().st_size)")
           LIMIT=$((100 * 1024 * 1024))
           echo "payload: $((SIZE / 1048576)) MB (ceiling $((LIMIT / 1048576)) MB)"
           if [ "$SIZE" -gt "$LIMIT" ]; then
@@ -381,8 +425,8 @@ jobs:
           # about the wheel. Checking the version closes that hole in CI.
           REPORTED=$(ghc-wrapper --numeric-version)
           echo "ghc-wrapper --numeric-version -> $REPORTED"
-          if [ "$REPORTED" != "9.4.8" ]; then
-            echo "FATAL: expected GHC 9.4.8, got '$REPORTED' -- resolved the wrong toolchain" >&2
+          if [ "$REPORTED" != "9.6.1" ]; then
+            echo "FATAL: expected GHC 9.6.1, got '$REPORTED' -- resolved the wrong toolchain" >&2
             exit 1
           fi
           echo "=== Debug Library Paths ==="
@@ -454,7 +498,29 @@ jobs:
           echo "=== Checking for required .so files ==="
           find ghc-bindist -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" -o -name "libgmp*" || true
           echo "=== Full lib directory ==="
-          ls -la ghc-bindist/lib/ghc-9.4.8/*.so* 2>/dev/null || true
+          ls -la ghc-bindist/lib/ghc-9.6.1/*.so* 2>/dev/null || true
+
+          # The compiler version must be present in the unpacked tree, or the payload
+          # does not contain the compiler this pipeline claims to ship.
+          #
+          # NOT checked as lib/ghc-<version>/. That path exists on Linux and macOS and
+          # does NOT exist on the GHC 9.6 Windows bindist, which dropped the versioned
+          # level: 9.4.8 unpacked to lib/ghc-9.4.8/lib/x86_64-windows-ghc-9.4.8/, while
+          # 9.6.1 unpacks to lib/x86_64-windows-ghc-9.6.1/. A check written against the
+          # old shape fails on a correct Windows build.
+          #
+          # What survives BOTH layouts is the platform library directory, whose name
+          # carries the version either way. Proved layout-independent in
+          # lean/Proofs/Payload.lean as platformLibName_determines_the_version, with
+          # flat_layout_never_resolves_by_libdir recording why the old check had to go.
+          if ! find ghc-bindist -maxdepth 5 -type d -name "*-ghc-9.6.1" | grep -q .; then
+              echo "::error::no directory matching *-ghc-9.6.1 under ghc-bindist -- the payload does not contain the compiler this build claims"
+              echo "what is actually present:"
+              find ghc-bindist -maxdepth 3 -type d -name "*ghc-*" || true
+              exit 1
+          fi
+          echo "compiler 9.6.1 confirmed present in the unpacked bindist:"
+          find ghc-bindist -maxdepth 5 -type d -name "*-ghc-9.6.1"
 
           # Check if internal libraries actually extracted properly
           if [ -z "$(find ghc-bindist -name "libtinfo*.so.*")" ]; then
@@ -471,16 +537,16 @@ jobs:
         run: |
           mkdir -p payload
           if command -v xz >/dev/null 2>&1; then
-            tar -C ghc-bindist -cf - . | xz -T0 -6 -c > "payload/ghc-payload-9.5.0-win_amd64.tar.xz"
+            tar -C ghc-bindist -cf - . | xz -T0 -6 -c > "payload/ghc-payload-9.6.1-win_amd64.tar.xz"
           else
             echo "xz not found; falling back to 7z -txz"
-            tar -C ghc-bindist -cf - . | 7z a -txz -si -mmt=on "payload/ghc-payload-9.5.0-win_amd64.tar.xz" > /dev/null
+            tar -C ghc-bindist -cf - . | 7z a -txz -si -mmt=on "payload/ghc-payload-9.6.1-win_amd64.tar.xz" > /dev/null
           fi
           python -c "
           import hashlib, pathlib
-          p = pathlib.Path('payload/ghc-payload-9.5.0-win_amd64.tar.xz')
+          p = pathlib.Path('payload/ghc-payload-9.6.1-win_amd64.tar.xz')
           h = hashlib.sha256(p.read_bytes()).hexdigest()
-          pathlib.Path('payload/ghc-payload-9.5.0-win_amd64.tar.xz.sha256').write_text(h + '  ghc-payload-9.5.0-win_amd64.tar.xz\n')
+          pathlib.Path('payload/ghc-payload-9.6.1-win_amd64.tar.xz.sha256').write_text(h + '  ghc-payload-9.6.1-win_amd64.tar.xz\n')
           print('SHA-256', h)
           print('size', p.stat().st_size // 1048576, 'MB')
           "
@@ -489,7 +555,7 @@ jobs:
         run: |
           # A payload that exceeds the distribution ceiling must fail here, loudly,
           # rather than at upload time after the whole matrix has run.
-          SIZE=$(python -c "import pathlib; print(pathlib.Path('payload/ghc-payload-9.5.0-win_amd64.tar.xz').stat().st_size)")
+          SIZE=$(python -c "import pathlib; print(pathlib.Path('payload/ghc-payload-9.6.1-win_amd64.tar.xz').stat().st_size)")
           LIMIT=$((100 * 1024 * 1024))
           echo "payload: $((SIZE / 1048576)) MB (ceiling $((LIMIT / 1048576)) MB)"
           if [ "$SIZE" -gt "$LIMIT" ]; then
@@ -529,8 +595,8 @@ jobs:
           # about the wheel. Checking the version closes that hole in CI.
           REPORTED=$(ghc-wrapper --numeric-version)
           echo "ghc-wrapper --numeric-version -> $REPORTED"
-          if [ "$REPORTED" != "9.4.8" ]; then
-            echo "FATAL: expected GHC 9.4.8, got '$REPORTED' -- resolved the wrong toolchain" >&2
+          if [ "$REPORTED" != "9.6.1" ]; then
+            echo "FATAL: expected GHC 9.6.1, got '$REPORTED' -- resolved the wrong toolchain" >&2
             exit 1
           fi
           echo "=== Debug Library Paths ==="
@@ -781,8 +847,8 @@ jobs:
           fi
           REPORTED=$(ghc-wrapper --numeric-version)
           echo "ghc-wrapper --numeric-version -> $REPORTED"
-          if [ "$REPORTED" != "9.4.8" ]; then
-            echo "::error::expected 9.4.8, got '$REPORTED' -- resolved the wrong compiler"
+          if [ "$REPORTED" != "9.6.1" ]; then
+            echo "::error::expected 9.6.1, got '$REPORTED' -- resolved the wrong compiler"
             exit 1
           fi
 
