@@ -737,6 +737,18 @@ The v2 `fetch_binaries.sh` uses an absolute path for `DESTDIR` to avoid path res
 
 ## FASE 6: TRUSTED PUBLISHING E RELEASE
 
+> **⚠️ SUPERSEDED — non seguire questa fase.**
+>
+> Trusted Publishing è stato provato e non ha funzionato: la run `25262196892`
+> è fallita con `invalid-publisher: valid token, but no corresponding
+> publisher`. Il token OIDC era corretto; PyPI semplicemente non aveva alcun
+> publisher registrato, e nulla dal lato GitHub può crearne uno.
+>
+> La pubblicazione ora usa un API token (`user: __token__`, segreto di
+> repository `PYPI_API_TOKEN`) e `id-token: write` è stato rimosso — un
+> privilegio inutilizzato che sembra necessario è ciò che ha reso quel
+> fallimento confuso così a lungo. Vedi `ARCHITECTURE.md`.
+
 I passaggi per PyPI OIDC e le checklist di release rimangono invariati. Consulta PyPI per impostare il Trusted Publisher sul workflow `build.yml`.
 ```
 
