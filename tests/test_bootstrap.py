@@ -273,3 +273,75 @@ class TestLockDirectory:
             pass
         # Held by the other 'process', so ours must not have removed it.
         assert lock.exists()
+
+
+class TestDownloadFailures:
+    """The failure a user meets first, if they meet one at all.
+
+    `_download` is the only code in this package that touches the network, and
+    none of its error paths were exercised. A release asset that was never
+    attached, a renamed file, a tag that does not exist and a machine with no
+    connectivity all arrive here, and what the user does next depends entirely
+    on whether the message says which URL failed and what to do instead.
+
+    A bare traceback from urllib would be a support burden on every one of
+    those paths, so the content of the message is asserted, not just the type
+    of the exception.
+    """
+
+    def test_http_error_names_the_url_and_the_offline_route(self, tmp_path, monkeypatch):
+        """404 is what a missing release asset looks like from the client."""
+        import urllib.error
+
+        url = bootstrap.payload_url()
+
+        def fake_urlopen(*args, **kwargs):
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+
+        monkeypatch.setattr(bootstrap.urllib.request, "urlopen", fake_urlopen)
+
+        with pytest.raises(bootstrap.BootstrapError) as exc:
+            bootstrap._download(url, tmp_path / "payload.bin", quiet=True)
+
+        message = str(exc.value)
+        assert "404" in message
+        assert url in message, "the failing URL must be in the message"
+        # The user is stranded unless the message says what to do instead.
+        assert "wheel" in message.lower()
+
+    def test_network_failure_is_reported_not_raised_raw(self, tmp_path, monkeypatch):
+        """No connectivity must not surface as a urllib traceback."""
+        import urllib.error
+
+        def fake_urlopen(*args, **kwargs):
+            raise urllib.error.URLError("Name or service not known")
+
+        monkeypatch.setattr(bootstrap.urllib.request, "urlopen", fake_urlopen)
+
+        with pytest.raises(bootstrap.BootstrapError) as exc:
+            bootstrap._download(bootstrap.payload_url(), tmp_path / "p.bin", quiet=True)
+
+        assert "Name or service not known" in str(exc.value)
+        assert "wheel" in str(exc.value).lower()
+
+    def test_timeout_is_reported(self, tmp_path, monkeypatch):
+        def fake_urlopen(*args, **kwargs):
+            raise TimeoutError("timed out")
+
+        monkeypatch.setattr(bootstrap.urllib.request, "urlopen", fake_urlopen)
+
+        with pytest.raises(bootstrap.BootstrapError):
+            bootstrap._download(bootstrap.payload_url(), tmp_path / "p.bin", quiet=True)
+
+    def test_offline_hint_points_at_a_real_asset_name(self):
+        """The suggested wheel must be one the release actually carries.
+
+        The hint is only useful if the filename it prints matches what the
+        pipeline uploads. A stale name here sends users looking for a file
+        that does not exist.
+        """
+        hint = bootstrap._offline_hint()
+        assert bootstrap.GHC_VERSION in hint
+        assert bootstrap.platform_tag() in hint
+        assert hint.rstrip().endswith(".whl")
+        assert f"/v{bootstrap.GHC_VERSION}/" in hint, "asset URLs are tag-scoped"
