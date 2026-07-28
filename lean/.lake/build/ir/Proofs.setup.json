@@ -1,0 +1,11 @@
+{"plugins": [],
+ "package": "ghcPythonProofs",
+ "options": {},
+ "name": "Proofs",
+ "isModule": false,
+ "importArts":
+ {"Proofs.Payload":
+  ["C:\\GIT External Repo\\GHC-COMPILER-PYTHON\\lean\\.lake\\build\\lib\\lean\\Proofs\\Payload.olean"],
+  "Proofs.Extract":
+  ["C:\\GIT External Repo\\GHC-COMPILER-PYTHON\\lean\\.lake\\build\\lib\\lean\\Proofs\\Extract.olean"]},
+ "dynlibs": []}
