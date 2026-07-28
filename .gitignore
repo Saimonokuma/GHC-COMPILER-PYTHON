@@ -24,3 +24,8 @@ HelloWorld.exe
 HelloWorld.hi
 HelloWorld.o
 ghc-bindist_raw
+
+# Lean build output. Compiled oleans and generated C are reproducible from
+# source and churn on every build; 32 of them were tracked, so every proof
+# edit carried a diff of binary artifacts nobody reviews.
+lean/.lake/
