@@ -13,7 +13,9 @@ trap '' PIPE
 # Handle SIGINT (Ctrl+C)
 trap 'echo "Interrupted"; exit 130' INT
 
-STAGING_DIR="ghc-bindist"
+# Overridable so the test suite can point this at a synthetic tree. CI never
+# sets it, so the production path is unchanged.
+STAGING_DIR="${STAGING_DIR:-ghc-bindist}"
 OS=$(uname -s)
 
 # ---------------------------------------------------------------------------
@@ -23,13 +25,20 @@ OS=$(uname -s)
 # bindist, 9,870 entries):
 #
 #     profiling   *_p.a, *.p_hi     602 MB   29.9%
-#     docs        haddock/html      574 MB   28.4%
+#     docs        haddock/html      580 MB   28.7%
 #     static      *.a               331 MB   16.4%
-#     dynamic     *.so              173 MB    8.6%
-#     bin/                          169 MB    8.4%
-#     interfaces  *.hi, *.dyn_hi    166 MB    8.2%
+#     dynamic     *.so              174 MB    8.6%
+#     bin/                          165 MB    8.2%
+#     interfaces  *.hi               82 MB    4.1%
+#     interfaces  *.dyn_hi           82 MB    4.1%
+#     other                           1 MB    0.1%
+#                                 -------------------
+#                                 2,017 MB  100.0%
 #
-# Profiling libraries and documentation are 58.3% of the tree and neither is
+# Every file is attributed; the categories sum to the total exactly, so nothing
+# hides in an unexamined remainder.
+#
+# Profiling libraries and documentation are 58.6% of the tree and neither is
 # needed to compile or run Haskell. Dropping both takes the tree to 863 MB and
 # the compressed payload from 164 MB to 91 MB — under the 100 MB ceiling that
 # governs distribution, without touching anything the compiler needs.
@@ -210,9 +219,19 @@ first_match() {
 # Positive control: report what was actually found, so a future failure is
 # diagnosable from the log instead of requiring a local reproduction.
 for tool in ghc ghc-pkg; do
+	# The versioned fallback must be "${tool}-<digit>...", not "${tool}-*".
+	#
+	# With "${tool}-*" the probe for `ghc` matches `ghc-pkg`, so deleting the
+	# compiler entirely still satisfied the guard -- it reported the toolchain
+	# intact on a tree with no `ghc` in it. The fallback exists to match the
+	# versioned binary `ghc-9.4.8`, which always begins with a digit after the
+	# dash, while every sibling tool (ghc-pkg, ghc-iserv) begins with a letter.
+	#
+	# Caught by tests/test_optimize.py::test_missing_compiler_is_a_hard_failure.
 	FOUND="$(first_match "${tool}")"
-	[ -n "${FOUND}" ] || FOUND="$(first_match "${tool}-*")"
+	[ -n "${FOUND}" ] || FOUND="$(first_match "${tool}-[0-9]*")"
 	[ -n "${FOUND}" ] || FOUND="$(first_match "${tool}.exe")"
+	[ -n "${FOUND}" ] || FOUND="$(first_match "${tool}-[0-9]*.exe")"
 
 	if [ -z "${FOUND}" ]; then
 		echo "   FATAL: '${tool}' is missing after optimization!" >&2
