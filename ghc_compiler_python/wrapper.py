@@ -355,6 +355,16 @@ def _sterilize_environment() -> dict:
                 ghc_root / "lib" / f"ghc-{GHC_VERSION}",
                 ghc_root / "lib" / f"ghc-{GHC_VERSION}" / "lib",
                 Path(_find_platform_lib_subdir() or "."),
+                # Shipped inside the payload, so the thin-wheel path is as
+                # self-contained as the Windows one. GHC 9.4.8 links against
+                # ncurses 5; Ubuntu 24.04 ships ncurses 6 and has no
+                # libtinfo.so.5, so without this the first command a user runs
+                # dies with "error while loading shared libraries".
+                #
+                # This is the Linux twin of the mingw case above: the payload
+                # carries the dependency, and the launcher has to be willing to
+                # look inside the payload for it.
+                ghc_root / "vendor-lib",
                 # auditwheel vendors shared objects here on the offline wheel.
                 Path(__file__).resolve().parent.parent / "ghc_compiler_python.libs",
             ]
