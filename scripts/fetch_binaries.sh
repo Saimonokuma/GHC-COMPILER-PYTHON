@@ -226,7 +226,14 @@ done
 # both layouts, so that is what is checked -- proved layout-independent in
 # lean/Proofs/Payload.lean (platformLibName_determines_the_version).
 GHC_LIB_DIR="${STAGING_DIR}/lib/ghc-${GHC_VERSION}"
-PLATFORM_LIB_DIR=$(find "${STAGING_DIR}" -maxdepth 3 -type d -name "*-ghc-${GHC_VERSION}" 2>/dev/null | head -1)
+# Depth measured, not guessed. From the staging root:
+#   flat       lib/<triple>-ghc-<ver>                      -> 2
+#   versioned  lib/ghc-<ver>/lib/<triple>-ghc-<ver>        -> 4
+# maxdepth 3 was an off-by-one that found the flat tree and missed the
+# versioned one, so Linux failed on a correct build. 5 leaves headroom
+# without reaching into per-package directories, which do not carry the
+# -ghc-<ver> suffix anyway.
+PLATFORM_LIB_DIR=$(find "${STAGING_DIR}" -maxdepth 5 -type d -name "*-ghc-${GHC_VERSION}" 2>/dev/null | head -1)
 
 if [ -n "${PLATFORM_LIB_DIR}" ]; then
 	if [ -d "${GHC_LIB_DIR}" ]; then

@@ -278,14 +278,14 @@ ls -la ghc-bindist/lib/ghc-{GHC_VERSION}/*.so* 2>/dev/null || true
 # carries the version either way. Proved layout-independent in
 # lean/Proofs/Payload.lean as platformLibName_determines_the_version, with
 # flat_layout_never_resolves_by_libdir recording why the old check had to go.
-if ! find ghc-bindist -maxdepth 4 -type d -name "*-ghc-{GHC_VERSION}" | grep -q .; then
+if ! find ghc-bindist -maxdepth 5 -type d -name "*-ghc-{GHC_VERSION}" | grep -q .; then
     echo "::error::no directory matching *-ghc-{GHC_VERSION} under ghc-bindist -- the payload does not contain the compiler this build claims"
     echo "what is actually present:"
     find ghc-bindist -maxdepth 3 -type d -name "*ghc-*" || true
     exit 1
 fi
 echo "compiler {GHC_VERSION} confirmed present in the unpacked bindist:"
-find ghc-bindist -maxdepth 4 -type d -name "*-ghc-{GHC_VERSION}"
+find ghc-bindist -maxdepth 5 -type d -name "*-ghc-{GHC_VERSION}"
 
 # Check if internal libraries actually extracted properly
 if [ -z "$(find ghc-bindist -name "libtinfo*.so.*")" ]; then
