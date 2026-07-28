@@ -156,10 +156,16 @@ else
 		rm -rf "${d}"
 		docs_freed=$((docs_freed + sz))
 	done <<EOF
-$(find "${STAGING_DIR}" -type d \( -name doc -o -name docs -o -name html -o -name latex \) -prune 2>/dev/null)
+$(find "${STAGING_DIR}" -type d \( -name doc -o -name docs -o -name html -o -name latex \) -prune 2>/dev/null || true)
 EOF
 
-	haddocks=$(find "${STAGING_DIR}" -type f -name "*.haddock" 2>/dev/null | wc -l | tr -d ' ')
+	# `set -o pipefail` is active. If find exits non-zero -- one unreadable
+	# directory is enough -- the pipeline fails, the assignment fails, and
+	# `set -e` kills the script partway through optimisation. This is the same
+	# shape as the `find | grep -q` SIGPIPE race that made the integrity guard
+	# fail for 1,599 files and pass for 37, so it gets the same treatment
+	# rather than waiting to be discovered a second time.
+	haddocks=$({ find "${STAGING_DIR}" -type f -name "*.haddock" 2>/dev/null || true; } | wc -l | tr -d ' ')
 	find "${STAGING_DIR}" -type f -name "*.haddock" -delete 2>/dev/null || true
 	echo "   removed ${haddocks} .haddock interface files"
 
