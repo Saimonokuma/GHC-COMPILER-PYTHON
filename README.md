@@ -23,12 +23,18 @@ The PyPI package is small (~17 KiB) and fetches the toolchain for your platform 
 If the machine has no network access, install a self-contained wheel with the toolchain already bundled. These are published on the [releases page](https://github.com/Saimonokuma/GHC-COMPILER-PYTHON/releases) — pick the one matching your platform:
 
 ```bash
-pip install ghc_compiler_python-9.4.8-py3-none-manylinux_2_28_x86_64.whl   # Linux
+pip install ghc_compiler_python-9.4.8-py3-none-manylinux_2_39_x86_64.whl   # Linux (glibc >= 2.39)
 pip install ghc_compiler_python-9.4.8-py3-none-macosx_11_0_arm64.whl       # macOS Apple Silicon
 pip install ghc_compiler_python-9.4.8-py3-none-win_amd64.whl               # Windows
 ```
 
 These never contact the network.
+
+The Linux offline wheel is tagged `manylinux_2_39`, because GHC is built on
+Ubuntu 24.04 and genuinely requires glibc 2.39 — a lower tag would install on
+systems where the toolchain then fails at runtime. On older distributions use
+the thin wheel instead: its payload is a plain tarball and carries no such
+constraint.
 
 ### Requirements
 

@@ -119,7 +119,7 @@ jobs:
           fi
 
           # Run auditwheel with the LD_LIBRARY_PATH so it can find the internal .so dependencies
-          auditwheel repair dist/*.whl --plat manylinux_2_28_x86_64 -w wheelhouse/
+          auditwheel repair dist/*.whl --plat manylinux_2_39_x86_64 -w wheelhouse/
           rm -rf dist/*
           mv wheelhouse/*.whl dist/
       - name: End-to-End Compilation Validation

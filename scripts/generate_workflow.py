@@ -111,10 +111,23 @@ class Step:
 PLATFORMS = {
     "linux": {
         "os": "ubuntu-latest",
-        # auditwheel rewrites this tag onto the wheel; keeping the floor at
-        # 2_39 would exclude every distro older than Ubuntu 24.04, so the
-        # repair targets the oldest glibc the binaries actually require.
-        "platform": "manylinux_2_28_x86_64",
+        # This must state what the binaries actually require, not what would be
+        # convenient. GHC is built here on ubuntu-latest (glibc 2.39) and links
+        # versioned symbols newer than 2.28, so auditwheel refuses to stamp a
+        # lower tag:
+        #
+        #   cannot repair ... to "manylinux_2_28_x86_64" ABI because of the
+        #   presence of too-recent versioned symbols
+        #
+        # Lowering it to widen distro coverage was tried and is impossible
+        # without building GHC inside an older manylinux image. The tag is a
+        # claim about the binaries; a lower one would install on systems where
+        # the toolchain then fails at runtime.
+        #
+        # This constrains the OFFLINE wheel only. The primary path -- thin
+        # wheel plus payload -- is unaffected, because the payload is a plain
+        # tarball carrying no manylinux claim.
+        "platform": "manylinux_2_39_x86_64",
         "archive": f"ghc-payload-{GHC_VERSION}-manylinux_2_39_x86_64.tar.xz",
         "payload_tag": "manylinux_2_39_x86_64",
     },
