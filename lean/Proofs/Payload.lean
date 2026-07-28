@@ -327,41 +327,138 @@ that does not exist, and the install stops working. That is proved below, for
 every pair of versions, rather than argued.
 -/
 
-/-- The compiler directory inside a payload built from a given bindist. -/
-def libDirOf (fetched : String) : String := "lib/ghc-" ++ fetched
+/-! ### The bindist layout is not uniform, and GHC 9.6.1 proved it
 
-/-- The compiler directory `wrapper.py` looks for, given what it claims. -/
+Measured in CI on 2026-07-28, upgrading GHC 9.4.8 -> 9.6.1:
+
+  Linux, macOS   lib/ghc-9.6.1/lib/x86_64-linux-ghc-9.6.1/     (unchanged)
+  Windows        lib/x86_64-windows-ghc-9.6.1/                 (CHANGED)
+
+The Windows bindist dropped the `ghc-<version>` level entirely. An earlier
+revision of this file modelled the compiler directory as `"lib/ghc-" ++ v` on
+every platform, which is simply false for the Windows tree that 9.6 ships.
+
+The consequence is sharper than a wrong path, and it is the reason this section
+exists rather than a one-line fix: **on the flat layout the directory no longer
+carries the version**, so "the toolchain resolved" stops implying "the version
+we claim is the version we shipped". The safety property that
+`resolves_iff_claim_matches_artifact` relied on degrades to nothing.
+
+What survives both layouts is the *platform* library directory, which carries
+the version in either shape:
+
+  lib/ghc-9.6.1/lib/x86_64-windows-ghc-9.6.1     versioned
+  lib/x86_64-windows-ghc-9.6.1                   flat
+
+So the version check is anchored there instead. That is a strictly stronger
+place to anchor it, and it was found by an upgrade rather than by inspection.
+-/
+
+/-- How a bindist arranges its compiler directory. -/
+inductive Layout where
+  /-- `lib/ghc-<version>/...` -- GHC 9.4 everywhere, and 9.6 on Unix. -/
+  | versioned
+  /-- `lib/...` -- the GHC 9.6 Windows bindist. -/
+  | flat
+  deriving DecidableEq, Repr
+
+/-- The compiler directory inside a payload, per layout. -/
+def libDirOf : Layout → String → String
+  | .versioned, fetched => "lib/ghc-" ++ fetched
+  | .flat,      _       => "lib"
+
+/-- The compiler directory `wrapper.py` looks for, given what it claims. Only
+    meaningful under the versioned layout; retained because the theorem about
+    it is what the flat layout takes away. -/
 def libDirClaimed (claimed : String) : String := "lib/ghc-" ++ claimed
 
-/-- A build pairs what was downloaded with what the wrapper will claim. -/
+/--
+  **The flat layout does not encode the version.**
+
+  Two different compilers produce the same directory name, so no amount of
+  looking at that path can tell you which one you have. Stated as a theorem
+  because it is the load-bearing negative result: it says why the check had to
+  move, rather than leaving that as a comment.
+-/
+theorem flat_layout_forgets_the_version (v w : String) :
+    libDirOf .flat v = libDirOf .flat w := rfl
+
+/-- The versioned layout, by contrast, determines it. -/
+theorem versioned_layout_determines_the_version (v w : String)
+    (h : libDirOf .versioned v = libDirOf .versioned w) : v = w :=
+  String.append_right_inj "lib/ghc-" |>.mp h
+
+/-- The platform library directory, which exists under both layouts and carries
+    the version in both. `tri` is the target triple, e.g.
+    `x86_64-windows`. Mirrors what `wrapper._find_platform_lib_subdir` looks
+    for -- a directory whose name ends in `-ghc-<version>`. -/
+def platformLibDir (l : Layout) (tri : String) (v : String) : String :=
+  (match l with
+   | .versioned => "lib/ghc-" ++ v ++ "/lib/"
+   | .flat      => "lib/") ++ tri ++ "-ghc-" ++ v
+
+/-- The *name* of the platform library directory -- the basename, which is what
+    `wrapper._find_platform_lib_subdir` actually matches on when it scans
+    directory entries for one ending in `-ghc-<version>`. Modelling the name
+    rather than the full path is deliberate: the parent differs by layout, the
+    name does not, and the name is the object the code inspects. -/
+def platformLibName (tri v : String) : String := tri ++ "-ghc-" ++ v
+
+/--
+  **The version survives in the platform directory name under EVERY layout.**
+
+  This is what makes a single check correct on both Unix and Windows, and it is
+  the property the build gate and `wrapper._find_platform_lib_subdir` now rely
+  on instead of the `lib/ghc-<v>` path that Windows no longer has.
+-/
+theorem platformLibName_determines_the_version (tri v w : String)
+    (h : platformLibName tri v = platformLibName tri w) : v = w := by
+  unfold platformLibName at h
+  exact String.append_right_inj (tri ++ "-ghc-") |>.mp (by
+    simpa [String.append_assoc] using h)
+
+/-- And the name appears under either layout, so a scan finds it in both. -/
+theorem platformLibDir_ends_with_the_name (l : Layout) (tri v : String) :
+    ∃ parent : String, platformLibDir l tri v = parent ++ platformLibName tri v := by
+  cases l with
+  | versioned => exact ⟨"lib/ghc-" ++ v ++ "/lib/", by simp [platformLibDir,
+      platformLibName, String.append_assoc]⟩
+  | flat => exact ⟨"lib/", by simp [platformLibDir, platformLibName,
+      String.append_assoc]⟩
+
+/-- A build pairs what was downloaded with what the wrapper will claim, and the
+    layout the bindist happened to use. -/
 structure Build where
   /-- The version in the bindist URL `fetch_binaries.sh` downloads. -/
   fetched : String
-  /-- `wrapper.GHC_VERSION` -- what `--numeric-version` prints and, crucially,
-      what the resolved library path is built from. -/
+  /-- `wrapper.GHC_VERSION` -- what `--numeric-version` prints. -/
   claimed : String
+  /-- Which shape the unpacked bindist has. Not ours to choose: GHC changed it
+      under us between 9.4.8 and 9.6.1 on Windows. -/
+  layout : Layout
   deriving DecidableEq, Repr
 
-/-- Resolution succeeds exactly when the directory the wrapper looks for is the
-    one the payload actually contains. -/
-def resolves (b : Build) : Prop := libDirClaimed b.claimed = libDirOf b.fetched
+/-- The old resolution rule: look for `lib/ghc-<claimed>`. Kept because the
+    theorem about it is exactly what the flat layout destroys. -/
+def resolvesByLibDir (b : Build) : Prop :=
+  libDirClaimed b.claimed = libDirOf b.layout b.fetched
 
-instance (b : Build) : Decidable (resolves b) := by
-  unfold resolves; infer_instance
+instance (b : Build) : Decidable (resolvesByLibDir b) := by
+  unfold resolvesByLibDir; infer_instance
 
 /--
-  **A claimed compiler version that was not the one fetched cannot resolve.**
+  **Under the versioned layout, resolving proves the claim matches the artifact.**
 
   The contrapositive is the useful direction: if the toolchain resolves at all,
-  the version being claimed is the version that was downloaded. Lying about the
-  compiler is therefore not a cosmetic choice with an honesty cost -- it is a
-  broken install, detectable by the package itself.
+  the version claimed is the version downloaded. Lying about the compiler is not
+  a cosmetic choice with an honesty cost -- it is a broken install, detectable
+  by the package itself.
 
   Proved for every pair of strings, not for the pair anyone had in mind.
 -/
-theorem resolves_iff_claim_matches_artifact (b : Build) :
-    resolves b ↔ b.claimed = b.fetched := by
-  unfold resolves libDirClaimed libDirOf
+theorem resolves_iff_claim_matches_artifact (fetched claimed : String) :
+    resolvesByLibDir ⟨fetched, claimed, .versioned⟩ ↔ claimed = fetched := by
+  unfold resolvesByLibDir libDirClaimed libDirOf
   -- The two paths share the literal prefix "lib/ghc-", so they are equal
   -- exactly when the version components are. `String.append_right_inj` is the
   -- cancellation core actually provides; an earlier attempt reasoned via
@@ -369,11 +466,39 @@ theorem resolves_iff_claim_matches_artifact (b : Build) :
   -- `(a ++ b).drop a.length` to `b`.
   exact String.append_right_inj "lib/ghc-"
 
-/-- The honest build: what we fetch is what we claim. -/
-def honestBuild : Build := { fetched := ghcVersion, claimed := ghcVersion }
+/--
+  **Under the flat layout the old rule resolves NOTHING.**
+
+  First written as "the flat layout resolves any claim" -- that the guarantee
+  degraded to vacuous. Lean refused it, and the refusal was correct: the goal
+  reduced to `False`, because `"lib/ghc-" ++ claimed` cannot equal `"lib"` for
+  any claim at all. The rule does not weaken on the flat layout, it fails
+  outright, for every version including the right one.
+
+  Which is precisely what CI reported when GHC 9.6.1 was first built for
+  Windows: the directory was simply missing. The guess was that lying would
+  become undetectable; the truth is that the honest case breaks too. Recorded
+  because the theorem corrected the hypothesis, not the other way round.
+-/
+theorem flat_layout_never_resolves_by_libdir (fetched claimed : String) :
+    ¬ resolvesByLibDir ⟨fetched, claimed, .flat⟩ := by
+  intro h
+  unfold resolvesByLibDir libDirClaimed libDirOf at h
+  -- Length is enough: the claimed path is at least 8 characters, "lib" is 3.
+  -- `simp` alone leaves the literal lengths unreduced, so they are pinned by
+  -- `rfl` and the contradiction handed to `omega`.
+  have hlen := congrArg String.length h
+  simp only [String.length_append] at hlen
+  have h8 : "lib/ghc-".length = 8 := rfl
+  have h3 : "lib".length = 3 := rfl
+  rw [h8, h3] at hlen
+  omega
+
+/-- The honest build on the layout this release uses for Unix. -/
+def honestBuild : Build := ⟨ghcVersion, ghcVersion, .versioned⟩
 
 /-- It resolves, and the check is by evaluation rather than by assumption. -/
-theorem honest_build_resolves : resolves honestBuild := by decide
+theorem honest_build_resolves : resolvesByLibDir honestBuild := by decide
 
 /--
   **The specific edit that was requested, refuted by evaluation.**
@@ -383,14 +508,28 @@ theorem honest_build_resolves : resolves honestBuild := by decide
   general theorem is easy to nod at and a failing example is not.
 -/
 theorem claiming_9_5_0_while_shipping_9_4_8_breaks_resolution :
-    ¬ resolves { fetched := "9.4.8", claimed := "9.5.0" } := by decide
+    ¬ resolvesByLibDir ⟨"9.4.8", "9.5.0", .versioned⟩ := by decide
 
 /-- The same edit against the compiler this release actually ships. -/
 theorem claiming_anything_else_breaks_resolution (claimed : String)
     (h : claimed ≠ ghcVersion) :
-    ¬ resolves { fetched := ghcVersion, claimed := claimed } := by
+    ¬ resolvesByLibDir ⟨ghcVersion, claimed, .versioned⟩ := by
   intro hr
-  exact h ((resolves_iff_claim_matches_artifact _).mp hr)
+  exact h ((resolves_iff_claim_matches_artifact _ _).mp hr)
+
+/--
+  **The check that works on both layouts.**
+
+  Scanning for a directory named `<triple>-ghc-<claimed>` determines the
+  version under either shape, so it is correct on Unix and on the Windows tree
+  that no longer has `lib/ghc-<v>`. This is the invariant the build gate and
+  the wrapper now use.
+-/
+theorem version_check_by_name_is_layout_independent
+    (_l : Layout) (tri claimed fetched : String)
+    (h : platformLibName tri claimed = platformLibName tri fetched) :
+    claimed = fetched :=
+  platformLibName_determines_the_version tri claimed fetched h
 
 /-! ## Cache completeness
 

@@ -247,7 +247,7 @@ elif fetched != claimed:
           f"Payload.lean resolves_iff_claim_matches_artifact")
 else:
     print(f"ok   claimed compiler is the fetched compiler: {fetched} "
-          f"(lib/ghc-{fetched}/ will exist in the payload)")
+          f"(a *-ghc-{fetched} directory will exist in the payload)")
 
 print(f"\n{checks - fails}/{checks} checks passed")
 sys.exit(1 if fails else 0)

@@ -276,18 +276,45 @@ def _validate_c_linker(root: Optional[Path] = None) -> None:
 
 
 def _find_platform_lib_subdir() -> str:
-    """Find the platform-specific library subdirectory inside the GHC lib directory.
+    """Find the platform-specific library subdirectory in the unpacked toolchain.
 
-    On Linux:   lib/ghc-9.4.8/lib/x86_64-linux-ghc-9.4.8/
-    On macOS:   lib/ghc-9.4.8/lib/aarch64-osx-ghc-9.4.8/ (or similar)
-    On Windows: Does not exist (DLLs are in mingw/bin/)
+    THE BINDIST LAYOUT IS NOT UNIFORM, and GHC changed it under us at 9.6:
+
+        lib/ghc-9.6.1/lib/x86_64-linux-ghc-9.6.1/   Linux, macOS   (versioned)
+        lib/x86_64-windows-ghc-9.6.1/               Windows 9.6+   (flat)
+
+    Through 9.4.8 every platform used the versioned shape, so this function
+    looked only under `lib/ghc-<version>/lib`. On the 9.6 Windows tree that
+    directory does not exist, so it returned "" -- silently dropping the
+    library search path rather than failing, which is the worst of both.
+
+    What survives both layouts is the directory NAME, which carries the version
+    either way. Searching by name is therefore correct on both, and is proved
+    layout-independent in lean/Proofs/Payload.lean:
+
+        platformLibName_determines_the_version   the name pins the version
+        flat_layout_never_resolves_by_libdir     why the old path check had to go
+
+    Returns "" when nothing matches, which is a legitimate outcome: on Windows
+    the runtime DLLs live in mingw/bin/ and no platform lib dir is required.
     """
-    ghc_lib_dir = _ghc_root_or_prefix() / "lib" / f"ghc-{GHC_VERSION}" / "lib"
-    if not ghc_lib_dir.is_dir():
-        return ""
+    root = _ghc_root_or_prefix()
+    suffix = f"-ghc-{GHC_VERSION}"
 
-    # 🧪 Alchemist: Generator expression with next() replaces manual iteration loop
-    return next((str(c) for c in ghc_lib_dir.iterdir() if c.is_dir() and c.name.endswith(f"-ghc-{GHC_VERSION}")), "")
+    # Versioned layout first: it is the more specific location, and preferring
+    # it keeps behaviour identical on the platforms that still use it.
+    candidates = (root / "lib" / f"ghc-{GHC_VERSION}" / "lib", root / "lib")
+    for parent in candidates:
+        if not parent.is_dir():
+            continue
+        match = next(
+            (str(c) for c in parent.iterdir()
+             if c.is_dir() and c.name.endswith(suffix)),
+            "",
+        )
+        if match:
+            return match
+    return ""
 
 
 def _sterilize_environment() -> dict:

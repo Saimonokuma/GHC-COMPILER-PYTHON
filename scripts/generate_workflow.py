@@ -265,12 +265,27 @@ find ghc-bindist -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" -o 
 echo "=== Full lib directory ==="
 ls -la ghc-bindist/lib/ghc-{GHC_VERSION}/*.so* 2>/dev/null || true
 
-# The lib directory is named after the compiler, so its absence means the
-# bindist that was unpacked is not the one this pipeline claims to ship.
-if [ ! -d "ghc-bindist/lib/ghc-{GHC_VERSION}" ]; then
-    echo "::error::ghc-bindist/lib/ghc-{GHC_VERSION} is missing -- the payload does not contain the compiler this build claims"
+# The compiler version must be present in the unpacked tree, or the payload
+# does not contain the compiler this pipeline claims to ship.
+#
+# NOT checked as lib/ghc-<version>/. That path exists on Linux and macOS and
+# does NOT exist on the GHC 9.6 Windows bindist, which dropped the versioned
+# level: 9.4.8 unpacked to lib/ghc-9.4.8/lib/x86_64-windows-ghc-9.4.8/, while
+# 9.6.1 unpacks to lib/x86_64-windows-ghc-9.6.1/. A check written against the
+# old shape fails on a correct Windows build.
+#
+# What survives BOTH layouts is the platform library directory, whose name
+# carries the version either way. Proved layout-independent in
+# lean/Proofs/Payload.lean as platformLibName_determines_the_version, with
+# flat_layout_never_resolves_by_libdir recording why the old check had to go.
+if ! find ghc-bindist -maxdepth 4 -type d -name "*-ghc-{GHC_VERSION}" | grep -q .; then
+    echo "::error::no directory matching *-ghc-{GHC_VERSION} under ghc-bindist -- the payload does not contain the compiler this build claims"
+    echo "what is actually present:"
+    find ghc-bindist -maxdepth 3 -type d -name "*ghc-*" || true
     exit 1
 fi
+echo "compiler {GHC_VERSION} confirmed present in the unpacked bindist:"
+find ghc-bindist -maxdepth 4 -type d -name "*-ghc-{GHC_VERSION}"
 
 # Check if internal libraries actually extracted properly
 if [ -z "$(find ghc-bindist -name "libtinfo*.so.*")" ]; then
