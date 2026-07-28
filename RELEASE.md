@@ -32,7 +32,7 @@ Only if you need an **offline or air-gapped** install:
 |:--|:--|--:|
 | 🐧 **Linux** (glibc ≥ 2.38) | `ghc_compiler_python-9.4.8-py3-none-manylinux_2_38_x86_64.manylinux_2_39_x86_64.whl` | ~188 MB |
 | 🍎 **macOS** (Apple Silicon) | `ghc_compiler_python-9.4.8-py3-none-macosx_11_0_arm64.whl` | ~191 MB |
-| 🪟 **Windows** (x86_64) | `ghc_compiler_python-9.4.8-py3-none-win_amd64.whl` | ~350 MB |
+| 🪟 **Windows** (x86_64) | `ghc_compiler_python-9.4.8-py3-none-win_amd64.whl` | ~403 MB |
 
 ```bash
 pip install ./ghc_compiler_python-9.4.8-py3-none-<your-platform>.whl
