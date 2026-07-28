@@ -35,8 +35,36 @@ class TestPlatformIdentity:
 
     def test_payload_name_carries_version_and_tag(self):
         name = bootstrap.payload_name()
-        assert bootstrap.GHC_VERSION in name
+        assert bootstrap.RELEASE_VERSION in name
         assert bootstrap.platform_tag() in name
+
+    def test_payload_name_uses_the_release_axis_not_the_compiler_axis(self):
+        """Asset names are addressed by the release, never by the compiler.
+
+        These were one constant through 9.4.8, which read fine while the two
+        agreed. When the 9.4.8 wheel turned out to be unusable on Windows and
+        PyPI refused to take a replacement, that single constant made
+        "publish a fixed wheel" and "rename every payload asset" the same
+        edit. This test fails if they are ever merged back.
+        """
+        assert bootstrap.RELEASE_VERSION != bootstrap.GHC_VERSION, (
+            "this test is vacuous while the two versions agree -- give it a "
+            "release whose version differs from the compiler's"
+        )
+        name = bootstrap.payload_name()
+        assert bootstrap.RELEASE_VERSION in name
+        assert bootstrap.GHC_VERSION not in name
+
+    def test_cache_is_keyed_by_release_so_a_new_release_never_reuses_a_payload(self):
+        """A payload rebuilt under a new tag is not byte-identical to the old
+        one, so its digest differs. If the cache were keyed by the compiler
+        version, 9.4.9 would find 9.4.8's extracted tree already stamped
+        `.complete` and skip the download entirely -- serving the payload
+        whose wrapper this release exists to replace.
+        """
+        assert bootstrap.RELEASE_VERSION != bootstrap.GHC_VERSION
+        assert bootstrap.payload_root().parent.name == bootstrap.RELEASE_VERSION
+        assert bootstrap.payload_root().parent.name != bootstrap.GHC_VERSION
 
     def test_suffix_matches_platform(self):
         expected = ".zip" if sys.platform == "win32" else ".tar.xz"
@@ -48,7 +76,7 @@ class TestPlatformIdentity:
         Addressing the release by tag is what keeps a 9.4.8 wheel from silently
         picking up a 9.6 payload after a future release.
         """
-        assert f"/v{bootstrap.GHC_VERSION}/" in bootstrap.payload_url()
+        assert f"/v{bootstrap.RELEASE_VERSION}/" in bootstrap.payload_url()
 
     def test_unsupported_platform_is_refused(self, monkeypatch):
         monkeypatch.setattr(sys, "platform", "sunos5")
@@ -66,7 +94,7 @@ class TestCacheLocation:
     def test_payload_root_is_versioned_and_platform_scoped(self):
         root = bootstrap.payload_root()
         assert root.name == bootstrap.platform_tag()
-        assert root.parent.name == bootstrap.GHC_VERSION
+        assert root.parent.name == bootstrap.RELEASE_VERSION
 
     def test_absent_until_stamped(self):
         """A directory without the completion stamp counts as absent.
@@ -341,7 +369,7 @@ class TestDownloadFailures:
         that does not exist.
         """
         hint = bootstrap._offline_hint()
-        assert bootstrap.GHC_VERSION in hint
+        assert bootstrap.RELEASE_VERSION in hint
         assert bootstrap.platform_tag() in hint
         assert hint.rstrip().endswith(".whl")
-        assert f"/v{bootstrap.GHC_VERSION}/" in hint, "asset URLs are tag-scoped"
+        assert f"/v{bootstrap.RELEASE_VERSION}/" in hint, "asset URLs are tag-scoped"

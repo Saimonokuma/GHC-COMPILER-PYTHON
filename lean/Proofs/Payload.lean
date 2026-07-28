@@ -71,13 +71,76 @@ def payloadKey (p : Platform) : String × String :=
 theorem payloadKey_injective (p q : Platform) (h : payloadKey p = payloadKey q) : p = q := by
   cases p <;> cases q <;> simp_all [payloadKey, payloadTag, archiveSuffix]
 
+/-- `bootstrap.RELEASE_VERSION`: the tag, the asset names, the cache key. -/
+def releaseVersion : String := "9.4.9"
+
+/-- `bootstrap.GHC_VERSION`: the compiler inside the payload, which is what
+    `ghc-wrapper --numeric-version` reports. -/
+def ghcVersion : String := "9.4.8"
+
 /-- For the version actually shipped, the rendered filenames are pairwise
     distinct too. Checked by evaluation rather than assumed. -/
-example : payloadName "9.4.8" .linuxX86 ≠ payloadName "9.4.8" .winX86 := by decide
+example : payloadName releaseVersion .linuxX86 ≠ payloadName releaseVersion .winX86 := by decide
 
-example : payloadName "9.4.8" .macosArm ≠ payloadName "9.4.8" .macosX86 := by decide
+example : payloadName releaseVersion .macosArm ≠ payloadName releaseVersion .macosX86 := by decide
 
-example : payloadName "9.4.8" .linuxX86 ≠ payloadName "9.4.8" .linuxArm := by decide
+example : payloadName releaseVersion .linuxX86 ≠ payloadName releaseVersion .linuxArm := by decide
+
+/-! ## The two version axes
+
+Through 9.4.8 the distribution version and the compiler version were one
+constant. That read well while they agreed and became a trap the moment they
+had to diverge: the 9.4.8 wheel rejected every Windows machine without a system
+gcc, PyPI does not allow replacing a published version, and so the fix needed a
+new distribution version -- which, with one constant, also renamed every payload
+asset and silently claimed a GHC release that does not exist.
+
+`bootstrap.py` now carries `RELEASE_VERSION` and `GHC_VERSION` separately. The
+properties below are what that separation has to buy.
+-/
+
+/-- The axes are distinct. Every theorem below is vacuous if this fails, so it
+    is stated first and checked by evaluation. -/
+theorem versions_differ : releaseVersion ≠ ghcVersion := by decide
+
+/-- The cache directory `bootstrap.payload_root()` resolves to, as the pair it
+    is actually built from: `cache_root() / RELEASE_VERSION / platform_tag()`. -/
+def cacheKey (v : String) (p : Platform) : String × String := (v, payloadTag p)
+
+/--
+  **A new release never reuses an old release's extracted payload.**
+
+  Payloads rebuilt under a new tag are not byte-identical to the old ones, so
+  their digests differ. Were the cache keyed by the compiler version, 9.4.9
+  would find 9.4.8's tree already stamped `.complete`, skip the download, and
+  run the very wrapper this release exists to replace -- with no digest check
+  in sight, because nothing would be downloaded to check.
+-/
+theorem cacheKey_separates_releases (p q : Platform) :
+    cacheKey releaseVersion p ≠ cacheKey ghcVersion q := by
+  intro h
+  exact versions_differ (congrArg Prod.fst h)
+
+/-- Cache keys collide only for the same release on the same platform. -/
+theorem cacheKey_injective (v w : String) (p q : Platform)
+    (h : cacheKey v p = cacheKey w q) : v = w ∧ p = q :=
+  ⟨congrArg Prod.fst h, payloadTag_injective p q (congrArg Prod.snd h)⟩
+
+/--
+  **Asset names are addressed by the release, never by the compiler.**
+
+  Checked on every platform rather than on the one that happened to break.
+-/
+theorem payloadName_uses_release_axis :
+    ∀ p : Platform, payloadName releaseVersion p ≠ payloadName ghcVersion p := by
+  intro p; cases p <;> decide
+
+/-- And the rendering really does carry the release version, so the previous
+    theorem is not satisfied by a name that mentions neither. -/
+example : payloadName releaseVersion .winX86 = "ghc-payload-9.4.9-win_amd64.zip" := by decide
+
+example : payloadName releaseVersion .linuxX86
+    = "ghc-payload-9.4.9-manylinux_2_39_x86_64.tar.xz" := by decide
 
 /-- Every platform has a non-empty tag: a payload can always be addressed. -/
 theorem payloadTag_ne_empty (p : Platform) : payloadTag p ≠ "" := by

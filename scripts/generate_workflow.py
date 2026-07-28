@@ -54,7 +54,16 @@ ACTIONS = {
 
 PYTHON_VERSION = "3.13"
 
+# The compiler inside the payload. Drives the `ghc-wrapper --numeric-version`
+# assertions, which must keep answering for the compiler.
 GHC_VERSION = "9.4.8"
+
+# The distribution coordinate: git tag, release, payload asset names, wheel
+# version. Diverged from GHC_VERSION at 9.4.9, because the 9.4.8 wheel on PyPI
+# is unusable on Windows and PyPI does not allow replacing a version. Keep the
+# two apart: renaming a payload asset and claiming a new compiler release must
+# never be the same edit again.
+RELEASE_VERSION = "9.4.9"
 
 
 class Step:
@@ -128,19 +137,19 @@ PLATFORMS = {
         # wheel plus payload -- is unaffected, because the payload is a plain
         # tarball carrying no manylinux claim.
         "platform": "manylinux_2_39_x86_64",
-        "archive": f"ghc-payload-{GHC_VERSION}-manylinux_2_39_x86_64.tar.xz",
+        "archive": f"ghc-payload-{RELEASE_VERSION}-manylinux_2_39_x86_64.tar.xz",
         "payload_tag": "manylinux_2_39_x86_64",
     },
     "macos": {
         "os": "macos-latest",
         "platform": "macosx_11_0_arm64",
-        "archive": f"ghc-payload-{GHC_VERSION}-macosx_11_0_arm64.tar.xz",
+        "archive": f"ghc-payload-{RELEASE_VERSION}-macosx_11_0_arm64.tar.xz",
         "payload_tag": "macosx_11_0_arm64",
     },
     "windows": {
         "os": "windows-latest",
         "platform": "win_amd64",
-        "archive": f"ghc-payload-{GHC_VERSION}-win_amd64.zip",
+        "archive": f"ghc-payload-{RELEASE_VERSION}-win_amd64.zip",
         "payload_tag": "win_amd64",
     },
 }
@@ -555,6 +564,53 @@ def generate_delivery_proof_job():
           echo "installed size on disk:"
           python -c "import ghc_compiler_python, pathlib, sys; p=pathlib.Path(ghc_compiler_python.__file__).parent; print(sum(f.stat().st_size for f in p.rglob('*') if f.is_file()), 'bytes')"
 
+      - name: Make The Runner Look Like A User Machine
+        shell: bash
+        run: |
+          # windows-latest ships mingw via chocolatey, so `gcc` is always on
+          # PATH here and was never on PATH for a real user. That single
+          # difference let 9.4.8 ship a wrapper which aborted with
+          #
+          #   FATAL ERROR: The GHC compiler requires a host C-linker
+          #
+          # before it ever touched the mingw the payload had just downloaded.
+          # Three green Windows jobs certified a wheel that could not compile
+          # on any stock Windows box. A runner that is better equipped than the
+          # machine it certifies is not a test, it is a rehearsal.
+          #
+          # So the system compilers are removed from PATH for the rest of this
+          # job. On Linux and macOS GHC genuinely needs the system cc and the
+          # payload ships none, so they are left alone -- the point is to match
+          # each platform's real user, not to strip uniformly.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            KEEP=""
+            IFS=':' read -ra PARTS <<< "$PATH"
+            for d in "${{PARTS[@]}}"; do
+              if [ -x "$d/gcc.exe" ] || [ -x "$d/clang.exe" ] || [ -x "$d/gcc" ] || [ -x "$d/clang" ]; then
+                echo "dropping from PATH: $d"
+                continue
+              fi
+              KEEP="${{KEEP:+$KEEP:}}$d"
+            done
+            echo "PATH=$KEEP" >> "$GITHUB_ENV"
+            export PATH="$KEEP"
+          fi
+
+          # Assert the scrub worked rather than trusting it. If a system
+          # compiler survives, this job silently reverts to the rehearsal it
+          # was, so failing here is the honest outcome.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            if command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1; then
+              echo "::error::a system C compiler is still on PATH -- this job would not test the user's machine"
+              command -v gcc || true
+              command -v clang || true
+              exit 1
+            fi
+            echo "no system gcc/clang on PATH: the payload's own toolchain is the only one available"
+          else
+            echo "$RUNNER_OS uses the system cc by design; PATH left untouched"
+          fi
+
       - name: Fetch The Payload From This Release
         shell: bash
         env:
@@ -805,10 +861,16 @@ jobs:
 
 
 if __name__ == "__main__":
+    # Written with an explicit newline so a Windows checkout does not silently
+    # rewrite every line ending in a generated file, and reported without
+    # non-ASCII: a bare `print("<checkmark>")` raised UnicodeEncodeError on a
+    # cp1252 console *after* both files were already written, so the generator
+    # exited 1 having fully succeeded. An exit code that lies about success is
+    # worse than no exit code, because the next person learns to ignore it.
     build_path = Path(".github/workflows/build.yml")
-    build_path.write_text(generate_yaml(), encoding="utf-8")
-    print(f"✅ Generated {build_path} successfully.")
+    build_path.write_text(generate_yaml(), encoding="utf-8", newline="\n")
+    print(f"OK: generated {build_path}")
 
     ci_path = Path(".github/workflows/ci.yml")
-    ci_path.write_text(generate_ci_yaml(), encoding="utf-8")
-    print(f"✅ Generated {ci_path} successfully.")
+    ci_path.write_text(generate_ci_yaml(), encoding="utf-8", newline="\n")
+    print(f"OK: generated {ci_path}")
