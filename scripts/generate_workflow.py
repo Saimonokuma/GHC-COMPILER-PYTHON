@@ -491,6 +491,16 @@ def generate_release_job():
         with:
           files: release/*
           body_path: RELEASE.md
+          # Without an explicit name the release is titled with the bare tag,
+          # "v9.4.8", which is what a user sees first on the releases page and
+          # in every notification.
+          name: GHC Compiler Python ${{{{ github.ref_name }}}}
+          # This is the supported release for the version it carries, so it
+          # should be the one the "Latest" badge points at rather than
+          # whatever happens to sort highest.
+          make_latest: true
+          # A release that silently attaches nothing is indistinguishable from
+          # a successful one until a user hits a 404 on the payload URL.
           fail_on_unmatched_files: true
 """
 
