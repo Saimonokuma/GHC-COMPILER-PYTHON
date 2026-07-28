@@ -80,7 +80,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p payload
-          tar -C ghc-bindist -cJf "payload/ghc-payload-9.4.8-manylinux_2_39_x86_64.tar.xz" .
+          tar -C ghc-bindist -cf - . | xz -T0 -6 -c > "payload/ghc-payload-9.4.8-manylinux_2_39_x86_64.tar.xz"
           python -c "
           import hashlib, pathlib
           p = pathlib.Path('payload/ghc-payload-9.4.8-manylinux_2_39_x86_64.tar.xz')
@@ -220,7 +220,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p payload
-          tar -C ghc-bindist -cJf "payload/ghc-payload-9.4.8-macosx_11_0_arm64.tar.xz" .
+          tar -C ghc-bindist -cf - . | xz -T0 -6 -c > "payload/ghc-payload-9.4.8-macosx_11_0_arm64.tar.xz"
           python -c "
           import hashlib, pathlib
           p = pathlib.Path('payload/ghc-payload-9.4.8-macosx_11_0_arm64.tar.xz')

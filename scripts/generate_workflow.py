@@ -202,8 +202,13 @@ print('size', p.stat().st_size // 1048576, 'MB')
 "
 """
     else:
+        # `tar -cJf` invokes xz single-threaded, which takes many minutes over
+        # an 863 MB tree and dominates the job. `-T0` uses every core the
+        # runner has. `-6` is xz's default preset, kept explicit so the
+        # compression ratio -- and therefore the payload size the 100 MB
+        # ceiling is checked against -- does not change with the tool default.
         payload_cmd = f"""mkdir -p payload
-tar -C ghc-bindist -cJf "payload/{archive}" .
+tar -C ghc-bindist -cf - . | xz -T0 -6 -c > "payload/{archive}"
 python -c "
 import hashlib, pathlib
 p = pathlib.Path('payload/{archive}')
