@@ -44,6 +44,8 @@ dynamic = ["scripts"]
 Homepage = "https://github.com/Saimonokuma/GHC-COMPILER-PYTHON"
 Source = "https://github.com/Saimonokuma/GHC-COMPILER-PYTHON"
 Issues = "https://github.com/Saimonokuma/GHC-COMPILER-PYTHON/issues"
+Contributing = "https://github.com/Saimonokuma/GHC-COMPILER-PYTHON/blob/main/CONTRIBUTING.md"
+Documentation = "https://github.com/Saimonokuma/GHC-COMPILER-PYTHON/blob/main/ARCHITECTURE.md"
 Releases = "https://github.com/Saimonokuma/GHC-COMPILER-PYTHON/releases"
 # PyPI renders this as a "Funding" link in the project sidebar.
 Funding = "https://ko-fi.com/saimonokuma"
