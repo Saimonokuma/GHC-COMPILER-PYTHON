@@ -1,0 +1,32 @@
+{"synthetic": false,
+ "schemaVersion": "2025-09-10",
+ "outputs":
+ {"o": ["f9ccd39a970657f2.olean"],
+  "m": false,
+  "i": "18345755a453e247.ilean",
+  "c": "25273353dc2336a0.c"},
+ "log":
+ [{"message":
+   ".> LEAN_PATH=C:\\GIT External Repo\\GHC-COMPILER-PYTHON\\lean\\.lake\\build\\lib\\lean c:\\Users\\Saimono\\.elan\\toolchains\\leanprover--lean4---v4.32.1\\bin\\lean.exe C:\\GIT External Repo\\GHC-COMPILER-PYTHON\\lean\\Proofs\\Guard.lean -o C:\\GIT External Repo\\GHC-COMPILER-PYTHON\\lean\\.lake\\build\\lib\\lean\\Proofs\\Guard.olean -i C:\\GIT External Repo\\GHC-COMPILER-PYTHON\\lean\\.lake\\build\\lib\\lean\\Proofs\\Guard.ilean -c C:\\GIT External Repo\\GHC-COMPILER-PYTHON\\lean\\.lake\\build\\ir\\Proofs\\Guard.c --setup C:\\GIT External Repo\\GHC-COMPILER-PYTHON\\lean\\.lake\\build\\ir\\Proofs\\Guard.setup.json --json",
+   "level": "trace"}],
+ "inputs":
+ [["Proofs.Guard:deps",
+   [["deps",
+     [["ghcPythonProofs/Proofs:extraDep",
+       [["@ghcPythonProofs:extraDep", "00000000000006bb"]]],
+      ["imports", "00000000000006bb"]]],
+    ["libs",
+     [["import dynlibs", "00000000000006bb"],
+      ["package external libraries", "00000000000006bb"],
+      ["module dynlibs", "00000000000006bb"],
+      ["module plugins", "00000000000006bb"]]]]],
+  ["Lean 4.32.1, commit f054605aea4b840552cca2e725580bffd1e1b704",
+   "4ce1780d8d26fd00"],
+  ["C:\\GIT External Repo\\GHC-COMPILER-PYTHON\\lean\\Proofs\\Guard.lean",
+   "c16338b6d5823793"],
+  ["options", "00000000000006bb"],
+  ["isModule: false", "feefd2a0d3a1847e"],
+  ["Module.name: Proofs.Guard", "bc11767384daa7c3"],
+  ["Package.id?: (some ghcPythonProofs)", "6d4a133f3cd446a9"],
+  ["Module.leanArgs: #[]", "00000000000006bb"]],
+ "depHash": "16f0bbfa52fd8324"}

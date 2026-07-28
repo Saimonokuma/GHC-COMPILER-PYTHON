@@ -1,6 +1,6 @@
 // Lean compiler output
 // Module: Proofs
-// Imports: public import Init public meta import Init public import Proofs.Payload public import Proofs.Extract
+// Imports: public import Init public meta import Init public import Proofs.Payload public import Proofs.Extract public import Proofs.Guard
 #include <lean/lean.h>
 #if defined(__clang__)
 #pragma clang diagnostic ignored "-Wunused-parameter"
@@ -17,6 +17,7 @@ lean_object* initialize_Init(uint8_t builtin);
 lean_object* initialize_Init(uint8_t builtin);
 lean_object* initialize_ghcPythonProofs_Proofs_Payload(uint8_t builtin);
 lean_object* initialize_ghcPythonProofs_Proofs_Extract(uint8_t builtin);
+lean_object* initialize_ghcPythonProofs_Proofs_Guard(uint8_t builtin);
 static bool _G_initialized = false;
 LEAN_EXPORT lean_object* initialize_ghcPythonProofs_Proofs(uint8_t builtin) {
 lean_object * res;
@@ -32,6 +33,9 @@ res = initialize_ghcPythonProofs_Proofs_Payload(builtin);
 if (lean_io_result_is_error(res)) return res;
 lean_dec_ref(res);
 res = initialize_ghcPythonProofs_Proofs_Extract(builtin);
+if (lean_io_result_is_error(res)) return res;
+lean_dec_ref(res);
+res = initialize_ghcPythonProofs_Proofs_Guard(builtin);
 if (lean_io_result_is_error(res)) return res;
 lean_dec_ref(res);
 return lean_io_result_mk_ok(lean_box(0));
