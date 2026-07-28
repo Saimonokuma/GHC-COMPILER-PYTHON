@@ -11,10 +11,15 @@ version = "9.4.8"
 description = "Native GHC 9.4.8 compiler and Cabal 3.10.3.0 tooling packaged as an isolated Python Wheel"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.8"
+# 3.10, not 3.8. wrapper.py uses structural pattern matching (`match`/`case`),
+# which is a syntax error on 3.8 and 3.9 -- pip would have happily installed
+# this package there and it would have failed on first import. Verified by
+# parsing wrapper.py with ast.feature_version=(3, 9).
+requires-python = ">=3.10"
 authors = [
 	{name = "ghc-compiler-python contributors"},
 ]
+keywords = ["ghc", "haskell", "compiler", "cabal", "toolchain"]
 classifiers = [
 	"Development Status :: 5 - Production/Stable",
 	"Intended Audience :: Developers",
@@ -24,17 +29,34 @@ classifiers = [
 	"Operating System :: Microsoft :: Windows",
 	"Programming Language :: Haskell",
 	"Programming Language :: Python :: 3",
+	"Programming Language :: Python :: 3.10",
+	"Programming Language :: Python :: 3.11",
+	"Programming Language :: Python :: 3.12",
+	"Programming Language :: Python :: 3.13",
+	"Programming Language :: Python :: 3 :: Only",
 	"Topic :: Software Development :: Compilers",
 	"Topic :: Software Development :: Build Tools",
 ]
 dependencies = []
 dynamic = ["scripts"]
 
+[project.urls]
+Homepage = "https://github.com/Saimonokuma/GHC-COMPILER-PYTHON"
+Source = "https://github.com/Saimonokuma/GHC-COMPILER-PYTHON"
+Issues = "https://github.com/Saimonokuma/GHC-COMPILER-PYTHON/issues"
+Releases = "https://github.com/Saimonokuma/GHC-COMPILER-PYTHON/releases"
+# PyPI renders this as a "Funding" link in the project sidebar.
+Funding = "https://ko-fi.com/saimonokuma"
+
 [tool.hatch.metadata.hooks.custom]
 path = "hatch_build.py"
 
 [tool.hatch.build.targets.wheel]
 strict-naming = true
+# payload_hashes.json is generated in CI after the payloads exist, so it is not
+# in the source tree and must be picked up when present. Without it the thin
+# wheel cannot verify a download and refuses to install anything.
+artifacts = ["ghc_compiler_python/payload_hashes.json"]
 
 # Map executables to the Venv PATH (bin)
 [tool.hatch.build.targets.wheel.shared-scripts]

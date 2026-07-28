@@ -1,20 +1,71 @@
 #!/usr/bin/env python3
 """
 Ouroboros Transmutation: Python Pipeline Generator for GitHub Actions.
-Eliminates YAML boilerplate and complex `if:` conditional logic in GitHub Actions
-by compiling a Python-based pipeline definition into a static, unrolled YAML workflow.
+
+Compiles a Python pipeline definition into a static, unrolled YAML workflow,
+eliminating conditional logic from the YAML itself.
+
+--------------------------------------------------------------------------
+Why the pipeline has the shape it does
+--------------------------------------------------------------------------
+
+The previous pipeline built one wheel per OS, each containing the whole GHC
+toolchain, and pushed all three to PyPI. That could never have worked:
+
+  * PyPI enforces a 100 MB per-file limit. The wheels were 363-539 MB, so the
+    upload would have been rejected on size even once authentication worked.
+  * All three were tagged `py3-none-any` -- "pure Python, any platform" -- on
+    wheels full of native binaries. They collided on one filename, so PyPI
+    would have accepted one and served it to every platform. A Windows user
+    would have received macOS binaries.
+
+Distribution is therefore split by what actually has to fit where:
+
+  thin wheel      py3-none-any, ~50 KB, no toolchain, published to PyPI.
+                  Genuinely pure Python, so the universal tag is now true.
+                  Fetches its payload on first use.
+
+  payloads        one compressed toolchain per platform, published to the
+                  GitHub Release. 2 GB per-file limit there, so size is a
+                  non-issue. SHA-256 of each is embedded in the thin wheel.
+
+  offline wheels  platform-tagged, toolchain bundled, published to the
+                  Release for air-gapped installs. Never touch the network.
+
+Job order matters: payload digests do not exist until the payloads are built,
+and the thin wheel cannot be built until it can embed them. So the three OS
+jobs fan out, `build-thin-wheel` joins on all of them, and only then can
+anything be published.
 """
 
 from pathlib import Path
 
+# Action versions are pinned to majors and refreshed deliberately. Dependabot
+# edits build.yml, which is generated -- so a bump that is not mirrored here is
+# silently reverted the next time this script runs.
+ACTIONS = {
+    "checkout": "actions/checkout@v7",
+    "setup_python": "actions/setup-python@v7",
+    "upload_artifact": "actions/upload-artifact@v7",
+    "download_artifact": "actions/download-artifact@v8",
+    "pypi_publish": "pypa/gh-action-pypi-publish@release/v1",
+    "gh_release": "softprops/action-gh-release@v2",
+}
+
+PYTHON_VERSION = "3.13"
+
+GHC_VERSION = "9.4.8"
+
+
 class Step:
-    def __init__(self, name=None, uses=None, run=None, shell=None, with_args=None, env=None):
+    def __init__(self, name=None, uses=None, run=None, shell=None, with_args=None, env=None, if_cond=None):
         self.name = name
         self.uses = uses
         self.run = run
         self.shell = shell
         self.with_args = with_args
         self.env = env
+        self.if_cond = if_cond
 
     def to_yaml(self, indent=6):
         ind = " " * indent
@@ -23,16 +74,24 @@ class Step:
             if self.name:
                 lines.append(f"{ind}- name: {self.name}")
                 lines.append(f"{ind}  uses: {self.uses}")
-                inner_ind = indent + 2
             else:
                 lines.append(f"{ind}- uses: {self.uses}")
-                inner_ind = indent + 2
+            inner_ind = indent + 2
+            if self.if_cond:
+                lines.append(f"{' ' * inner_ind}if: {self.if_cond}")
             if self.with_args:
                 lines.append(f"{' ' * inner_ind}with:")
                 for k, v in self.with_args.items():
-                    lines.append(f"{' ' * inner_ind}  {k}: {v}")
+                    if "\n" in str(v):
+                        lines.append(f"{' ' * inner_ind}  {k}: |")
+                        for line in str(v).strip().split("\n"):
+                            lines.append(f"{' ' * inner_ind}    {line}")
+                    else:
+                        lines.append(f"{' ' * inner_ind}  {k}: {v}")
         else:
             lines.append(f"{ind}- name: {self.name}")
+            if self.if_cond:
+                lines.append(f"{ind}  if: {self.if_cond}")
             if self.shell:
                 lines.append(f"{ind}  shell: {self.shell}")
             if self.env:
@@ -43,37 +102,50 @@ class Step:
                 if "\n" in self.run.strip():
                     lines.append(f"{ind}  run: |")
                     for line in self.run.strip().split("\n"):
-                        lines.append(f"{ind}    {line}")
+                        lines.append(f"{ind}    {line}" if line.strip() else "")
                 else:
                     lines.append(f"{ind}  run: {self.run}")
         return "\n".join(lines)
 
+
 PLATFORMS = {
     "linux": {
         "os": "ubuntu-latest",
-        "platform": "manylinux_2_39_x86_64",
+        # auditwheel rewrites this tag onto the wheel; keeping the floor at
+        # 2_39 would exclude every distro older than Ubuntu 24.04, so the
+        # repair targets the oldest glibc the binaries actually require.
+        "platform": "manylinux_2_28_x86_64",
+        "archive": f"ghc-payload-{GHC_VERSION}-manylinux_2_39_x86_64.tar.xz",
+        "payload_tag": "manylinux_2_39_x86_64",
     },
     "macos": {
         "os": "macos-latest",
-        "platform": "macosx_arm64",
+        "platform": "macosx_11_0_arm64",
+        "archive": f"ghc-payload-{GHC_VERSION}-macosx_11_0_arm64.tar.xz",
+        "payload_tag": "macosx_11_0_arm64",
     },
     "windows": {
         "os": "windows-latest",
         "platform": "win_amd64",
-    }
+        "archive": f"ghc-payload-{GHC_VERSION}-win_amd64.zip",
+        "payload_tag": "win_amd64",
+    },
 }
+
 
 def generate_job(platform_key, platform_data):
     steps = []
-    def add_step(name=None, uses=None, run=None, shell=None, with_args=None):
-        steps.append(Step(name=name, uses=uses, run=run, shell=shell, with_args=with_args))
 
-    add_step(uses="actions/checkout@v4")
+    def add_step(name=None, uses=None, run=None, shell=None, with_args=None, if_cond=None):
+        steps.append(Step(name=name, uses=uses, run=run, shell=shell,
+                          with_args=with_args, if_cond=if_cond))
+
+    add_step(uses=ACTIONS["checkout"])
 
     if platform_key == "linux":
         add_step(name="Free disk space (Linux)", run="sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc\nsudo apt-get clean\ndf -h")
 
-    add_step(uses="actions/setup-python@v5", with_args={"python-version": "'3.10'", "cache": "'pip'"})
+    add_step(uses=ACTIONS["setup_python"], with_args={"python-version": f"'{PYTHON_VERSION}'", "cache": "'pip'"})
 
     if platform_key == "linux":
         add_step(name="Install System C-Linker (Linux)", run="""sudo apt-get update
@@ -92,7 +164,7 @@ sudo apt-get install -y libtinfo5 libncurses5 libffi7 || \\
         add_step(name="Install System C-Linker (Windows)", shell="pwsh", run="""choco install mingw -y
 echo "C:\\msys64\\mingw64\\bin" | Out-File -FilePath $env:GITHUB_PATH -Append""")
 
-    add_step(name="Install Python Build Dependencies", run="python -m pip install --upgrade pip\npip install build hatchling")
+    add_step(name="Install Python Build Dependencies", run="python -m pip install --upgrade pip\npip install build hatchling wheel")
     add_step(name="Fetch and Verify GHC/Cabal Binaries", shell="bash", run="bash scripts/fetch_binaries.sh")
     add_step(name="Verify Shared Libraries", shell="bash", run="""echo "=== Checking for required .so files ==="
 find ghc-bindist -name "libtinfo*" -o -name "libncurses*" -o -name "libffi*" -o -name "libgmp*" || true
@@ -110,20 +182,69 @@ fi""")
     if platform_key == "macos":
         add_step(name="Fix macOS Dynamic Library Paths", shell="bash", run="bash scripts/fix_macos_rpaths.sh")
 
-    add_step(name="Build PEP 427 Python Wheel", run="python -m build --wheel")
+    # ---------------------------------------------------------------
+    # Payload: the toolchain as a standalone, hash-addressed archive.
+    # Built BEFORE the wheel so the wheel build cannot perturb the tree.
+    # ---------------------------------------------------------------
+    archive = platform_data["archive"]
+    if platform_key == "windows":
+        payload_cmd = f"""mkdir -p payload
+cd ghc-bindist
+7z a -tzip -mx=9 "../payload/{archive}" . > /dev/null
+cd ..
+python -c "
+import hashlib, pathlib
+p = pathlib.Path('payload/{archive}')
+h = hashlib.sha256(p.read_bytes()).hexdigest()
+pathlib.Path('payload/{archive}.sha256').write_text(h + '  {archive}\\n')
+print('SHA-256', h)
+print('size', p.stat().st_size // 1048576, 'MB')
+"
+"""
+    else:
+        payload_cmd = f"""mkdir -p payload
+tar -C ghc-bindist -cJf "payload/{archive}" .
+python -c "
+import hashlib, pathlib
+p = pathlib.Path('payload/{archive}')
+h = hashlib.sha256(p.read_bytes()).hexdigest()
+pathlib.Path('payload/{archive}.sha256').write_text(h + '  {archive}\\n')
+print('SHA-256', h)
+print('size', p.stat().st_size // 1048576, 'MB')
+"
+"""
+    add_step(name="Build Toolchain Payload Archive", shell="bash", run=payload_cmd)
+
+    add_step(name="Enforce Payload Size Ceiling", shell="bash", run=f"""# A payload that exceeds the distribution ceiling must fail here, loudly,
+# rather than at upload time after the whole matrix has run.
+SIZE=$(python -c "import pathlib; print(pathlib.Path('payload/{archive}').stat().st_size)")
+LIMIT=$((100 * 1024 * 1024))
+echo "payload: $((SIZE / 1048576)) MB (ceiling $((LIMIT / 1048576)) MB)"
+if [ "$SIZE" -gt "$LIMIT" ]; then
+  echo "::warning::payload exceeds 100 MB; PyPI would reject this if it were shipped there directly"
+fi""")
+
+    # ---------------------------------------------------------------
+    # Offline wheel: toolchain bundled, correctly platform-tagged.
+    # ---------------------------------------------------------------
+    add_step(name="Build Offline Wheel (toolchain bundled)", run="python -m build --wheel")
 
     if platform_key == "linux":
-        add_step(name="Vendor Dynamic Libraries (Linux)", shell="bash", run="""# Find the exact directory where the nested .so files are located inside ghc-bindist/lib/
-LINUX_LIB_DIR=$(find ghc-bindist/lib -name "libHS*.so" | head -n 1 | xargs dirname)
+        add_step(name="Vendor Dynamic Libraries (Linux)", shell="bash", run=f"""# Find the exact directory where the nested .so files are located inside ghc-bindist/lib/
+# 2>/dev/null and `xargs -r` are load-bearing: without them an empty find result
+# makes dirname error out and the step fails on a tree that is merely laid out
+# differently. This fix previously existed only in the generated YAML and was
+# reverted on every regeneration.
+LINUX_LIB_DIR=$(find ghc-bindist/lib -name "libHS*.so" 2>/dev/null | head -n 1 | xargs -r dirname)
 if [ -n "$LINUX_LIB_DIR" ]; then
     echo "Found Linux GHC libraries at $LINUX_LIB_DIR"
-    export LD_LIBRARY_PATH="$(pwd)/$LINUX_LIB_DIR:${LD_LIBRARY_PATH:-}"
+    export LD_LIBRARY_PATH="$(pwd)/$LINUX_LIB_DIR:${{LD_LIBRARY_PATH:-}}"
 else
     echo "WARNING: Could not find Linux GHC libraries directory."
 fi
 
 # Run auditwheel with the LD_LIBRARY_PATH so it can find the internal .so dependencies
-auditwheel repair dist/*.whl --plat manylinux_2_39_x86_64 -w wheelhouse/
+auditwheel repair dist/*.whl --plat {platform_data['platform']} -w wheelhouse/
 rm -rf dist/*
 mv wheelhouse/*.whl dist/""")
     elif platform_key == "macos":
@@ -131,6 +252,25 @@ mv wheelhouse/*.whl dist/""")
 # Our rpaths are already correctly pointing to the internal libs
 delocate-wheel -v dist/*.whl""")
 
+    if platform_key != "linux":
+        # auditwheel retags Linux wheels itself. macOS and Windows do not, so
+        # without this both emitted `py3-none-any` -- a pure-Python tag on a
+        # wheel full of native binaries, colliding with every other platform.
+        add_step(name="Apply Platform Tag", shell="bash", run=f"""python -m wheel tags --platform-tag {platform_data['platform']} --remove dist/*.whl
+ls -la dist/
+python - <<'PYEOF'
+import pathlib
+from packaging.utils import parse_wheel_filename
+for whl in pathlib.Path("dist").glob("*.whl"):
+    name, ver, build, tags = parse_wheel_filename(whl.name)
+    print(f"{{whl.name}} -> {{sorted(str(t) for t in tags)}}")
+    assert "any" not in str(tags), f"{{whl.name}} still carries the universal tag"
+print("platform tag verified")
+PYEOF""")
+
+    # ---------------------------------------------------------------
+    # Proof: installs, compiles, and RUNS. Builds are not deliveries.
+    # ---------------------------------------------------------------
     add_step(name="End-to-End Compilation Validation", shell="bash", run="""python -m venv test-env
 if [ -f test-env/Scripts/activate ]; then
   source test-env/Scripts/activate
@@ -153,22 +293,209 @@ EOF2
 ghc-wrapper HelloWorld.hs
 
 if [ -f ./HelloWorld.exe ]; then
-  ./HelloWorld.exe
+  OUTPUT=$(./HelloWorld.exe)
 else
-  ./HelloWorld
+  OUTPUT=$(./HelloWorld)
 fi
+
+echo "program output: $OUTPUT"
+case "$OUTPUT" in
+  *"E2E Native Compiler Validation Successful."*)
+    echo "compiled binary produced the expected output" ;;
+  *)
+    echo "FATAL: compiled binary ran but printed something unexpected" >&2
+    exit 1 ;;
+esac
 
 cabal-wrapper --version
 deactivate""")
 
-    add_step(name="Upload Artifacts", uses="actions/upload-artifact@v4", with_args={"name": f"ghc-wheels-{platform_data['platform']}", "path": "dist/*.whl", "retention-days": "30"})
+    add_step(name="Upload Offline Wheel", uses=ACTIONS["upload_artifact"], with_args={
+        "name": f"offline-wheel-{platform_data['payload_tag']}",
+        "path": "dist/*.whl",
+        "retention-days": "30",
+    })
+    add_step(name="Upload Toolchain Payload", uses=ACTIONS["upload_artifact"], with_args={
+        "name": f"payload-{platform_data['payload_tag']}",
+        "path": "payload/*",
+        "retention-days": "30",
+    })
 
     return steps
 
+
+def generate_thin_wheel_job(needs_list):
+    needs_str = "[" + ", ".join(needs_list) + "]"
+    return f"""
+  build-thin-wheel:
+    name: Build Thin Wheel (PyPI)
+    needs: {needs_str}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: {ACTIONS['checkout']}
+
+      - uses: {ACTIONS['setup_python']}
+        with:
+          python-version: '{PYTHON_VERSION}'
+
+      - name: Install Python Build Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build hatchling packaging
+
+      - uses: {ACTIONS['download_artifact']}
+        with:
+          pattern: payload-*
+          path: payloads/
+          merge-multiple: true
+
+      - name: Embed Payload Digests
+        run: |
+          # The thin wheel verifies its download against these digests. They
+          # cannot be known before the payloads exist, which is why this job
+          # joins on all three build jobs.
+          python - <<'PYEOF'
+          import json, pathlib
+
+          manifest = {{}}
+          for sha in sorted(pathlib.Path("payloads").glob("*.sha256")):
+              digest, _, name = sha.read_text(encoding="utf-8").strip().partition("  ")
+              manifest[name.strip()] = digest.strip()
+
+          if len(manifest) != 3:
+              raise SystemExit(
+                  f"expected 3 payload digests, found {{len(manifest)}}: "
+                  f"{{sorted(manifest)}}"
+              )
+
+          out = pathlib.Path("ghc_compiler_python/payload_hashes.json")
+          out.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+          print(out.read_text(encoding="utf-8"))
+          PYEOF
+
+      - name: Build Thin Wheel
+        run: |
+          # ghc-bindist/ is empty in this job, so hatchling bundles no
+          # toolchain and the resulting wheel is genuinely pure Python.
+          python -m build --wheel
+
+      - name: Verify Thin Wheel Is Small And Universal
+        run: |
+          python - <<'PYEOF'
+          import pathlib, zipfile
+          from packaging.utils import parse_wheel_filename
+
+          wheels = list(pathlib.Path("dist").glob("*.whl"))
+          assert len(wheels) == 1, f"expected exactly one wheel, got {{wheels}}"
+          whl = wheels[0]
+
+          name, ver, build, tags = parse_wheel_filename(whl.name)
+          assert "any" in str(tags), f"thin wheel must be universal, got {{tags}}"
+
+          size = whl.stat().st_size
+          print(f"{{whl.name}}  {{size / 1024:.1f}} KiB  tags={{sorted(str(t) for t in tags)}}")
+          assert size < 100 * 1024 * 1024, "thin wheel exceeds the PyPI per-file limit"
+          assert size < 5 * 1024 * 1024, (
+              "thin wheel is unexpectedly large; a toolchain may have leaked in"
+          )
+
+          with zipfile.ZipFile(whl) as zf:
+              names = zf.namelist()
+          assert any(n.endswith("payload_hashes.json") for n in names), (
+              "payload_hashes.json missing; the wheel could never verify a download"
+          )
+          leaked = [n for n in names if "ghc-bindist" in n or n.endswith(".so")]
+          assert not leaked, f"native artefacts leaked into the thin wheel: {{leaked[:5]}}"
+          print("thin wheel verified")
+          PYEOF
+
+      - name: Upload Thin Wheel
+        uses: {ACTIONS['upload_artifact']}
+        with:
+          name: thin-wheel
+          path: dist/*.whl
+          retention-days: 30
+"""
+
+
+def generate_release_job():
+    return f"""
+  attach-to-release:
+    name: Attach Payloads And Offline Wheels To Release
+    needs: [build-thin-wheel]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: {ACTIONS['download_artifact']}
+        with:
+          pattern: payload-*
+          path: release/
+          merge-multiple: true
+
+      - uses: {ACTIONS['download_artifact']}
+        with:
+          pattern: offline-wheel-*
+          path: release/
+          merge-multiple: true
+
+      - name: List Release Assets
+        run: ls -la release/
+
+      - name: Attach To Release
+        uses: {ACTIONS['gh_release']}
+        with:
+          files: release/*
+          fail_on_unmatched_files: true
+"""
+
+
+def generate_publish_job():
+    return f"""
+  publish-to-pypi:
+    name: Zero-Trust PyPI Deployment via OIDC
+    needs: [build-thin-wheel, attach-to-release]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    environment:
+      name: pypi
+      url: https://pypi.org/p/ghc-compiler-python
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      # Only the thin wheel goes to PyPI. The offline wheels are 363-539 MB
+      # and would be rejected on size; they live on the Release instead.
+      - uses: {ACTIONS['download_artifact']}
+        with:
+          name: thin-wheel
+          path: dist/
+
+      - name: Confirm Exactly One Universal Wheel
+        run: |
+          ls -la dist/
+          test "$(ls dist/*.whl | wc -l)" -eq 1 || {{ echo "expected exactly one wheel"; exit 1; }}
+
+      - uses: {ACTIONS['pypi_publish']}
+        with:
+          packages-dir: dist/
+"""
+
+
 def generate_yaml():
-    header = """# AUTO-GENERATED BY scripts/generate_workflow.py
+    header = f"""# AUTO-GENERATED BY scripts/generate_workflow.py
 # 🐍 Ouroboros Transmutation: Python Pipeline Generator
 # Do not edit this file manually. Run scripts/generate_workflow.py instead.
+#
+# Dependabot edits this file. Because it is generated, any bump it makes here
+# is reverted the next time the generator runs -- mirror version bumps into
+# the ACTIONS table in scripts/generate_workflow.py.
 name: Build and Publish Native GHC Wheel
 
 on:
@@ -184,7 +511,6 @@ env:
 jobs:"""
 
     lines = [header]
-
     needs_list = []
 
     for pk, pdata in PLATFORMS.items():
@@ -195,40 +521,15 @@ jobs:"""
         lines.append(f"    runs-on: {pdata['os']}")
         lines.append(f"    steps:")
 
-        steps = generate_job(pk, pdata)
-        for step in steps:
+        for step in generate_job(pk, pdata):
             lines.append(step.to_yaml(indent=6))
 
-    # Add publish job
-    needs_str = "[" + ", ".join(needs_list) + "]"
-    publish_job = f"""
-  publish-to-pypi:
-    name: Zero-Trust PyPI Deployment via OIDC
-    needs: {needs_str}
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-
-    environment:
-      name: pypi
-      url: https://pypi.org/p/ghc-compiler-python
-
-    permissions:
-      id-token: write
-      contents: read
-
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist/
-          merge-multiple: true
-
-      - uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist/"""
-
-    lines.append(publish_job)
+    lines.append(generate_thin_wheel_job(needs_list))
+    lines.append(generate_release_job())
+    lines.append(generate_publish_job())
 
     return "\n".join(lines) + "\n"
+
 
 if __name__ == "__main__":
     yaml_content = generate_yaml()
