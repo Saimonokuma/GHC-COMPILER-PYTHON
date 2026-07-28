@@ -233,7 +233,19 @@ GHC_LIB_DIR="${STAGING_DIR}/lib/ghc-${GHC_VERSION}"
 # versioned one, so Linux failed on a correct build. 5 leaves headroom
 # without reaching into per-package directories, which do not carry the
 # -ghc-<ver> suffix anyway.
-PLATFORM_LIB_DIR=$(find "${STAGING_DIR}" -maxdepth 5 -type d -name "*-ghc-${GHC_VERSION}" 2>/dev/null | head -1)
+#
+# Documentation directories carry the same name -- the Windows bindist has both
+# lib/doc/x86_64-windows-ghc-9.6.1 and lib/x86_64-windows-ghc-9.6.1, and a bare
+# `head -1` reported the doc one. That did not change the pass/fail decision,
+# since the version is genuinely present either way, but a check that reports
+# the wrong directory teaches the next person to debug the wrong directory.
+PLATFORM_LIB_DIR=$(find "${STAGING_DIR}" -maxdepth 5 -type d -name "*-ghc-${GHC_VERSION}" 2>/dev/null \
+	| grep -v "/doc/" | head -1)
+if [ -z "${PLATFORM_LIB_DIR}" ]; then
+	# Every match was under doc/. Fall back rather than declare the compiler
+	# missing: presence is what this check is for.
+	PLATFORM_LIB_DIR=$(find "${STAGING_DIR}" -maxdepth 5 -type d -name "*-ghc-${GHC_VERSION}" 2>/dev/null | head -1)
+fi
 
 if [ -n "${PLATFORM_LIB_DIR}" ]; then
 	if [ -d "${GHC_LIB_DIR}" ]; then
