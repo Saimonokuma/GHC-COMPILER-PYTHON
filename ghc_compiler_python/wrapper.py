@@ -54,6 +54,95 @@ def _die(msg: str) -> NoReturn:
     sys.exit(1)
 
 
+# ---------------------------------------------------------------------------
+# Toolchain root resolution
+#
+# The toolchain reaches a machine one of two ways:
+#
+#   offline wheel  — platform-tagged, toolchain bundled under sys.prefix
+#   thin wheel     — pure Python, toolchain fetched to a user cache on first use
+#
+# Nothing records which tier is installed; it is observed. A bundled toolchain
+# always wins, so an offline install never touches the network even if a cached
+# payload happens to exist alongside it.
+#
+# Note that not every sys.prefix reference means "the GHC root". The writable
+# HOME and the script directory are properties of the *environment* and stay on
+# sys.prefix regardless of where GHC itself lives.
+# ---------------------------------------------------------------------------
+
+def _looks_like_ghc_root(base: Path) -> bool:
+    """True when `base` contains a usable GHC installation."""
+    if not base.is_dir():
+        return False
+    bin_dir = base / ("bin" if (base / "bin").is_dir() else "Scripts")
+    exe = "ghc.exe" if sys.platform == "win32" else "ghc"
+    if (bin_dir / exe).exists():
+        return True
+    # A staged install may expose ghc only under lib/ghc-<version>/bin.
+    return (base / "lib" / f"ghc-{GHC_VERSION}" / "bin" / exe).exists()
+
+
+def _bundled_root() -> Optional[Path]:
+    """Return the bundled toolchain root, or None if this is a thin install."""
+    for candidate in (
+        Path(sys.prefix),
+        Path(__file__).resolve().parent.parent,
+    ):
+        if _looks_like_ghc_root(candidate):
+            return candidate
+    return None
+
+
+def _ghc_root_if_present() -> Optional[Path]:
+    """Return an already-available toolchain root, or None. Never acquires.
+
+    Everything that merely *describes* the toolchain -- library search paths,
+    PATH construction, resource location -- uses this. Building an environment
+    must not trigger a download as a side effect; only executing a tool may,
+    and by then _resolve_binary has already acquired it.
+    """
+    bundled = _bundled_root()
+    if bundled is not None:
+        return bundled
+
+    try:
+        from . import bootstrap
+        return bootstrap.find_installed_root()
+    except ImportError:  # pragma: no cover - defensive
+        return None
+
+
+def _ghc_root_or_prefix() -> Path:
+    """Non-acquiring root with a harmless fallback for path construction."""
+    return _ghc_root_if_present() or Path(sys.prefix)
+
+
+def _ghc_root() -> Path:
+    """Return the active toolchain root, acquiring it if absent.
+
+    Only the execution path calls this. Not cached: `ensure_payload` is already
+    idempotent and cheap once installed (a single stat), and caching a failure
+    would strand a process that could otherwise retry.
+    """
+    present = _ghc_root_if_present()
+    if present is not None:
+        return present
+
+    try:
+        from . import bootstrap
+    except ImportError:  # pragma: no cover - defensive
+        _die(
+            "FATAL ERROR: no bundled GHC toolchain and the bootstrap module is "
+            "unavailable. Reinstall ghc-compiler-python."
+        )
+
+    try:
+        return bootstrap.ensure_payload()
+    except bootstrap.BootstrapError as exc:
+        _die(f"FATAL ERROR: {exc}")
+
+
 def _is_text_file(filepath: Path) -> bool:
     """Check if a file is a text file by looking for null bytes in the first 1024 bytes."""
     try:
@@ -64,24 +153,74 @@ def _is_text_file(filepath: Path) -> bool:
         return False
 
 
+def _search_roots() -> List[Path]:
+    """Roots to probe for native binaries, in priority order.
+
+    Deliberately does NOT call _ghc_root(): probing must not trigger a download
+    as a side effect of merely asking whether something is present.
+    """
+    roots: List[Path] = []
+    bundled = _bundled_root()
+    if bundled is not None:
+        roots.append(bundled)
+
+    try:
+        from . import bootstrap
+        cached = bootstrap.find_installed_root()
+        if cached is not None:
+            roots.append(cached)
+    except ImportError:  # pragma: no cover - defensive
+        pass
+
+    roots.append(Path(sys.prefix))
+    roots.append(Path(__file__).resolve().parent.parent)
+    return roots
+
+
 def _try_resolve_binary(name: str) -> Optional[str]:
-    """Resolve the absolute path to a bundled native binary without dying."""
+    """Resolve a native binary from what is already installed, or None.
+
+    Never acquires. Callers that require the binary go through _resolve_binary.
+    """
     binary_name = f"{name}.exe" if sys.platform == "win32" else name
-    bin_dir = "Scripts" if sys.platform == "win32" else "bin"
 
-    candidates = [
-        Path(sys.prefix) / bin_dir / binary_name,
-        Path(__file__).resolve().parent.parent / bin_dir / binary_name
-    ]
+    for root in _search_roots():
+        for bin_dir in ("bin", "Scripts"):
+            candidate = root / bin_dir / binary_name
+            if candidate.exists():
+                return str(candidate)
+        nested = root / "lib" / f"ghc-{GHC_VERSION}" / "bin" / binary_name
+        if nested.exists():
+            return str(nested)
 
-    return next(
-        (str(p) for p in candidates if p.exists()),
-        shutil.which(binary_name)
-    )
+    # Deliberately NOT falling back to shutil.which().
+    #
+    # This package exists to provide a hermetic, pinned GHC 9.4.8. Resolving
+    # through PATH would silently hand the caller whatever GHC happens to be
+    # installed system-wide -- a different version, or a broken one -- while
+    # still reporting success. A machine with GHC 9.6 on PATH would never
+    # download our toolchain and would compile against the wrong compiler.
+    # Absent means absent; the caller acquires it.
+    return None
+
 
 def _resolve_binary(name: str) -> str:
-    """Resolve the absolute path to a bundled native binary."""
-    return _try_resolve_binary(name) or _die(f"FATAL ERROR: Bundled compiler binary '{name}' could not be located.")
+    """Resolve a native binary, acquiring the toolchain if it is absent."""
+    resolved = _try_resolve_binary(name)
+    if resolved:
+        return resolved
+
+    # Nothing installed yet: materialise the toolchain, then look again.
+    root = _ghc_root()
+    binary_name = f"{name}.exe" if sys.platform == "win32" else name
+    for bin_dir in ("bin", "Scripts"):
+        candidate = root / bin_dir / binary_name
+        if candidate.exists():
+            return str(candidate)
+
+    return _try_resolve_binary(name) or _die(
+        f"FATAL ERROR: compiler binary '{name}' could not be located under {root}."
+    )
 
 
 def _validate_c_linker() -> None:
@@ -97,7 +236,7 @@ def _find_platform_lib_subdir() -> str:
     On macOS:   lib/ghc-9.4.8/lib/aarch64-osx-ghc-9.4.8/ (or similar)
     On Windows: Does not exist (DLLs are in mingw/bin/)
     """
-    ghc_lib_dir = Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib"
+    ghc_lib_dir = _ghc_root_or_prefix() / "lib" / f"ghc-{GHC_VERSION}" / "lib"
     if not ghc_lib_dir.is_dir():
         return ""
 
@@ -137,24 +276,40 @@ def _sterilize_environment() -> dict:
 
     env["HOME"] = str(safe_home)
 
+    # The toolchain's own bin/ must lead PATH so GHC finds its sibling tools
+    # (ghc-pkg, hsc2hs, the mingw toolchain on Windows). When the toolchain is
+    # bundled these are the same directory; when bootstrapped they are not, and
+    # only the cache root holds the binaries.
     bin_dir = "Scripts" if sys.platform == "win32" else "bin"
-    env_bin = Path(sys.prefix) / bin_dir
+    path_entries = []
+    ghc_root = _ghc_root_or_prefix()
+    for root in (ghc_root, Path(sys.prefix)):
+        for candidate in (root / "bin", root / bin_dir):
+            if candidate.is_dir() and str(candidate) not in path_entries:
+                path_entries.append(str(candidate))
+    if sys.platform == "win32":
+        mingw_bin = ghc_root / "mingw" / "bin"
+        if mingw_bin.is_dir():
+            path_entries.append(str(mingw_bin))
+
     current_path = env.get("PATH", "")
-    env["PATH"] = f"{env_bin}{os.pathsep}{current_path}"
+    env["PATH"] = os.pathsep.join([*path_entries, current_path]) if current_path \
+        else os.pathsep.join(path_entries)
 
     # 🧪 Alchemist: Structural pattern matching replaces lambda-based dictionary lookup
     match sys.platform:
         case "darwin":
             candidates = [
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
-                Path(sys.prefix) / "lib",
+                ghc_root / "lib" / f"ghc-{GHC_VERSION}" / "lib",
+                ghc_root / "lib",
             ]
             vars_to_update = ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"]
         case "linux":
             candidates = [
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}",
-                Path(sys.prefix) / "lib" / f"ghc-{GHC_VERSION}" / "lib",
+                ghc_root / "lib" / f"ghc-{GHC_VERSION}",
+                ghc_root / "lib" / f"ghc-{GHC_VERSION}" / "lib",
                 Path(_find_platform_lib_subdir() or "."),
+                # auditwheel vendors shared objects here on the offline wheel.
                 Path(__file__).resolve().parent.parent / "ghc_compiler_python.libs",
             ]
             vars_to_update = ["LD_LIBRARY_PATH"]
@@ -187,9 +342,16 @@ class BaseResource:
 
     @classmethod
     @functools.lru_cache(maxsize=None)
-    def locate(cls, base: str = sys.prefix, version: str = GHC_VERSION) -> List[Path]:
-        """Locate all instances of this resource relative to a base directory."""
-        base_path = Path(base)
+    def locate(cls, base: Optional[str] = None, version: str = GHC_VERSION) -> List[Path]:
+        """Locate all instances of this resource relative to a base directory.
+
+        `base` defaults to None rather than sys.prefix because a default
+        argument is bound once at import time: with sys.prefix baked in, a
+        bootstrapped toolchain would be searched for in the venv and never
+        found. Resolving inside the call also keeps the lru_cache keyed on the
+        root that was actually used.
+        """
+        base_path = Path(base) if base is not None else _ghc_root_or_prefix()
         candidates = cls.get_candidates(base_path, version)
 
         # Check explicit candidates first
@@ -413,11 +575,16 @@ def _resolve_runtime_paths(env: dict) -> None:
     Args:
             env: The sterilized environment dict with proper LD_LIBRARY_PATH set.
     """
-    prefix_clean = sys.prefix.replace("\\", "/")
+    # @GHC_PREFIX@ must resolve to wherever the toolchain actually lives. For a
+    # bundled install that is sys.prefix; for a bootstrapped one it is the cache
+    # root, and writing sys.prefix here would point GHC at a directory holding
+    # no compiler at all.
+    ghc_root = _ghc_root_or_prefix()
+    prefix_clean = str(ghc_root).replace("\\", "/")
 
     # ⚡ Bolt: Fast-path to avoid scanning and patching on every invocation.
     # If the marker file exists and contains the current prefix, we are already patched.
-    marker_file = Path(sys.prefix) / "lib" / f".ghc_patched_{GHC_VERSION}.txt"
+    marker_file = ghc_root / "lib" / f".ghc_patched_{GHC_VERSION}.txt"
     try:
         if marker_file.is_file() and marker_file.read_text(encoding="utf-8") == prefix_clean:
             return
