@@ -135,15 +135,41 @@ if [ "${KEEP_DOCS}" = "1" ]; then
 	echo "-> Keeping bundled documentation (GHC_KEEP_DOCS=1)"
 else
 	echo "-> Removing bundled documentation (haddock html/latex)"
-	for doc_dir in \
-		"${STAGING_DIR}/share/doc" \
-		"${STAGING_DIR}/doc" \
-		"${STAGING_DIR}/share/html"
-	do
-		[ -d "${doc_dir}" ] && rm -rf "${doc_dir}"
-	done
+
+	# This used to test three hardcoded paths -- share/doc, doc, share/html --
+	# which are where the Unix bindists put documentation. On Windows none of
+	# them exist, so the step matched nothing and reported success: run
+	# 30330803443 printed "now: 1815 MB" both before and after, freeing zero
+	# bytes, and shipped a 385 MB payload against macOS's 94 MB.
+	#
+	# Absence of a hardcoded path is indistinguishable from "nothing to do".
+	# Searching by directory name finds the documentation wherever a given
+	# platform's bindist chose to put it, and reporting each removal by size
+	# means a future layout change shows up as a shrinking list rather than as
+	# silence.
+	docs_freed=0
+	while IFS= read -r d; do
+		[ -n "${d}" ] || continue
+		sz=$(du -sm "${d}" 2>/dev/null | awk '{print $1}')
+		: "${sz:=0}"
+		echo "   removing ${d#"${STAGING_DIR}"/} (${sz} MB)"
+		rm -rf "${d}"
+		docs_freed=$((docs_freed + sz))
+	done <<EOF
+$(find "${STAGING_DIR}" -type d \( -name doc -o -name docs -o -name html -o -name latex \) -prune 2>/dev/null)
+EOF
+
+	haddocks=$(find "${STAGING_DIR}" -type f -name "*.haddock" 2>/dev/null | wc -l | tr -d ' ')
 	find "${STAGING_DIR}" -type f -name "*.haddock" -delete 2>/dev/null || true
-	find "${STAGING_DIR}" -type d -name "html" -prune -exec rm -rf {} + 2>/dev/null || true
+	echo "   removed ${haddocks} .haddock interface files"
+
+	if [ "${docs_freed}" -eq 0 ] && [ "${haddocks}" -eq 0 ]; then
+		echo "   WARNING: no documentation found to remove -- the bindist layout" >&2
+		echo "            may have changed. Directories present at the root:" >&2
+		ls -1 "${STAGING_DIR}" >&2 2>/dev/null || true
+	else
+		echo "   freed ${docs_freed} MB of documentation directories"
+	fi
 	echo "   now: $(human_size)"
 fi
 

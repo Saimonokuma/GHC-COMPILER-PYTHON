@@ -498,7 +498,7 @@ def generate_release_job():
 def generate_publish_job():
     return f"""
   publish-to-pypi:
-    name: Zero-Trust PyPI Deployment via OIDC
+    name: Publish Thin Wheel to PyPI
     needs: [build-thin-wheel, attach-to-release]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
@@ -507,8 +507,22 @@ def generate_publish_job():
       name: pypi
       url: https://pypi.org/p/ghc-compiler-python
 
+    # API-token authentication, not OIDC.
+    #
+    # This job previously requested `id-token: write` and published via Trusted
+    # Publishing. That failed in run 25262196892 with:
+    #
+    #   invalid-publisher: valid token, but no corresponding publisher
+    #
+    # The OIDC token was minted correctly; PyPI simply had no publisher
+    # registered for this repository and workflow, and nothing on the GitHub
+    # side can create one. Every tagged release therefore built three wheels
+    # and published nothing.
+    #
+    # `id-token: write` is removed rather than left in place: an unused
+    # privilege that looks load-bearing is how the previous failure stayed
+    # confusing for so long.
     permissions:
-      id-token: write
       contents: read
 
     steps:
@@ -524,9 +538,23 @@ def generate_publish_job():
           ls -la dist/
           test "$(ls dist/*.whl | wc -l)" -eq 1 || {{ echo "expected exactly one wheel"; exit 1; }}
 
+      - name: Fail Early If The Token Is Missing
+        # Without this, a missing secret surfaces as an authentication error
+        # from PyPI after the upload has already been attempted, which reads
+        # like a credentials problem rather than a configuration one.
+        run: |
+          if [ -z "${{{{ secrets.PYPI_API_TOKEN }}}}" ]; then
+            echo "PYPI_API_TOKEN is not set on this repository." >&2
+            echo "Add it under Settings > Secrets and variables > Actions." >&2
+            exit 1
+          fi
+          echo "PYPI_API_TOKEN is present"
+
       - uses: {ACTIONS['pypi_publish']}
         with:
           packages-dir: dist/
+          user: __token__
+          password: ${{{{ secrets.PYPI_API_TOKEN }}}}
 """
 
 
