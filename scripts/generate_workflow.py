@@ -201,9 +201,16 @@ fi""")
     # ---------------------------------------------------------------
     archive = platform_data["archive"]
     if platform_key == "windows":
+        # -mx=9 measured at 5.5+ minutes on the trimmed tree, against 2.4 for
+        # xz on a comparable one, and buys only a few percent over -mx=5.
+        # -mmt=on parallelises deflate across the runner's cores.
+        #
+        # Deflate specifically, not Deflate64 or LZMA: bootstrap.py extracts
+        # this with Python's zipfile, which reads only Deflate. A denser
+        # format here would produce an archive the wheel cannot open.
         payload_cmd = f"""mkdir -p payload
 cd ghc-bindist
-7z a -tzip -mx=9 "../payload/{archive}" . > /dev/null
+7z a -tzip -mx=5 -mmt=on "../payload/{archive}" . > /dev/null
 cd ..
 python -c "
 import hashlib, pathlib

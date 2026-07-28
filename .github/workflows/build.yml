@@ -381,7 +381,7 @@ jobs:
         run: |
           mkdir -p payload
           cd ghc-bindist
-          7z a -tzip -mx=9 "../payload/ghc-payload-9.4.8-win_amd64.zip" . > /dev/null
+          7z a -tzip -mx=5 -mmt=on "../payload/ghc-payload-9.4.8-win_amd64.zip" . > /dev/null
           cd ..
           python -c "
           import hashlib, pathlib
