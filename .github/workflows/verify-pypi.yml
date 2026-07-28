@@ -31,32 +31,6 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Make The Runner Look Like A User Machine
-        shell: bash
-        run: |
-          # See verify-delivered-install for why. windows-latest ships mingw
-          # via chocolatey; a real Windows user has no gcc on PATH, and the
-          # payload carries its own. Testing with the runner's compiler tests
-          # the runner.
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            KEEP=""
-            IFS=':' read -ra PARTS <<< "$PATH"
-            for d in "${PARTS[@]}"; do
-              if [ -x "$d/gcc.exe" ] || [ -x "$d/clang.exe" ] || [ -x "$d/gcc" ] || [ -x "$d/clang" ]; then
-                echo "dropping from PATH: $d"
-                continue
-              fi
-              KEEP="${KEEP:+$KEEP:}$d"
-            done
-            echo "PATH=$KEEP" >> "$GITHUB_ENV"
-            export PATH="$KEEP"
-            if command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1; then
-              echo "::error::a system C compiler survived the scrub -- this run would not test a user's machine"
-              exit 1
-            fi
-            echo "no system gcc/clang on PATH"
-          fi
-
       - name: Install From The Real Index
         shell: bash
         run: |
@@ -89,6 +63,29 @@ jobs:
           # These are two axes and this asserts the one that matters to a user
           # writing Haskell. The distribution version moved to 9.4.9 to ship a
           # packaging fix; the compiler is still GHC 9.4.8 and has to say so.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            KEEP=""
+            IFS=':' read -ra PARTS <<< "$PATH"
+            for d in "${PARTS[@]}"; do
+              if [ -x "$d/gcc.exe" ] || [ -x "$d/clang.exe" ] || [ -x "$d/gcc" ] || [ -x "$d/clang" ]; then
+                echo "dropping from PATH: $d"
+                continue
+              fi
+              KEEP="${KEEP:+$KEEP:}$d"
+            done
+            export PATH="$KEEP"
+
+            # Assert the scrub worked rather than trusting it. If a system compiler
+            # survives, this step silently reverts to the rehearsal it was.
+            if command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1; then
+              echo "::error::a system C compiler is still on PATH -- this would not test a user's machine"
+              exit 1
+            fi
+            echo "no system gcc/clang on PATH: only the payload's own toolchain is available"
+
+            # And the scrub must not have taken the interpreter with it.
+            command -v python >/dev/null 2>&1 || { echo "::error::python lost from PATH by the scrub"; exit 1; }
+          fi
           REPORTED=$(ghc-wrapper --numeric-version)
           echo "ghc-wrapper --numeric-version -> $REPORTED"
           if [ "$REPORTED" != "9.4.8" ]; then
@@ -99,6 +96,29 @@ jobs:
       - name: Compile And Run Haskell
         shell: bash
         run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            KEEP=""
+            IFS=':' read -ra PARTS <<< "$PATH"
+            for d in "${PARTS[@]}"; do
+              if [ -x "$d/gcc.exe" ] || [ -x "$d/clang.exe" ] || [ -x "$d/gcc" ] || [ -x "$d/clang" ]; then
+                echo "dropping from PATH: $d"
+                continue
+              fi
+              KEEP="${KEEP:+$KEEP:}$d"
+            done
+            export PATH="$KEEP"
+
+            # Assert the scrub worked rather than trusting it. If a system compiler
+            # survives, this step silently reverts to the rehearsal it was.
+            if command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1; then
+              echo "::error::a system C compiler is still on PATH -- this would not test a user's machine"
+              exit 1
+            fi
+            echo "no system gcc/clang on PATH: only the payload's own toolchain is available"
+
+            # And the scrub must not have taken the interpreter with it.
+            command -v python >/dev/null 2>&1 || { echo "::error::python lost from PATH by the scrub"; exit 1; }
+          fi
           cat > FromPyPI.hs <<'HASKELL'
           import Data.List (sort)
 
