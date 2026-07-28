@@ -1,6 +1,6 @@
 <div align="center">
 
-# ⚡ GHC Compiler Python · v9.4.9
+# ⚡ GHC Compiler Python · v9.5.0
 
 **GHC 9.4.8 · Cabal 3.10.3.0 · Windows · macOS · Linux**
 
@@ -14,6 +14,19 @@
 
 ---
 
+> ### 📉 New in 9.5.0: the Windows download is 148 MB smaller
+>
+> The Windows payload shipped as a zip through 9.4.9 and now ships as `.tar.xz`, like the other two. Measured on the real toolchain — 1814 MB, 8311 files:
+>
+> | format | size | build time |
+> |---|---:|---:|
+> | zip (`7z -tzip -mx=5 -mmt=on`) | 395.8 MB | 26 s |
+> | **tar.xz (`xz -T0 -6`)** | **247.3 MB** | 89 s |
+>
+> **37.5% smaller.** The extra minute is paid once per release, by CI. The 148 MB was paid by every Windows user on every cold install. The round-trip was verified lossless by comparing all 8311 files by SHA-256 — not by spot-checking one binary — and `bootstrap._extract` has always handled `.tar.xz`, so the zip was never a Windows requirement, only an artefact of building it with 7z.
+>
+> ---
+>
 > ### ⚠️ 9.4.8 does not work on Windows **or Linux**. Upgrade.
 >
 > The 9.4.8 wheel aborted with `FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang)` on any Windows machine without a system compiler — which is nearly all of them. The Windows payload ships its own toolchain (`mingw/bin/clang.exe`, and it is why that payload is 396 MB), but the wrapper checked only the system `PATH` and gave up before it ever looked inside. It also ran the check *before* downloading the payload, so there was nothing to find either way.
@@ -55,12 +68,12 @@ Only if you need an **offline or air-gapped** install:
 
 | You are on | Download | Size |
 |:--|:--|--:|
-| 🐧 **Linux** (glibc ≥ 2.38) | `ghc_compiler_python-9.4.9-py3-none-manylinux_2_38_x86_64.manylinux_2_39_x86_64.whl` | ~188 MB |
-| 🍎 **macOS** (Apple Silicon) | `ghc_compiler_python-9.4.9-py3-none-macosx_11_0_arm64.whl` | ~191 MB |
-| 🪟 **Windows** (x86_64) | `ghc_compiler_python-9.4.9-py3-none-win_amd64.whl` | ~403 MB |
+| 🐧 **Linux** (glibc ≥ 2.38) | `ghc_compiler_python-9.5.0-py3-none-manylinux_2_38_x86_64.manylinux_2_39_x86_64.whl` | ~188 MB |
+| 🍎 **macOS** (Apple Silicon) | `ghc_compiler_python-9.5.0-py3-none-macosx_11_0_arm64.whl` | ~191 MB |
+| 🪟 **Windows** (x86_64) | `ghc_compiler_python-9.5.0-py3-none-win_amd64.whl` | ~403 MB |
 
 ```bash
-pip install ./ghc_compiler_python-9.4.9-py3-none-<your-platform>.whl
+pip install ./ghc_compiler_python-9.5.0-py3-none-<your-platform>.whl
 ```
 
 These bundle the whole toolchain and **never contact the network**.

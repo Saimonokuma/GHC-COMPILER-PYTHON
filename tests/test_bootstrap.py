@@ -15,6 +15,7 @@ import sys
 import tarfile
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -66,9 +67,32 @@ class TestPlatformIdentity:
         assert bootstrap.payload_root().parent.name == bootstrap.RELEASE_VERSION
         assert bootstrap.payload_root().parent.name != bootstrap.GHC_VERSION
 
-    def test_suffix_matches_platform(self):
-        expected = ".zip" if sys.platform == "win32" else ".tar.xz"
-        assert bootstrap.payload_name().endswith(expected)
+    def test_every_platform_ships_the_same_archive_format(self):
+        """One format everywhere, as of 9.5.0.
+
+        Windows shipped a zip through 9.4.9 and it cost users 148 MB per cold
+        install for nothing: measured on the real toolchain (1814 MB, 8311
+        files) the zip was 395.8 MB against 247.3 MB for tar.xz, with the
+        round-trip verified lossless on every file by SHA-256. The zip was
+        never a Windows requirement, only an artefact of building it with 7z.
+
+        Asserted for the CURRENT platform and as a blanket property, so this
+        cannot pass on Linux while quietly regressing on Windows.
+        """
+        assert bootstrap._archive_suffix() == ".tar.xz"
+        assert bootstrap.payload_name().endswith(".tar.xz")
+        assert not bootstrap.payload_name().endswith(".zip")
+
+    def test_suffix_does_not_depend_on_the_host(self):
+        """The archive format is a property of the RELEASE, not of the machine
+        unpacking it. A suffix that varies by host means a wheel built on one
+        platform disagrees with the asset published for another."""
+        for fake in ("win32", "linux", "darwin"):
+            with patch.object(bootstrap.sys, "platform", fake):
+                assert bootstrap._archive_suffix() == ".tar.xz", (
+                    f"archive suffix changed on {fake}; the payload name would "
+                    f"then depend on who is asking"
+                )
 
     def test_url_is_pinned_to_the_matching_tag(self):
         """A wheel must fetch the payload built alongside it, not 'latest'.
@@ -209,16 +233,15 @@ class TestEnsurePayload:
         (staging / "bin").mkdir(parents=True)
         (staging / "bin" / "ghc").write_text("#!/bin/sh\n", encoding="utf-8")
 
-        suffix = ".zip" if sys.platform == "win32" else ".tar.xz"
+        # Deliberately built from bootstrap's own suffix rather than from
+        # sys.platform. The fixture used to branch on the host, which meant it
+        # agreed with the implementation only by coincidence -- and stopped
+        # agreeing the moment the format became uniform in 9.5.0.
+        suffix = bootstrap._archive_suffix()
+        assert suffix == ".tar.xz", f"unexpected payload format {suffix}"
         built = tmp_path / f"payload{suffix}"
-        if suffix == ".zip":
-            with zipfile.ZipFile(built, "w") as zf:
-                for p in staging.rglob("*"):
-                    if p.is_file():
-                        zf.write(p, p.relative_to(staging.parent))
-        else:
-            with tarfile.open(built, "w:xz") as tf:
-                tf.add(staging, arcname=staging.name)
+        with tarfile.open(built, "w:xz") as tf:
+            tf.add(staging, arcname=staging.name)
 
         digest = bootstrap._digest_file(built)
         manifest = tmp_path / "hashes.json"

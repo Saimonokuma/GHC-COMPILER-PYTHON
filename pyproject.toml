@@ -9,7 +9,7 @@ build-backend = "hatchling.build"
 name = "ghc-compiler-python"
 # Distribution version, not the compiler version -- they diverged at 9.4.9.
 # The packaged compiler is GHC 9.4.8; see ghc_compiler_python/bootstrap.py.
-version = "9.4.9"
+version = "9.5.0"
 description = "Native GHC 9.4.8 compiler and Cabal 3.10.3.0 tooling packaged as an isolated Python Wheel"
 readme = "README.md"
 license = {text = "MIT"}

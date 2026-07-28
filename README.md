@@ -34,11 +34,36 @@ A Haskell toolchain is normally installed by its own ecosystem installer, which 
 
 ---
 
+## 🔢 Two version numbers, and what each one means
+
+This trips people up, so it is stated once, plainly:
+
+| | example | what it is |
+|---|---|---|
+| **package version** | `9.5.0` | *this project* — the wheel you `pip install`. Ours to bump. |
+| **compiler version** | `9.4.8` | *GHC itself* — the Haskell compiler you get. Not ours to invent. |
+
+`ghc-wrapper --numeric-version` answers **9.4.8**, because you are asking it which Haskell compiler you have.
+
+The two used to be one number, which broke the moment they had to disagree. The 9.4.8 wheel could not compile on Windows, PyPI does not permit replacing a published version, and the last GHC in the 9.4 line *is* 9.4.8 — so shipping a fix and claiming a new compiler were the same edit. They are now separate, and `lean/Proofs/Payload.lean` proves they can never be confused again: a package bump renames every asset and changes nothing you are told about the compiler.
+
+---
+
 ## 🚀 Installation
 
 ```bash
 pip install ghc-compiler-python
 ```
+
+Or with [uv](https://github.com/astral-sh/uv) — same package, same index:
+
+```bash
+uv pip install ghc-compiler-python          # into a project venv
+uv tool install ghc-compiler-python         # 10 commands, available everywhere
+uvx --from ghc-compiler-python ghc-wrapper  # run it without installing anything
+```
+
+`uv tool install` puts `ghc-wrapper`, `cabal-wrapper`, `ghci-wrapper`, `runghc-wrapper` and six more on your PATH globally — a Haskell toolchain with no Haskell installer, no `~/.ghc`, and nothing to uninstall but the tool itself.
 
 The PyPI package is **~17 KiB**. It fetches the toolchain for your platform on first use and verifies it against a SHA-256 digest embedded in the wheel — a tampered or truncated download cannot install.
 
@@ -47,9 +72,9 @@ The PyPI package is **~17 KiB**. It fetches the toolchain for your platform on f
 Self-contained wheels with the toolchain already bundled live on the [releases page](https://github.com/Saimonokuma/GHC-COMPILER-PYTHON/releases). These never contact the network:
 
 ```bash
-pip install ghc_compiler_python-9.4.9-py3-none-manylinux_2_38_x86_64.manylinux_2_39_x86_64.whl   # Linux
-pip install ghc_compiler_python-9.4.9-py3-none-macosx_11_0_arm64.whl       # macOS
-pip install ghc_compiler_python-9.4.9-py3-none-win_amd64.whl               # Windows
+pip install ghc_compiler_python-9.5.0-py3-none-manylinux_2_38_x86_64.manylinux_2_39_x86_64.whl   # Linux
+pip install ghc_compiler_python-9.5.0-py3-none-macosx_11_0_arm64.whl       # macOS
+pip install ghc_compiler_python-9.5.0-py3-none-win_amd64.whl               # Windows
 ```
 
 > The Linux offline wheel carries the tags `manylinux_2_38` **and** `manylinux_2_39`, so it installs on glibc 2.38 or newer. That floor is not chosen — auditwheel derives it by inspecting the versioned symbols the binaries actually reference. A tag lower than the binaries support would install on systems where the toolchain then fails at runtime, so the build states what is true rather than what would be convenient. On older distributions use the thin wheel; its payload is a plain tarball and carries no such constraint.
@@ -59,10 +84,11 @@ pip install ghc_compiler_python-9.4.9-py3-none-win_amd64.whl               # Win
 | | |
 |:--|:--|
 | 🐍 **Python** | `>= 3.10` |
-| 🔗 **C-Linker** | `gcc` or `clang` on the host |
-| 🐧 Linux | `sudo apt-get install gcc` |
-| 🍎 macOS | `xcode-select --install` |
-| 🪟 Windows | MinGW-w64 or MSYS2 |
+| 🐧 Linux | a C linker — `sudo apt-get install gcc` |
+| 🍎 macOS | a C linker — `xcode-select --install` |
+| 🪟 **Windows** | **nothing.** The payload carries its own `clang` and `ld`. |
+
+> Windows used to require MinGW-w64 or MSYS2. It never actually needed them: the Windows payload has always shipped a complete mingw toolchain — that is why it is the largest of the three. The wrapper simply refused to look inside it and demanded a system compiler instead, which is what made 9.4.8 unusable on a stock Windows machine. Fixed in 9.4.9; the CI job that certifies Windows now deletes every system compiler from `PATH` before it compiles, so this cannot silently regress.
 
 ### ⚙️ Configuration
 
