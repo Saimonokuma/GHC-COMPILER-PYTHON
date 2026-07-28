@@ -6,10 +6,12 @@ import pytest
 from unittest.mock import patch
 
 from ghc_compiler_python.wrapper import (
+    GHC_VERSION,
     HASKELL_POLLUTION_VARS,
     _sterilize_environment,
     _validate_c_linker,
     _resolve_binary,
+    _try_resolve_binary,
 )
 
 
@@ -59,16 +61,67 @@ class TestValidateCLinker:
 
 
 class TestResolveBinary:
-    """Tests for binary resolution."""
+    """Tests for binary resolution.
 
-    @patch("ghc_compiler_python.wrapper.shutil.which")
-    def test_finds_binary_in_path(self, mock_which):
-        mock_which.return_value = "/usr/local/bin/ghc"
-        result = _resolve_binary("ghc")
-        assert result == "/usr/local/bin/ghc"
+    The contract these lock down is *hermeticity*. This package exists to
+    supply a pinned GHC 9.4.8; resolving through PATH would silently hand the
+    caller whatever compiler happens to be installed system-wide, at whatever
+    version, while still reporting success. A previous revision did exactly
+    that, so these tests assert the system compiler is ignored rather than
+    preferred.
+    """
 
-    @patch("ghc_compiler_python.wrapper.shutil.which", return_value=None)
-    def test_exits_when_binary_not_found(self, mock_which):
+    def test_ignores_system_ghc_on_path(self, tmp_path):
+        """A GHC on PATH must NOT satisfy resolution."""
+        fake = tmp_path / "ghc.exe" if sys.platform == "win32" else tmp_path / "ghc"
+        fake.write_text("#!/bin/sh\necho system ghc\n", encoding="utf-8")
+
+        with patch("ghc_compiler_python.wrapper.shutil.which", return_value=str(fake)):
+            assert _try_resolve_binary("ghc") is None, (
+                "system GHC on PATH was accepted; hermetic guarantee is broken"
+            )
+
+    def test_finds_bundled_binary(self, tmp_path, monkeypatch):
+        """A toolchain bundled under the install prefix is used as-is."""
+        name = "ghc.exe" if sys.platform == "win32" else "ghc"
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        (bin_dir / name).write_text("binary", encoding="utf-8")
+
+        monkeypatch.setattr(
+            "ghc_compiler_python.wrapper._search_roots", lambda: [tmp_path]
+        )
+        assert _try_resolve_binary("ghc") == str(bin_dir / name)
+
+    def test_finds_binary_nested_under_lib(self, tmp_path, monkeypatch):
+        """Staged installs expose tools only under lib/ghc-<version>/bin."""
+        name = "ghc-pkg.exe" if sys.platform == "win32" else "ghc-pkg"
+        nested = tmp_path / "lib" / f"ghc-{GHC_VERSION}" / "bin"
+        nested.mkdir(parents=True)
+        (nested / name).write_text("binary", encoding="utf-8")
+
+        monkeypatch.setattr(
+            "ghc_compiler_python.wrapper._search_roots", lambda: [tmp_path]
+        )
+        assert _try_resolve_binary("ghc-pkg") == str(nested / name)
+
+    def test_probe_never_acquires(self, monkeypatch):
+        """Probing must not trigger a download as a side effect."""
+        called = []
+        monkeypatch.setattr(
+            "ghc_compiler_python.bootstrap.ensure_payload",
+            lambda *a, **k: called.append(1),
+        )
+        _try_resolve_binary("definitely_not_a_real_tool")
+        assert called == [], "probing triggered payload acquisition"
+
+    def test_exits_when_binary_not_found(self, monkeypatch):
+        monkeypatch.setattr(
+            "ghc_compiler_python.wrapper._search_roots", lambda: []
+        )
+        monkeypatch.setattr(
+            "ghc_compiler_python.wrapper._ghc_root_if_present", lambda: None
+        )
         with pytest.raises(SystemExit):
             _resolve_binary("nonexistent_binary")
 

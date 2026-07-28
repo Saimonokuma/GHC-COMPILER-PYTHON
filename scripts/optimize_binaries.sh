@@ -13,37 +13,251 @@ trap '' PIPE
 # Handle SIGINT (Ctrl+C)
 trap 'echo "Interrupted"; exit 130' INT
 
-STAGING_DIR="ghc-bindist"
+# Overridable so the test suite can point this at a synthetic tree. CI never
+# sets it, so the production path is unchanged.
+STAGING_DIR="${STAGING_DIR:-ghc-bindist}"
 OS=$(uname -s)
 
-if [[ "${OS}" == "MINGW"* || "${OS}" == "MSYS"* || "${OS}" == "CYGWIN"* ]]; then
-	echo "Windows detected — optimization skipped."
-	exit 0
-fi
+# ---------------------------------------------------------------------------
+# Why this script cuts as hard as it does
+#
+# A stock GHC 9.4.8 tree is ~2,017 MB. Measured composition (x86_64 Linux
+# bindist, 9,870 entries):
+#
+#     profiling   *_p.a, *.p_hi     602 MB   29.9%
+#     docs        haddock/html      580 MB   28.7%
+#     static      *.a               331 MB   16.4%
+#     dynamic     *.so              174 MB    8.6%
+#     bin/                          165 MB    8.2%
+#     interfaces  *.hi               82 MB    4.1%
+#     interfaces  *.dyn_hi           82 MB    4.1%
+#     other                           1 MB    0.1%
+#                                 -------------------
+#                                 2,017 MB  100.0%
+#
+# Every file is attributed; the categories sum to the total exactly, so nothing
+# hides in an unexamined remainder.
+#
+# Profiling libraries and documentation are 58.6% of the tree and neither is
+# needed to compile or run Haskell. Dropping both takes the tree to 863 MB and
+# the compressed payload from 164 MB to 91 MB — under the 100 MB ceiling that
+# governs distribution, without touching anything the compiler needs.
+#
+# What is deliberately NOT removed:
+#   *.a       default linking is static; removing these breaks `ghc Main.hs`
+#   *.so      GHCi and TemplateHaskell load these
+#   *.hi      interface files; the compiler cannot resolve imports without them
+#
+# Set GHC_KEEP_PROFILING=1 to retain -prof support at the cost of ~600 MB.
+# Set GHC_KEEP_DOCS=1 to retain the offline Haddock documentation.
+# ---------------------------------------------------------------------------
 
-echo "Initiating binary size reduction sequence..."
-echo "Initial size:"
-du -sh "${STAGING_DIR}/" 2>/dev/null || true
+KEEP_PROFILING="${GHC_KEEP_PROFILING:-0}"
+KEEP_DOCS="${GHC_KEEP_DOCS:-0}"
 
-# FIX v2: Use platform-appropriate strip flags
-if [[ "${OS}" == "Darwin" ]]; then
-	echo "macOS detected: Using strip -x for Mach-O binaries..."
-	# macOS strip: -x removes local symbols but preserves global symbols
-	# This is safe for Mach-O binaries and shared libraries
-	find "${STAGING_DIR}" -type f \( -perm -0100 \) -exec sh -c '
-		for f; do
-			if file "$f" | grep -q "Mach-O"; then
-				strip -x "$f" 2>/dev/null || true
+human_size() {
+	du -sm "${STAGING_DIR}/" 2>/dev/null | awk '{printf "%s MB", $1}' || echo "unknown"
+}
+
+echo "============================================"
+echo " Binary size reduction"
+echo " Platform: ${OS}"
+echo "============================================"
+echo "Initial size: $(human_size)"
+
+# ---------------------------------------------------------------------------
+# 1. Symbol stripping
+#
+# Previously this script exited early on Windows, which is why the Windows
+# artifact was the largest of the three and had never been stripped once.
+# MinGW ships a native `strip`; when GHC's own toolchain is staged we prefer it
+# over whatever happens to be first on PATH.
+# ---------------------------------------------------------------------------
+case "${OS}" in
+	Darwin)
+		echo "-> macOS: strip -x (preserve global symbols in Mach-O)"
+		find "${STAGING_DIR}" -type f -perm -0100 -exec sh -c '
+			for f; do
+				if file "$f" | grep -q "Mach-O"; then
+					strip -x "$f" 2>/dev/null || true
+				fi
+			done
+		' sh {} +
+		find "${STAGING_DIR}" -type f -name "*.dylib" -exec strip -x {} + 2>/dev/null || true
+		;;
+	MINGW*|MSYS*|CYGWIN*)
+		echo "-> Windows: stripping PE binaries"
+		STRIP_BIN=""
+		for candidate in \
+			"$(find "${STAGING_DIR}" -name 'strip.exe' -type f 2>/dev/null | head -n 1)" \
+			"$(command -v strip 2>/dev/null || true)"
+		do
+			if [ -n "${candidate}" ] && [ -x "${candidate}" ]; then
+				STRIP_BIN="${candidate}"
+				break
 			fi
 		done
-	' sh {} +
-	# Also strip dylibs
-	find "${STAGING_DIR}" -type f \( -name "*.dylib" \) -exec strip -x {} + 2>/dev/null || true
+
+		if [ -n "${STRIP_BIN}" ]; then
+			echo "   using: ${STRIP_BIN}"
+			# --strip-unneeded would break import libraries (.dll.a); restrict
+			# the aggressive form to executables and DLLs.
+			find "${STAGING_DIR}" -type f \( -name "*.exe" -o -name "*.dll" \) \
+				-exec "${STRIP_BIN}" --strip-unneeded {} + 2>/dev/null || true
+			find "${STAGING_DIR}" -type f -name "*.o" \
+				-exec "${STRIP_BIN}" --strip-debug {} + 2>/dev/null || true
+		else
+			echo "   WARNING: no strip found; skipping symbol removal"
+		fi
+		;;
+	*)
+		echo "-> Linux: strip --strip-unneeded"
+		find "${STAGING_DIR}" -type f \( -perm -0100 -o -name "*.so" \) \
+			-exec strip --strip-unneeded {} + 2>/dev/null || true
+		;;
+esac
+
+echo "After stripping: $(human_size)"
+
+# ---------------------------------------------------------------------------
+# 2. Profiling libraries — 29.9% of the tree
+#
+# Only consumed by `ghc -prof`. Removing them leaves normal and optimised
+# compilation completely intact.
+# ---------------------------------------------------------------------------
+if [ "${KEEP_PROFILING}" = "1" ]; then
+	echo "-> Keeping profiling libraries (GHC_KEEP_PROFILING=1)"
 else
-	echo "Linux detected: Using strip --strip-unneeded..."
-	find "${STAGING_DIR}" -type f \( -perm -0100 -o -name "*.so" \) -exec strip --strip-unneeded {} + 2>/dev/null || true
+	echo "-> Removing profiling libraries (*_p.a, *.p_hi, *.p_o)"
+	find "${STAGING_DIR}" -type f \( -name "*_p.a" -o -name "*.p_hi" -o -name "*.p_o" \) -delete 2>/dev/null || true
+	echo "   now: $(human_size)"
 fi
 
-echo "Final size:"
-du -sh "${STAGING_DIR}/" 2>/dev/null || true
+# ---------------------------------------------------------------------------
+# 3. Documentation — 28.4% of the tree
+#
+# Haddock HTML, LaTeX sources and .haddock interface files. The `haddock`
+# executable itself is retained so users can still generate docs for their own
+# packages; only the prebuilt GHC library documentation goes.
+# ---------------------------------------------------------------------------
+if [ "${KEEP_DOCS}" = "1" ]; then
+	echo "-> Keeping bundled documentation (GHC_KEEP_DOCS=1)"
+else
+	echo "-> Removing bundled documentation (haddock html/latex)"
+
+	# This used to test three hardcoded paths -- share/doc, doc, share/html --
+	# which are where the Unix bindists put documentation. On Windows none of
+	# them exist, so the step matched nothing and reported success: run
+	# 30330803443 printed "now: 1815 MB" both before and after, freeing zero
+	# bytes, and shipped a 385 MB payload against macOS's 94 MB.
+	#
+	# Absence of a hardcoded path is indistinguishable from "nothing to do".
+	# Searching by directory name finds the documentation wherever a given
+	# platform's bindist chose to put it, and reporting each removal by size
+	# means a future layout change shows up as a shrinking list rather than as
+	# silence.
+	docs_freed=0
+	while IFS= read -r d; do
+		[ -n "${d}" ] || continue
+		sz=$(du -sm "${d}" 2>/dev/null | awk '{print $1}')
+		: "${sz:=0}"
+		echo "   removing ${d#"${STAGING_DIR}"/} (${sz} MB)"
+		rm -rf "${d}"
+		docs_freed=$((docs_freed + sz))
+	done <<EOF
+$(find "${STAGING_DIR}" -type d \( -name doc -o -name docs -o -name html -o -name latex \) -prune 2>/dev/null || true)
+EOF
+
+	# `set -o pipefail` is active. If find exits non-zero -- one unreadable
+	# directory is enough -- the pipeline fails, the assignment fails, and
+	# `set -e` kills the script partway through optimisation. This is the same
+	# shape as the `find | grep -q` SIGPIPE race that made the integrity guard
+	# fail for 1,599 files and pass for 37, so it gets the same treatment
+	# rather than waiting to be discovered a second time.
+	haddocks=$({ find "${STAGING_DIR}" -type f -name "*.haddock" 2>/dev/null || true; } | wc -l | tr -d ' ')
+	find "${STAGING_DIR}" -type f -name "*.haddock" -delete 2>/dev/null || true
+	echo "   removed ${haddocks} .haddock interface files"
+
+	if [ "${docs_freed}" -eq 0 ] && [ "${haddocks}" -eq 0 ]; then
+		echo "   WARNING: no documentation found to remove -- the bindist layout" >&2
+		echo "            may have changed. Directories present at the root:" >&2
+		ls -1 "${STAGING_DIR}" >&2 2>/dev/null || true
+	else
+		echo "   freed ${docs_freed} MB of documentation directories"
+	fi
+	echo "   now: $(human_size)"
+fi
+
+# ---------------------------------------------------------------------------
+# 4. Assert the toolchain survived the cut
+#
+# A size optimisation that silently deletes the compiler is worse than no
+# optimisation at all, so verify the essentials are still present before
+# declaring success.
+# ---------------------------------------------------------------------------
+echo "-> Verifying toolchain integrity after reduction"
+MISSING=0
+
+# `find ... | grep -q` is NOT safe here. grep -q exits at the first match while
+# find is still writing; find takes SIGPIPE (141) and, under `set -o pipefail`,
+# the whole pipeline reports failure. Whether that happens depends on how many
+# paths fit in the pipe buffer before grep exits — so the check passes for a
+# handful of binaries and fails for 1,599 interface files. `-print -quit` stops
+# find itself at the first hit: no pipe, no race, and it short-circuits.
+#
+# `-type f` is also wrong on its own. In a tree produced by `make install`,
+# bin/ghc is a SYMLINK to the versioned binary (ghc-9.4.8), and `-type f` does
+# not match symlinks — so the guard reported the compiler missing while the
+# compiler was sitting right there. It passed locally only because the raw
+# extracted bindist has a real file at that path; the installed tree has a
+# different shape. Match files and symlinks both, and accept the versioned
+# names, since which one exists depends on how the tree was produced.
+first_match() {
+	find "${STAGING_DIR}" \( -type f -o -type l \) -name "$1" -print -quit 2>/dev/null
+}
+
+# Positive control: report what was actually found, so a future failure is
+# diagnosable from the log instead of requiring a local reproduction.
+for tool in ghc ghc-pkg; do
+	# The versioned fallback must be "${tool}-<digit>...", not "${tool}-*".
+	#
+	# With "${tool}-*" the probe for `ghc` matches `ghc-pkg`, so deleting the
+	# compiler entirely still satisfied the guard -- it reported the toolchain
+	# intact on a tree with no `ghc` in it. The fallback exists to match the
+	# versioned binary `ghc-9.4.8`, which always begins with a digit after the
+	# dash, while every sibling tool (ghc-pkg, ghc-iserv) begins with a letter.
+	#
+	# Caught by tests/test_optimize.py::test_missing_compiler_is_a_hard_failure.
+	FOUND="$(first_match "${tool}")"
+	[ -n "${FOUND}" ] || FOUND="$(first_match "${tool}-[0-9]*")"
+	[ -n "${FOUND}" ] || FOUND="$(first_match "${tool}.exe")"
+	[ -n "${FOUND}" ] || FOUND="$(first_match "${tool}-[0-9]*.exe")"
+
+	if [ -z "${FOUND}" ]; then
+		echo "   FATAL: '${tool}' is missing after optimization!" >&2
+		MISSING=1
+	else
+		echo "   found ${tool}: ${FOUND}"
+	fi
+done
+
+HI_FOUND="$(first_match '*.hi')"
+if [ -z "${HI_FOUND}" ]; then
+	echo "   FATAL: no interface (.hi) files survived — imports would fail!" >&2
+	MISSING=1
+else
+	echo "   found interfaces: ${HI_FOUND}"
+fi
+
+if [ "${MISSING}" -ne 0 ]; then
+	echo "Optimization removed something essential. Refusing to continue." >&2
+	echo "--- staging tree layout for diagnosis ---" >&2
+	find "${STAGING_DIR}" -maxdepth 2 \( -type f -o -type l -o -type d \) 2>/dev/null | head -n 40 >&2
+	echo "--- anything named ghc* ---" >&2
+	find "${STAGING_DIR}" \( -type f -o -type l \) -name 'ghc*' 2>/dev/null | head -n 20 >&2
+	exit 5
+fi
+
+echo "   toolchain intact (ghc, ghc-pkg, interfaces present)"
+echo "Final size: $(human_size)"
 echo "Symbol stripping and binary optimization complete."
