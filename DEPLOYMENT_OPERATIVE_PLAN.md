@@ -1,3 +1,17 @@
+> [!IMPORTANT]
+> **Superseded on distribution only.** This document records the original
+> design intent and remains accurate about the wrapper, the fetch/patch/rpath
+> scripts and the relocation strategy. The *delivery* model described below --
+> one toolchain-bundled wheel per OS, all published to PyPI -- could not ship:
+> the wheels measured 363-539 MB against PyPI's 100 MB per-file limit, and all
+> three carried the `py3-none-any` tag on wheels full of native binaries, so
+> they collided on one filename and PyPI would have served one platform's
+> binaries to every platform.
+>
+> See [ARCHITECTURE.md](ARCHITECTURE.md) for what ships now. Sections below
+> describing `[project.scripts]`, `requires-python = ">=3.8"`,
+> `manylinux2014_x86_64` and the single-wheel publish flow are historical.
+
 ***
 
 ## STRUTTURA DEL REPOSITORY — Definitiva
