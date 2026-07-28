@@ -97,6 +97,26 @@ pip install ghc_compiler_python-9.5.0-py3-none-win_amd64.whl               # Win
 | `GHC_COMPILER_PYTHON_HOME` | Where the toolchain is cached. Defaults to the platform cache directory. |
 | `GHC_COMPILER_PYTHON_OFFLINE` | Set to `1` to refuse network access entirely. |
 
+### 💾 Disk usage
+
+Each release caches its own toolchain, so upgrading leaves the previous one in place — around 1.8 GB per version on Windows. That is deliberate: a payload rebuilt under a new tag is not byte-identical, so reusing the old tree would skip the digest check entirely. It does mean the cache grows.
+
+```bash
+python -m ghc_compiler_python.bootstrap --cache-info
+```
+
+```
+cache root: C:\Users\you\AppData\Local\ghc-compiler-python\Cache
+  9.4.8/win_amd64                 1.8 GiB  [superseded]
+  9.4.9/win_amd64                 1.8 GiB  [superseded]
+  9.5.0/win_amd64                 1.8 GiB  [current]
+  --------------------------------------
+  total                           5.4 GiB
+  superseded (not deleted)        3.5 GiB
+```
+
+**Nothing is ever deleted automatically, and there is no flag that deletes.** Removing a toolchain a virtual environment still points at breaks that environment silently, and this package cannot see which ones exist. So it tells you what you have and leaves the decision with you — delete a superseded directory by hand once you are sure nothing uses it.
+
 ---
 
 ## 💻 Usage

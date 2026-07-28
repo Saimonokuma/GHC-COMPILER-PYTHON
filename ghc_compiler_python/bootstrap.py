@@ -37,7 +37,7 @@ import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
-from typing import NoReturn, Optional
+from typing import List, NamedTuple, NoReturn, Optional
 
 #: The compiler actually inside the payload. This is GHC's own version and it
 #: moves only when the bindist does.
@@ -447,3 +447,156 @@ def find_installed_root() -> Optional[Path]:
         return payload_root() if is_installed() else None
     except BootstrapError:
         return None
+
+
+# --------------------------------------------------------------------------
+# cache inventory
+# --------------------------------------------------------------------------
+#
+# Nothing in this package has ever removed an old toolchain. Each release
+# caches under its own RELEASE_VERSION -- which is deliberate and load-bearing,
+# since a payload rebuilt under a new tag is not byte-identical and reusing the
+# old tree would skip the digest check entirely -- but the consequence is that
+# every upgrade silently costs another ~1.8 GB on Windows.
+#
+# Measured on the maintainer's machine after 9.4.9: 3.6 GB in two versions,
+# heading for 5.4 GB once 9.5.0 lands.
+#
+# What ships here is REPORTING ONLY. Deletion is deliberately not implemented
+# yet: a bug in a cache pruner destroys user data on a machine we cannot see,
+# and the correct policy (which versions, whose consent, what about a venv still
+# pointing at an old one) is not yet settled. Telling the user what they have
+# and where it is costs nothing and can harm nothing.
+
+class CacheEntry(NamedTuple):
+    """One cached release, as found on disk."""
+
+    version: str
+    platform: str
+    path: Path
+    complete: bool
+    bytes: int
+
+    @property
+    def is_current(self) -> bool:
+        """True when this entry is the release this wheel would use."""
+        return self.version == RELEASE_VERSION
+
+
+def _tree_size(path: Path) -> int:
+    """Bytes under ``path``. Symlinks are counted as links, not as targets, so
+    a tree cannot be double-counted through one."""
+    total = 0
+    for dirpath, dirnames, filenames in os.walk(path, followlinks=False):
+        for name in filenames:
+            f = Path(dirpath) / name
+            try:
+                total += f.lstat().st_size
+            except OSError:
+                # A file that vanished mid-walk is not a reason to fail a
+                # read-only report.
+                continue
+    return total
+
+
+def cache_entries() -> List[CacheEntry]:
+    """Every cached payload, current release included.
+
+    Read-only and never raises for an absent or unreadable cache: this exists
+    to answer "what is on my disk", which must work even when the cache is in a
+    state that would stop an install.
+    """
+    root = cache_root()
+    entries: List[CacheEntry] = []
+    if not root.is_dir():
+        return entries
+
+    for version_dir in sorted(root.iterdir()):
+        if not version_dir.is_dir():
+            continue
+        for platform_dir in sorted(version_dir.iterdir()):
+            if not platform_dir.is_dir():
+                continue
+            entries.append(CacheEntry(
+                version=version_dir.name,
+                platform=platform_dir.name,
+                path=platform_dir,
+                complete=(platform_dir / ".complete").is_file(),
+                bytes=_tree_size(platform_dir),
+            ))
+    return entries
+
+
+def _human(n: int) -> str:
+    """Bytes as a short human string. Deliberately base-1024 and labelled
+    accordingly, so the number can be checked against what a file manager
+    shows."""
+    step = 1024.0
+    value = float(n)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if value < step or unit == "TiB":
+            return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} B"
+        value /= step
+    return f"{value:.1f} TiB"
+
+
+def cache_report() -> str:
+    """Human-readable inventory of the cache. Pure: touches no state."""
+    entries = cache_entries()
+    root = cache_root()
+    lines = [f"cache root: {root}"]
+
+    if not entries:
+        lines.append("  (empty -- nothing has been downloaded yet)")
+        return "\n".join(lines)
+
+    total = 0
+    reclaimable = 0
+    for e in entries:
+        total += e.bytes
+        marks = []
+        if e.is_current:
+            marks.append("current")
+        else:
+            marks.append("superseded")
+            reclaimable += e.bytes
+        if not e.complete:
+            marks.append("INCOMPLETE")
+        label = f"{e.version}/{e.platform}"
+        lines.append(f"  {label:<28}{_human(e.bytes):>10}  "
+                     f"[{', '.join(marks)}]")
+
+    lines.append(f"  {'-' * 38}")
+    lines.append(f"  {'total':<28}{_human(total):>10}")
+    if reclaimable:
+        lines.append(
+            f"  {'superseded (not deleted)':<28}{_human(reclaimable):>10}")
+        lines.append("")
+        lines.append("Nothing is removed automatically. To reclaim space, "
+                     "delete the superseded")
+        lines.append("directories listed above by hand -- but only if no "
+                     "environment still uses them.")
+    return "\n".join(lines)
+
+
+def _main(argv: Optional[List[str]] = None) -> int:
+    """``python -m ghc_compiler_python.bootstrap --cache-info``.
+
+    Read-only by construction: there is no subcommand here that writes.
+    """
+    args = list(sys.argv[1:] if argv is None else argv)
+    if args == ["--cache-info"]:
+        print(cache_report())
+        return 0
+    if args in ([], ["--help"], ["-h"]):
+        print("usage: python -m ghc_compiler_python.bootstrap --cache-info")
+        print()
+        print("  --cache-info   list cached toolchains and their sizes.")
+        print("                 Reports only; never deletes anything.")
+        return 0
+    sys.stderr.write(f"unknown arguments: {' '.join(args)}\n")
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())
