@@ -495,11 +495,108 @@ def generate_release_job():
 """
 
 
+def generate_delivery_proof_job():
+    """Prove the path a PyPI user actually takes.
+
+    Every other job validates the OFFLINE wheel: it installs `dist/*.whl` with
+    the toolchain already bundled inside. That proves the compiler works. It
+    does not prove the product works, because nobody installing from PyPI gets
+    that wheel -- they get the 20 KiB thin wheel, which must reach the network,
+    fetch its payload from this release, verify the SHA-256 it was built with,
+    extract it, and only then compile.
+
+    That path had never run in CI. It cannot run before the release exists,
+    which is why it lives here, after attach-to-release, rather than beside the
+    build. `publish-to-pypi` depends on it, so a wheel whose download path is
+    broken can never reach PyPI.
+
+    Builds != installs != compiles != delivered. This is the delivered link.
+    """
+    return f"""
+  verify-delivered-install:
+    name: Verify Delivered Install on ${{{{ matrix.os }}}}
+    needs: [build-thin-wheel, attach-to-release]
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    strategy:
+      # Every platform reports independently. One failing must not hide the
+      # status of the other two.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    runs-on: ${{{{ matrix.os }}}}
+
+    steps:
+      - uses: {ACTIONS['setup_python']}
+        with:
+          python-version: '{PYTHON_VERSION}'
+
+      - uses: {ACTIONS['download_artifact']}
+        with:
+          name: thin-wheel
+          path: dist/
+
+      - name: Install The Thin Wheel As A User Would
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install dist/*.whl
+          echo "installed size on disk:"
+          python -c "import ghc_compiler_python, pathlib, sys; p=pathlib.Path(ghc_compiler_python.__file__).parent; print(sum(f.stat().st_size for f in p.rglob('*') if f.is_file()), 'bytes')"
+
+      - name: Fetch The Payload From This Release
+        shell: bash
+        env:
+          # Deliberately NOT set: GHC_COMPILER_PYTHON_OFFLINE. This step must
+          # reach the network and download the asset attached above, verifying
+          # it against the digest compiled into the wheel. If the asset name,
+          # the release tag, or the digest disagree, this fails here rather
+          # than in a user's terminal.
+          PYTHONUNBUFFERED: '1'
+        run: |
+          REPORTED=$(ghc-wrapper --numeric-version)
+          echo "ghc-wrapper --numeric-version -> $REPORTED"
+          if [ "$REPORTED" != "{GHC_VERSION}" ]; then
+            echo "::error::expected {GHC_VERSION}, got '$REPORTED' -- resolved the wrong compiler"
+            exit 1
+          fi
+
+      - name: Compile And Run Haskell Through The Downloaded Toolchain
+        shell: bash
+        run: |
+          cat > Delivered.hs <<'HASKELL'
+          import Data.List (sort)
+
+          main :: IO ()
+          main = do
+            let xs = sort [3, 1, 2 :: Int]
+            putStrLn ("Delivered Install Validation Successful: " ++ show xs)
+          HASKELL
+
+          ghc-wrapper Delivered.hs -o delivered
+
+          if [ -f ./delivered.exe ]; then
+            OUT=$(./delivered.exe)
+          else
+            OUT=$(./delivered)
+          fi
+          echo "program output: $OUT"
+
+          EXPECTED='Delivered Install Validation Successful: [1,2,3]'
+          if [ "$OUT" != "$EXPECTED" ]; then
+            echo "::error::expected '$EXPECTED', got '$OUT'"
+            exit 1
+          fi
+          echo "delivered install verified: downloaded, verified, extracted, compiled, ran"
+"""
+
+
 def generate_publish_job():
     return f"""
   publish-to-pypi:
     name: Publish Thin Wheel to PyPI
-    needs: [build-thin-wheel, attach-to-release]
+    needs: [build-thin-wheel, attach-to-release, verify-delivered-install]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
 
@@ -603,6 +700,7 @@ jobs:"""
 
     lines.append(generate_thin_wheel_job(needs_list))
     lines.append(generate_release_job())
+    lines.append(generate_delivery_proof_job())
     lines.append(generate_publish_job())
 
     return "\n".join(lines) + "\n"
