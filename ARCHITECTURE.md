@@ -122,12 +122,26 @@ build-thin-wheel                       embed digests → build → verify
                     ↓
 attach-to-release                      payloads + offline wheels → Release
                     ↓
-publish-to-pypi                        thin wheel only → PyPI via OIDC
+verify-delivered-install               pip install thin wheel → download
+  (linux · macos · windows)            payload from the Release → compile → run
+                    ↓
+publish-to-pypi                        thin wheel only → PyPI via API token
 ```
 
 The join is forced by the data: payload digests do not exist until the
 payloads are built, and the thin wheel cannot be built until it can embed
 them.
+
+`verify-delivered-install` exists because every other job validates the
+*offline* wheel — it installs a wheel with the toolchain already inside, which
+proves the compiler works but not that the product does. Nobody installing
+from PyPI receives that wheel. They receive the thin one, which must reach the
+network, fetch its payload from the Release, verify the digest compiled into
+it, extract, and only then compile. That path had never run in CI: three green
+builds, an attached Release and a successful upload were all compatible with a
+wheel that 404s on first use. It deliberately does not set
+`GHC_COMPILER_PYTHON_OFFLINE`, and `publish-to-pypi` depends on it, so a wheel
+whose download path is broken cannot reach PyPI.
 
 `ci.yml` runs the test suite on all three OS against Python 3.10 and 3.13, and
 builds the Lean proofs. The suite previously existed but **no workflow ever
@@ -156,9 +170,12 @@ sufficient evidence.
 ## Release checklist
 
 1. Merge to `main`; confirm `ci.yml` green on all three OS.
-2. Ensure the PyPI Trusted Publisher exists: project `ghc-compiler-python`,
-   owner `Saimonokuma`, repo `GHC-COMPILER-PYTHON`, workflow `build.yml`,
-   environment `pypi`. Without it the publish job cannot authenticate.
+2. Ensure the repository secret `PYPI_API_TOKEN` is set. Publishing uses API
+   token authentication (`user: __token__`), not Trusted Publishing. OIDC was
+   tried and failed in run `25262196892` with `invalid-publisher: valid token,
+   but no corresponding publisher` — the token was minted correctly, PyPI
+   simply had no publisher registered, and nothing on the GitHub side can
+   create one.
 3. Tag `vX.Y.Z` and push. Tag runs are exempt from concurrency cancellation.
 4. Verify through the API, not the badge: the run can be green while the job
    that matters was skipped. Check `publish-to-pypi` specifically.

@@ -80,12 +80,12 @@ jobs:
         shell: bash
         run: |
           mkdir -p payload
-          tar -C ghc-bindist -cf - . | xz -T0 -6 -c > "payload/ghc-payload-9.4.8-manylinux_2_39_x86_64.tar.xz"
+          tar -C ghc-bindist -cf - . | xz -T0 -6 -c > "payload/ghc-payload-9.4.9-manylinux_2_39_x86_64.tar.xz"
           python -c "
           import hashlib, pathlib
-          p = pathlib.Path('payload/ghc-payload-9.4.8-manylinux_2_39_x86_64.tar.xz')
+          p = pathlib.Path('payload/ghc-payload-9.4.9-manylinux_2_39_x86_64.tar.xz')
           h = hashlib.sha256(p.read_bytes()).hexdigest()
-          pathlib.Path('payload/ghc-payload-9.4.8-manylinux_2_39_x86_64.tar.xz.sha256').write_text(h + '  ghc-payload-9.4.8-manylinux_2_39_x86_64.tar.xz\n')
+          pathlib.Path('payload/ghc-payload-9.4.9-manylinux_2_39_x86_64.tar.xz.sha256').write_text(h + '  ghc-payload-9.4.9-manylinux_2_39_x86_64.tar.xz\n')
           print('SHA-256', h)
           print('size', p.stat().st_size // 1048576, 'MB')
           "
@@ -94,7 +94,7 @@ jobs:
         run: |
           # A payload that exceeds the distribution ceiling must fail here, loudly,
           # rather than at upload time after the whole matrix has run.
-          SIZE=$(python -c "import pathlib; print(pathlib.Path('payload/ghc-payload-9.4.8-manylinux_2_39_x86_64.tar.xz').stat().st_size)")
+          SIZE=$(python -c "import pathlib; print(pathlib.Path('payload/ghc-payload-9.4.9-manylinux_2_39_x86_64.tar.xz').stat().st_size)")
           LIMIT=$((100 * 1024 * 1024))
           echo "payload: $((SIZE / 1048576)) MB (ceiling $((LIMIT / 1048576)) MB)"
           if [ "$SIZE" -gt "$LIMIT" ]; then
@@ -231,12 +231,12 @@ jobs:
         shell: bash
         run: |
           mkdir -p payload
-          tar -C ghc-bindist -cf - . | xz -T0 -6 -c > "payload/ghc-payload-9.4.8-macosx_11_0_arm64.tar.xz"
+          tar -C ghc-bindist -cf - . | xz -T0 -6 -c > "payload/ghc-payload-9.4.9-macosx_11_0_arm64.tar.xz"
           python -c "
           import hashlib, pathlib
-          p = pathlib.Path('payload/ghc-payload-9.4.8-macosx_11_0_arm64.tar.xz')
+          p = pathlib.Path('payload/ghc-payload-9.4.9-macosx_11_0_arm64.tar.xz')
           h = hashlib.sha256(p.read_bytes()).hexdigest()
-          pathlib.Path('payload/ghc-payload-9.4.8-macosx_11_0_arm64.tar.xz.sha256').write_text(h + '  ghc-payload-9.4.8-macosx_11_0_arm64.tar.xz\n')
+          pathlib.Path('payload/ghc-payload-9.4.9-macosx_11_0_arm64.tar.xz.sha256').write_text(h + '  ghc-payload-9.4.9-macosx_11_0_arm64.tar.xz\n')
           print('SHA-256', h)
           print('size', p.stat().st_size // 1048576, 'MB')
           "
@@ -245,7 +245,7 @@ jobs:
         run: |
           # A payload that exceeds the distribution ceiling must fail here, loudly,
           # rather than at upload time after the whole matrix has run.
-          SIZE=$(python -c "import pathlib; print(pathlib.Path('payload/ghc-payload-9.4.8-macosx_11_0_arm64.tar.xz').stat().st_size)")
+          SIZE=$(python -c "import pathlib; print(pathlib.Path('payload/ghc-payload-9.4.9-macosx_11_0_arm64.tar.xz').stat().st_size)")
           LIMIT=$((100 * 1024 * 1024))
           echo "payload: $((SIZE / 1048576)) MB (ceiling $((LIMIT / 1048576)) MB)"
           if [ "$SIZE" -gt "$LIMIT" ]; then
@@ -381,13 +381,13 @@ jobs:
         run: |
           mkdir -p payload
           cd ghc-bindist
-          7z a -tzip -mx=5 -mmt=on "../payload/ghc-payload-9.4.8-win_amd64.zip" . > /dev/null
+          7z a -tzip -mx=5 -mmt=on "../payload/ghc-payload-9.4.9-win_amd64.zip" . > /dev/null
           cd ..
           python -c "
           import hashlib, pathlib
-          p = pathlib.Path('payload/ghc-payload-9.4.8-win_amd64.zip')
+          p = pathlib.Path('payload/ghc-payload-9.4.9-win_amd64.zip')
           h = hashlib.sha256(p.read_bytes()).hexdigest()
-          pathlib.Path('payload/ghc-payload-9.4.8-win_amd64.zip.sha256').write_text(h + '  ghc-payload-9.4.8-win_amd64.zip\n')
+          pathlib.Path('payload/ghc-payload-9.4.9-win_amd64.zip.sha256').write_text(h + '  ghc-payload-9.4.9-win_amd64.zip\n')
           print('SHA-256', h)
           print('size', p.stat().st_size // 1048576, 'MB')
           "
@@ -396,7 +396,7 @@ jobs:
         run: |
           # A payload that exceeds the distribution ceiling must fail here, loudly,
           # rather than at upload time after the whole matrix has run.
-          SIZE=$(python -c "import pathlib; print(pathlib.Path('payload/ghc-payload-9.4.8-win_amd64.zip').stat().st_size)")
+          SIZE=$(python -c "import pathlib; print(pathlib.Path('payload/ghc-payload-9.4.9-win_amd64.zip').stat().st_size)")
           LIMIT=$((100 * 1024 * 1024))
           echo "payload: $((SIZE / 1048576)) MB (ceiling $((LIMIT / 1048576)) MB)"
           if [ "$SIZE" -gt "$LIMIT" ]; then
@@ -608,12 +608,147 @@ jobs:
         with:
           files: release/*
           body_path: RELEASE.md
+          # Without an explicit name the release is titled with the bare tag,
+          # "v9.4.8", which is what a user sees first on the releases page and
+          # in every notification.
+          name: GHC Compiler Python ${{ github.ref_name }}
+          # This is the supported release for the version it carries, so it
+          # should be the one the "Latest" badge points at rather than
+          # whatever happens to sort highest.
+          make_latest: true
+          # A release that silently attaches nothing is indistinguishable from
+          # a successful one until a user hits a 404 on the payload URL.
           fail_on_unmatched_files: true
+
+
+  verify-delivered-install:
+    name: Verify Delivered Install on ${{ matrix.os }}
+    needs: [build-thin-wheel, attach-to-release]
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    strategy:
+      # Every platform reports independently. One failing must not hide the
+      # status of the other two.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: thin-wheel
+          path: dist/
+
+      - name: Install The Thin Wheel As A User Would
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install dist/*.whl
+          echo "installed size on disk:"
+          python -c "import ghc_compiler_python, pathlib, sys; p=pathlib.Path(ghc_compiler_python.__file__).parent; print(sum(f.stat().st_size for f in p.rglob('*') if f.is_file()), 'bytes')"
+
+      - name: Make The Runner Look Like A User Machine
+        shell: bash
+        run: |
+          # windows-latest ships mingw via chocolatey, so `gcc` is always on
+          # PATH here and was never on PATH for a real user. That single
+          # difference let 9.4.8 ship a wrapper which aborted with
+          #
+          #   FATAL ERROR: The GHC compiler requires a host C-linker
+          #
+          # before it ever touched the mingw the payload had just downloaded.
+          # Three green Windows jobs certified a wheel that could not compile
+          # on any stock Windows box. A runner that is better equipped than the
+          # machine it certifies is not a test, it is a rehearsal.
+          #
+          # So the system compilers are removed from PATH for the rest of this
+          # job. On Linux and macOS GHC genuinely needs the system cc and the
+          # payload ships none, so they are left alone -- the point is to match
+          # each platform's real user, not to strip uniformly.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            KEEP=""
+            IFS=':' read -ra PARTS <<< "$PATH"
+            for d in "${PARTS[@]}"; do
+              if [ -x "$d/gcc.exe" ] || [ -x "$d/clang.exe" ] || [ -x "$d/gcc" ] || [ -x "$d/clang" ]; then
+                echo "dropping from PATH: $d"
+                continue
+              fi
+              KEEP="${KEEP:+$KEEP:}$d"
+            done
+            echo "PATH=$KEEP" >> "$GITHUB_ENV"
+            export PATH="$KEEP"
+          fi
+
+          # Assert the scrub worked rather than trusting it. If a system
+          # compiler survives, this job silently reverts to the rehearsal it
+          # was, so failing here is the honest outcome.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            if command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1; then
+              echo "::error::a system C compiler is still on PATH -- this job would not test the user's machine"
+              command -v gcc || true
+              command -v clang || true
+              exit 1
+            fi
+            echo "no system gcc/clang on PATH: the payload's own toolchain is the only one available"
+          else
+            echo "$RUNNER_OS uses the system cc by design; PATH left untouched"
+          fi
+
+      - name: Fetch The Payload From This Release
+        shell: bash
+        env:
+          # Deliberately NOT set: GHC_COMPILER_PYTHON_OFFLINE. This step must
+          # reach the network and download the asset attached above, verifying
+          # it against the digest compiled into the wheel. If the asset name,
+          # the release tag, or the digest disagree, this fails here rather
+          # than in a user's terminal.
+          PYTHONUNBUFFERED: '1'
+        run: |
+          REPORTED=$(ghc-wrapper --numeric-version)
+          echo "ghc-wrapper --numeric-version -> $REPORTED"
+          if [ "$REPORTED" != "9.4.8" ]; then
+            echo "::error::expected 9.4.8, got '$REPORTED' -- resolved the wrong compiler"
+            exit 1
+          fi
+
+      - name: Compile And Run Haskell Through The Downloaded Toolchain
+        shell: bash
+        run: |
+          cat > Delivered.hs <<'HASKELL'
+          import Data.List (sort)
+
+          main :: IO ()
+          main = do
+            let xs = sort [3, 1, 2 :: Int]
+            putStrLn ("Delivered Install Validation Successful: " ++ show xs)
+          HASKELL
+
+          ghc-wrapper Delivered.hs -o delivered
+
+          if [ -f ./delivered.exe ]; then
+            OUT=$(./delivered.exe)
+          else
+            OUT=$(./delivered)
+          fi
+          echo "program output: $OUT"
+
+          EXPECTED='Delivered Install Validation Successful: [1,2,3]'
+          if [ "$OUT" != "$EXPECTED" ]; then
+            echo "::error::expected '$EXPECTED', got '$OUT'"
+            exit 1
+          fi
+          echo "delivered install verified: downloaded, verified, extracted, compiled, ran"
 
 
   publish-to-pypi:
     name: Publish Thin Wheel to PyPI
-    needs: [build-thin-wheel, attach-to-release]
+    needs: [build-thin-wheel, attach-to-release, verify-delivered-install]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
 

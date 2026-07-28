@@ -223,10 +223,56 @@ def _resolve_binary(name: str) -> str:
     )
 
 
-def _validate_c_linker() -> None:
-    """Pre-flight validation: assert the existence of a host C-linker."""
-    if not shutil.which("gcc") and not shutil.which("clang"):
-        _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
+#: Where the Windows bindist keeps the C toolchain it ships with itself,
+#: relative to the toolchain root. Verified against the published payload:
+#: mingw/bin/clang.exe and mingw/bin/ld.exe are both present. GHC 9.4.8 for
+#: Windows drives clang, not gcc.
+_BUNDLED_LINKERS = (
+    "mingw/bin/clang.exe",
+    "mingw/bin/gcc.exe",
+    "mingw/bin/clang",
+    "mingw/bin/gcc",
+)
+
+
+def _bundled_c_linker(root: Optional[Path]) -> Optional[Path]:
+    """Return the C compiler shipped inside the toolchain, if there is one."""
+    if root is None:
+        return None
+    for relative in _BUNDLED_LINKERS:
+        candidate = root / relative
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _validate_c_linker(root: Optional[Path] = None) -> None:
+    """Assert that a C toolchain GHC can actually drive is reachable.
+
+    GHC shells out to a C compiler to assemble and link, so its absence is
+    worth catching before the user sees a confusing error from deep inside
+    the compiler. But *where* that compiler comes from differs by platform:
+
+      Unix     GHC uses the system cc. Absent means absent.
+      Windows  the bindist carries its own. mingw/bin/clang.exe and
+               mingw/bin/ld.exe live inside the payload, and that toolchain
+               is the single largest reason the Windows payload is 395 MB
+               against 87 MB for Linux.
+
+    Checking only `shutil.which` therefore rejected every Windows machine
+    without a system gcc -- including machines that had just downloaded a
+    complete toolchain and were holding it in the cache. CI never caught it
+    because the windows-latest runner installs mingw via chocolatey, so a
+    system compiler is always on PATH there. The delivered path found it on
+    the first real user run.
+    """
+    if shutil.which("gcc") or shutil.which("clang"):
+        return
+
+    if _bundled_c_linker(root) is not None:
+        return
+
+    _die("FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang).")
 
 
 def _find_platform_lib_subdir() -> str:
@@ -676,7 +722,23 @@ def _ghc_pkg_recache(pkg_db_dir: str, env: dict) -> None:
 
 def _execute_tool(tool_name: str, extra_args: Optional[List[str]] = None) -> NoReturn:
     """Generic subprocess proxy for bundled Haskell tooling."""
-    _validate_c_linker()
+    # Acquire the toolchain first. Everything below describes or patches it,
+    # and none of that can be done correctly before it exists.
+    #
+    # The previous order validated the linker, sterilised the environment and
+    # ran _resolve_runtime_paths -- which rewrites @GHC_PREFIX@ to the real
+    # root -- and only then called _resolve_binary, which is what actually
+    # downloads the payload. On a thin-wheel install there was no toolchain on
+    # disk during the patch step, so _ghc_root_or_prefix fell back to
+    # sys.prefix, the resource scan found nothing, and the placeholders were
+    # left unresolved.
+    #
+    # This never showed up in CI because the offline wheel ships the toolchain
+    # inside the package, so a bundled root is present from the first line and
+    # the ordering makes no observable difference. It only breaks on the path
+    # every PyPI user takes.
+    root = _ghc_root()
+    _validate_c_linker(root)
     env = _sterilize_environment()
     _resolve_runtime_paths(env)
     binary_path = _resolve_binary(tool_name)

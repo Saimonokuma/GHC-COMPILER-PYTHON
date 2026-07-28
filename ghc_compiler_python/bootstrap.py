@@ -39,13 +39,30 @@ import zipfile
 from pathlib import Path
 from typing import NoReturn, Optional
 
+#: The compiler actually inside the payload. This is GHC's own version and it
+#: moves only when the bindist does.
 GHC_VERSION = "9.4.8"
+
+#: The distribution coordinate: the git tag, the release, the payload asset
+#: names, the cache directory, and the version on PyPI.
+#:
+#: These were one constant until 9.4.9, which read well while the two agreed
+#: and became a trap the moment they had to diverge. 9.4.8 shipped a wrapper
+#: that rejected every Windows machine without a system gcc; PyPI forbids
+#: re-uploading a version, so the fix needed a new one, and a single constant
+#: made "publish a fixed wheel" and "claim a GHC release that does not exist"
+#: the same edit.
+#:
+#: They are now separate axes. The package version is 9.4.9; the compiler it
+#: installs is, and reports itself as, 9.4.8. `ghc-wrapper --numeric-version`
+#: answers for the compiler, never for the package.
+RELEASE_VERSION = "9.4.9"
 
 #: Release assets are addressed by tag, so a wheel always fetches the payload
 #: built alongside it rather than whatever happens to be newest.
 _RELEASE_BASE = (
     "https://github.com/Saimonokuma/GHC-COMPILER-PYTHON/releases/download"
-    f"/v{GHC_VERSION}"
+    f"/v{RELEASE_VERSION}"
 )
 
 _HASH_MANIFEST = Path(__file__).resolve().parent / "payload_hashes.json"
@@ -107,7 +124,7 @@ def _archive_suffix() -> str:
 
 
 def payload_name() -> str:
-    return f"ghc-payload-{GHC_VERSION}-{platform_tag()}{_archive_suffix()}"
+    return f"ghc-payload-{RELEASE_VERSION}-{platform_tag()}{_archive_suffix()}"
 
 
 def payload_url() -> str:
@@ -142,7 +159,7 @@ def cache_root() -> Path:
 
 def payload_root() -> Path:
     """Where this version's toolchain lives once installed."""
-    return cache_root() / GHC_VERSION / platform_tag()
+    return cache_root() / RELEASE_VERSION / platform_tag()
 
 
 def is_installed() -> bool:
@@ -196,7 +213,7 @@ def _offline_hint() -> str:
         "If this machine has no network access, install the self-contained "
         "wheel instead — it bundles the toolchain and never downloads:\n"
         f"    {_RELEASE_BASE}/"
-        f"ghc_compiler_python-{GHC_VERSION}-py3-none-{platform_tag()}.whl"
+        f"ghc_compiler_python-{RELEASE_VERSION}-py3-none-{platform_tag()}.whl"
     )
 
 
@@ -206,7 +223,7 @@ def _download(url: str, dest: Path, quiet: bool) -> None:
         sys.stderr.write(f"  from {url}\n")
 
     request = urllib.request.Request(
-        url, headers={"User-Agent": f"ghc-compiler-python/{GHC_VERSION}"}
+        url, headers={"User-Agent": f"ghc-compiler-python/{RELEASE_VERSION}"}
     )
     try:
         with urllib.request.urlopen(request, timeout=_DOWNLOAD_TIMEOUT) as response:
@@ -358,7 +375,7 @@ def ensure_payload(quiet: bool = False) -> Path:
 
     expected = _expected_digest()
 
-    with _DirectoryLock(cache_root() / f".lock-{GHC_VERSION}-{platform_tag()}"):
+    with _DirectoryLock(cache_root() / f".lock-{RELEASE_VERSION}-{platform_tag()}"):
         if is_installed():
             return root
 
@@ -390,7 +407,7 @@ def ensure_payload(quiet: bool = False) -> Path:
 
             _restore_exec_bits(unpacked)
             (unpacked / ".complete").write_text(
-                f"{GHC_VERSION} {platform_tag()}\n", encoding="utf-8"
+                f"{RELEASE_VERSION} {platform_tag()}\n", encoding="utf-8"
             )
 
             if root.exists():

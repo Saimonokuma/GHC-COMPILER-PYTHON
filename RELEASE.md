@@ -1,6 +1,6 @@
 <div align="center">
 
-# ⚡ GHC Compiler Python · v9.4.8
+# ⚡ GHC Compiler Python · v9.4.9
 
 **GHC 9.4.8 · Cabal 3.10.3.0 · Windows · macOS · Linux**
 
@@ -11,6 +11,20 @@
 [![Nova-Violet Role](https://img.shields.io/badge/Nova--Violet-Role-9b59b6?style=for-the-badge)](https://github.com/Nova-Violet-Role)
 
 </div>
+
+---
+
+> ### ⚠️ 9.4.8 does not work on Windows. Upgrade.
+>
+> The 9.4.8 wheel aborted with `FATAL ERROR: The GHC compiler requires a host C-linker (gcc or clang)` on any Windows machine without a system compiler — which is nearly all of them. The Windows payload ships its own toolchain (`mingw/bin/clang.exe`, and it is why that payload is 396 MB), but the wrapper checked only the system `PATH` and gave up before it ever looked inside. It also ran the check *before* downloading the payload, so there was nothing to find either way.
+>
+> CI never caught it because `windows-latest` installs mingw via chocolatey, so a system `gcc` is always present there. It was found on the first genuine end-user install.
+>
+> ```bash
+> pip install --upgrade ghc-compiler-python
+> ```
+>
+> **The version number moved, the compiler did not.** This release packages the same GHC 9.4.8; `ghc-wrapper --numeric-version` still reports `9.4.8`. The distribution version and the compiler version are now separate axes, because PyPI does not allow replacing a published version and a single constant made "publish a fixed wheel" and "claim a GHC release that does not exist" the same edit.
 
 ---
 
@@ -30,12 +44,12 @@ Only if you need an **offline or air-gapped** install:
 
 | You are on | Download | Size |
 |:--|:--|--:|
-| 🐧 **Linux** (glibc ≥ 2.38) | `ghc_compiler_python-9.4.8-py3-none-manylinux_2_38_x86_64.manylinux_2_39_x86_64.whl` | ~188 MB |
-| 🍎 **macOS** (Apple Silicon) | `ghc_compiler_python-9.4.8-py3-none-macosx_11_0_arm64.whl` | ~191 MB |
-| 🪟 **Windows** (x86_64) | `ghc_compiler_python-9.4.8-py3-none-win_amd64.whl` | ~350 MB |
+| 🐧 **Linux** (glibc ≥ 2.38) | `ghc_compiler_python-9.4.9-py3-none-manylinux_2_38_x86_64.manylinux_2_39_x86_64.whl` | ~188 MB |
+| 🍎 **macOS** (Apple Silicon) | `ghc_compiler_python-9.4.9-py3-none-macosx_11_0_arm64.whl` | ~191 MB |
+| 🪟 **Windows** (x86_64) | `ghc_compiler_python-9.4.9-py3-none-win_amd64.whl` | ~403 MB |
 
 ```bash
-pip install ./ghc_compiler_python-9.4.8-py3-none-<your-platform>.whl
+pip install ./ghc_compiler_python-9.4.9-py3-none-<your-platform>.whl
 ```
 
 These bundle the whole toolchain and **never contact the network**.
@@ -71,7 +85,9 @@ Every asset here was produced by the same workflow run that proved, **on each op
 
 Builds ≠ installs ≠ compiles ≠ delivered. All five links are asserted before anything is published.
 
-The Lean 4 proofs build with zero `sorry` in the same pipeline.
+**New in 9.4.9: the Windows leg now removes every system `gcc`/`clang` from `PATH` before it compiles**, and fails loudly if one survives. That single difference between the runner and a real machine is what let 9.4.8 ship green and broken. A runner better equipped than the machine it certifies is not a test, it is a rehearsal.
+
+The Lean 4 proofs build with zero `sorry` in the same pipeline. The linker fix is covered by `lean/Proofs/Linker.lean`, whose model is diffed against the real `wrapper.py` by a cross-check that materialises toolchain roots on disk and runs the shipped code over them.
 
 ---
 

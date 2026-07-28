@@ -35,8 +35,36 @@ class TestPlatformIdentity:
 
     def test_payload_name_carries_version_and_tag(self):
         name = bootstrap.payload_name()
-        assert bootstrap.GHC_VERSION in name
+        assert bootstrap.RELEASE_VERSION in name
         assert bootstrap.platform_tag() in name
+
+    def test_payload_name_uses_the_release_axis_not_the_compiler_axis(self):
+        """Asset names are addressed by the release, never by the compiler.
+
+        These were one constant through 9.4.8, which read fine while the two
+        agreed. When the 9.4.8 wheel turned out to be unusable on Windows and
+        PyPI refused to take a replacement, that single constant made
+        "publish a fixed wheel" and "rename every payload asset" the same
+        edit. This test fails if they are ever merged back.
+        """
+        assert bootstrap.RELEASE_VERSION != bootstrap.GHC_VERSION, (
+            "this test is vacuous while the two versions agree -- give it a "
+            "release whose version differs from the compiler's"
+        )
+        name = bootstrap.payload_name()
+        assert bootstrap.RELEASE_VERSION in name
+        assert bootstrap.GHC_VERSION not in name
+
+    def test_cache_is_keyed_by_release_so_a_new_release_never_reuses_a_payload(self):
+        """A payload rebuilt under a new tag is not byte-identical to the old
+        one, so its digest differs. If the cache were keyed by the compiler
+        version, 9.4.9 would find 9.4.8's extracted tree already stamped
+        `.complete` and skip the download entirely -- serving the payload
+        whose wrapper this release exists to replace.
+        """
+        assert bootstrap.RELEASE_VERSION != bootstrap.GHC_VERSION
+        assert bootstrap.payload_root().parent.name == bootstrap.RELEASE_VERSION
+        assert bootstrap.payload_root().parent.name != bootstrap.GHC_VERSION
 
     def test_suffix_matches_platform(self):
         expected = ".zip" if sys.platform == "win32" else ".tar.xz"
@@ -48,7 +76,7 @@ class TestPlatformIdentity:
         Addressing the release by tag is what keeps a 9.4.8 wheel from silently
         picking up a 9.6 payload after a future release.
         """
-        assert f"/v{bootstrap.GHC_VERSION}/" in bootstrap.payload_url()
+        assert f"/v{bootstrap.RELEASE_VERSION}/" in bootstrap.payload_url()
 
     def test_unsupported_platform_is_refused(self, monkeypatch):
         monkeypatch.setattr(sys, "platform", "sunos5")
@@ -66,7 +94,7 @@ class TestCacheLocation:
     def test_payload_root_is_versioned_and_platform_scoped(self):
         root = bootstrap.payload_root()
         assert root.name == bootstrap.platform_tag()
-        assert root.parent.name == bootstrap.GHC_VERSION
+        assert root.parent.name == bootstrap.RELEASE_VERSION
 
     def test_absent_until_stamped(self):
         """A directory without the completion stamp counts as absent.
@@ -273,3 +301,75 @@ class TestLockDirectory:
             pass
         # Held by the other 'process', so ours must not have removed it.
         assert lock.exists()
+
+
+class TestDownloadFailures:
+    """The failure a user meets first, if they meet one at all.
+
+    `_download` is the only code in this package that touches the network, and
+    none of its error paths were exercised. A release asset that was never
+    attached, a renamed file, a tag that does not exist and a machine with no
+    connectivity all arrive here, and what the user does next depends entirely
+    on whether the message says which URL failed and what to do instead.
+
+    A bare traceback from urllib would be a support burden on every one of
+    those paths, so the content of the message is asserted, not just the type
+    of the exception.
+    """
+
+    def test_http_error_names_the_url_and_the_offline_route(self, tmp_path, monkeypatch):
+        """404 is what a missing release asset looks like from the client."""
+        import urllib.error
+
+        url = bootstrap.payload_url()
+
+        def fake_urlopen(*args, **kwargs):
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+
+        monkeypatch.setattr(bootstrap.urllib.request, "urlopen", fake_urlopen)
+
+        with pytest.raises(bootstrap.BootstrapError) as exc:
+            bootstrap._download(url, tmp_path / "payload.bin", quiet=True)
+
+        message = str(exc.value)
+        assert "404" in message
+        assert url in message, "the failing URL must be in the message"
+        # The user is stranded unless the message says what to do instead.
+        assert "wheel" in message.lower()
+
+    def test_network_failure_is_reported_not_raised_raw(self, tmp_path, monkeypatch):
+        """No connectivity must not surface as a urllib traceback."""
+        import urllib.error
+
+        def fake_urlopen(*args, **kwargs):
+            raise urllib.error.URLError("Name or service not known")
+
+        monkeypatch.setattr(bootstrap.urllib.request, "urlopen", fake_urlopen)
+
+        with pytest.raises(bootstrap.BootstrapError) as exc:
+            bootstrap._download(bootstrap.payload_url(), tmp_path / "p.bin", quiet=True)
+
+        assert "Name or service not known" in str(exc.value)
+        assert "wheel" in str(exc.value).lower()
+
+    def test_timeout_is_reported(self, tmp_path, monkeypatch):
+        def fake_urlopen(*args, **kwargs):
+            raise TimeoutError("timed out")
+
+        monkeypatch.setattr(bootstrap.urllib.request, "urlopen", fake_urlopen)
+
+        with pytest.raises(bootstrap.BootstrapError):
+            bootstrap._download(bootstrap.payload_url(), tmp_path / "p.bin", quiet=True)
+
+    def test_offline_hint_points_at_a_real_asset_name(self):
+        """The suggested wheel must be one the release actually carries.
+
+        The hint is only useful if the filename it prints matches what the
+        pipeline uploads. A stale name here sends users looking for a file
+        that does not exist.
+        """
+        hint = bootstrap._offline_hint()
+        assert bootstrap.RELEASE_VERSION in hint
+        assert bootstrap.platform_tag() in hint
+        assert hint.rstrip().endswith(".whl")
+        assert f"/v{bootstrap.RELEASE_VERSION}/" in hint, "asset URLs are tag-scoped"

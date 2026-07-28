@@ -54,7 +54,16 @@ ACTIONS = {
 
 PYTHON_VERSION = "3.13"
 
+# The compiler inside the payload. Drives the `ghc-wrapper --numeric-version`
+# assertions, which must keep answering for the compiler.
 GHC_VERSION = "9.4.8"
+
+# The distribution coordinate: git tag, release, payload asset names, wheel
+# version. Diverged from GHC_VERSION at 9.4.9, because the 9.4.8 wheel on PyPI
+# is unusable on Windows and PyPI does not allow replacing a version. Keep the
+# two apart: renaming a payload asset and claiming a new compiler release must
+# never be the same edit again.
+RELEASE_VERSION = "9.4.9"
 
 
 class Step:
@@ -128,19 +137,19 @@ PLATFORMS = {
         # wheel plus payload -- is unaffected, because the payload is a plain
         # tarball carrying no manylinux claim.
         "platform": "manylinux_2_39_x86_64",
-        "archive": f"ghc-payload-{GHC_VERSION}-manylinux_2_39_x86_64.tar.xz",
+        "archive": f"ghc-payload-{RELEASE_VERSION}-manylinux_2_39_x86_64.tar.xz",
         "payload_tag": "manylinux_2_39_x86_64",
     },
     "macos": {
         "os": "macos-latest",
         "platform": "macosx_11_0_arm64",
-        "archive": f"ghc-payload-{GHC_VERSION}-macosx_11_0_arm64.tar.xz",
+        "archive": f"ghc-payload-{RELEASE_VERSION}-macosx_11_0_arm64.tar.xz",
         "payload_tag": "macosx_11_0_arm64",
     },
     "windows": {
         "os": "windows-latest",
         "platform": "win_amd64",
-        "archive": f"ghc-payload-{GHC_VERSION}-win_amd64.zip",
+        "archive": f"ghc-payload-{RELEASE_VERSION}-win_amd64.zip",
         "payload_tag": "win_amd64",
     },
 }
@@ -491,7 +500,161 @@ def generate_release_job():
         with:
           files: release/*
           body_path: RELEASE.md
+          # Without an explicit name the release is titled with the bare tag,
+          # "v9.4.8", which is what a user sees first on the releases page and
+          # in every notification.
+          name: GHC Compiler Python ${{{{ github.ref_name }}}}
+          # This is the supported release for the version it carries, so it
+          # should be the one the "Latest" badge points at rather than
+          # whatever happens to sort highest.
+          make_latest: true
+          # A release that silently attaches nothing is indistinguishable from
+          # a successful one until a user hits a 404 on the payload URL.
           fail_on_unmatched_files: true
+"""
+
+
+def generate_delivery_proof_job():
+    """Prove the path a PyPI user actually takes.
+
+    Every other job validates the OFFLINE wheel: it installs `dist/*.whl` with
+    the toolchain already bundled inside. That proves the compiler works. It
+    does not prove the product works, because nobody installing from PyPI gets
+    that wheel -- they get the 20 KiB thin wheel, which must reach the network,
+    fetch its payload from this release, verify the SHA-256 it was built with,
+    extract it, and only then compile.
+
+    That path had never run in CI. It cannot run before the release exists,
+    which is why it lives here, after attach-to-release, rather than beside the
+    build. `publish-to-pypi` depends on it, so a wheel whose download path is
+    broken can never reach PyPI.
+
+    Builds != installs != compiles != delivered. This is the delivered link.
+    """
+    return f"""
+  verify-delivered-install:
+    name: Verify Delivered Install on ${{{{ matrix.os }}}}
+    needs: [build-thin-wheel, attach-to-release]
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    strategy:
+      # Every platform reports independently. One failing must not hide the
+      # status of the other two.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    runs-on: ${{{{ matrix.os }}}}
+
+    steps:
+      - uses: {ACTIONS['setup_python']}
+        with:
+          python-version: '{PYTHON_VERSION}'
+
+      - uses: {ACTIONS['download_artifact']}
+        with:
+          name: thin-wheel
+          path: dist/
+
+      - name: Install The Thin Wheel As A User Would
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install dist/*.whl
+          echo "installed size on disk:"
+          python -c "import ghc_compiler_python, pathlib, sys; p=pathlib.Path(ghc_compiler_python.__file__).parent; print(sum(f.stat().st_size for f in p.rglob('*') if f.is_file()), 'bytes')"
+
+      - name: Make The Runner Look Like A User Machine
+        shell: bash
+        run: |
+          # windows-latest ships mingw via chocolatey, so `gcc` is always on
+          # PATH here and was never on PATH for a real user. That single
+          # difference let 9.4.8 ship a wrapper which aborted with
+          #
+          #   FATAL ERROR: The GHC compiler requires a host C-linker
+          #
+          # before it ever touched the mingw the payload had just downloaded.
+          # Three green Windows jobs certified a wheel that could not compile
+          # on any stock Windows box. A runner that is better equipped than the
+          # machine it certifies is not a test, it is a rehearsal.
+          #
+          # So the system compilers are removed from PATH for the rest of this
+          # job. On Linux and macOS GHC genuinely needs the system cc and the
+          # payload ships none, so they are left alone -- the point is to match
+          # each platform's real user, not to strip uniformly.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            KEEP=""
+            IFS=':' read -ra PARTS <<< "$PATH"
+            for d in "${{PARTS[@]}}"; do
+              if [ -x "$d/gcc.exe" ] || [ -x "$d/clang.exe" ] || [ -x "$d/gcc" ] || [ -x "$d/clang" ]; then
+                echo "dropping from PATH: $d"
+                continue
+              fi
+              KEEP="${{KEEP:+$KEEP:}}$d"
+            done
+            echo "PATH=$KEEP" >> "$GITHUB_ENV"
+            export PATH="$KEEP"
+          fi
+
+          # Assert the scrub worked rather than trusting it. If a system
+          # compiler survives, this job silently reverts to the rehearsal it
+          # was, so failing here is the honest outcome.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            if command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1; then
+              echo "::error::a system C compiler is still on PATH -- this job would not test the user's machine"
+              command -v gcc || true
+              command -v clang || true
+              exit 1
+            fi
+            echo "no system gcc/clang on PATH: the payload's own toolchain is the only one available"
+          else
+            echo "$RUNNER_OS uses the system cc by design; PATH left untouched"
+          fi
+
+      - name: Fetch The Payload From This Release
+        shell: bash
+        env:
+          # Deliberately NOT set: GHC_COMPILER_PYTHON_OFFLINE. This step must
+          # reach the network and download the asset attached above, verifying
+          # it against the digest compiled into the wheel. If the asset name,
+          # the release tag, or the digest disagree, this fails here rather
+          # than in a user's terminal.
+          PYTHONUNBUFFERED: '1'
+        run: |
+          REPORTED=$(ghc-wrapper --numeric-version)
+          echo "ghc-wrapper --numeric-version -> $REPORTED"
+          if [ "$REPORTED" != "{GHC_VERSION}" ]; then
+            echo "::error::expected {GHC_VERSION}, got '$REPORTED' -- resolved the wrong compiler"
+            exit 1
+          fi
+
+      - name: Compile And Run Haskell Through The Downloaded Toolchain
+        shell: bash
+        run: |
+          cat > Delivered.hs <<'HASKELL'
+          import Data.List (sort)
+
+          main :: IO ()
+          main = do
+            let xs = sort [3, 1, 2 :: Int]
+            putStrLn ("Delivered Install Validation Successful: " ++ show xs)
+          HASKELL
+
+          ghc-wrapper Delivered.hs -o delivered
+
+          if [ -f ./delivered.exe ]; then
+            OUT=$(./delivered.exe)
+          else
+            OUT=$(./delivered)
+          fi
+          echo "program output: $OUT"
+
+          EXPECTED='Delivered Install Validation Successful: [1,2,3]'
+          if [ "$OUT" != "$EXPECTED" ]; then
+            echo "::error::expected '$EXPECTED', got '$OUT'"
+            exit 1
+          fi
+          echo "delivered install verified: downloaded, verified, extracted, compiled, ran"
 """
 
 
@@ -499,7 +662,7 @@ def generate_publish_job():
     return f"""
   publish-to-pypi:
     name: Publish Thin Wheel to PyPI
-    needs: [build-thin-wheel, attach-to-release]
+    needs: [build-thin-wheel, attach-to-release, verify-delivered-install]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
 
@@ -558,6 +721,148 @@ def generate_publish_job():
 """
 
 
+def generate_verify_pypi_yaml():
+    """Prove the claim the project actually makes, against the live index.
+
+    Every other job proves something about an artifact this pipeline is holding
+    in its hand: the offline wheel, or the thin wheel downloaded from its own
+    release. None of them install from PyPI, because PyPI is downstream of the
+    pipeline and cannot be reached from inside it.
+
+    So the one sentence on the README -- `pip install ghc-compiler-python`,
+    then compile Haskell -- was the only claim with no mechanical check behind
+    it. It was verified once, by hand, on one Windows laptop, and that is how
+    9.4.8 shipped: green everywhere, and unable to compile on a stock Windows
+    machine because the runner had a chocolatey gcc the user did not.
+
+    This workflow installs from the real index, on all three operating
+    systems, exactly as a user would, and asserts the program's output. It is
+    dispatchable so it can be re-run against the live index at any time --
+    a wheel that worked at publication can still be broken later by a release
+    asset being deleted, renamed, or replaced.
+    """
+    return f"""# AUTO-GENERATED BY scripts/generate_workflow.py
+# Do not edit this file manually. Run scripts/generate_workflow.py instead.
+name: Verify Published Install From PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to install from PyPI (blank = whatever is latest)'
+        required: false
+        default: ''
+      wait_minutes:
+        description: 'How long to wait for the index to serve that version'
+        required: false
+        default: '10'
+
+jobs:
+  install-from-pypi:
+    name: Install From PyPI on ${{{{ matrix.os }}}}
+    strategy:
+      # Each platform reports independently. One broken OS must not hide the
+      # state of the other two -- that is the whole point of this workflow.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    runs-on: ${{{{ matrix.os }}}}
+
+    steps:
+      - uses: {ACTIONS['setup_python']}
+        with:
+          python-version: '{PYTHON_VERSION}'
+
+      - name: Make The Runner Look Like A User Machine
+        shell: bash
+        run: |
+          # See verify-delivered-install for why. windows-latest ships mingw
+          # via chocolatey; a real Windows user has no gcc on PATH, and the
+          # payload carries its own. Testing with the runner's compiler tests
+          # the runner.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            KEEP=""
+            IFS=':' read -ra PARTS <<< "$PATH"
+            for d in "${{PARTS[@]}}"; do
+              if [ -x "$d/gcc.exe" ] || [ -x "$d/clang.exe" ] || [ -x "$d/gcc" ] || [ -x "$d/clang" ]; then
+                echo "dropping from PATH: $d"
+                continue
+              fi
+              KEEP="${{KEEP:+$KEEP:}}$d"
+            done
+            echo "PATH=$KEEP" >> "$GITHUB_ENV"
+            export PATH="$KEEP"
+            if command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1; then
+              echo "::error::a system C compiler survived the scrub -- this run would not test a user's machine"
+              exit 1
+            fi
+            echo "no system gcc/clang on PATH"
+          fi
+
+      - name: Install From The Real Index
+        shell: bash
+        run: |
+          set -e
+          SPEC="ghc-compiler-python"
+          if [ -n "${{{{ inputs.version }}}}" ]; then
+            SPEC="ghc-compiler-python==${{{{ inputs.version }}}}"
+          fi
+          echo "installing $SPEC from pypi.org"
+
+          # A freshly published version is not visible to every CDN edge at
+          # once. Retrying is not papering over a failure -- publishing and
+          # serving are genuinely different events, and treating a propagation
+          # delay as a broken release would be the false alarm.
+          DEADLINE=$(( $(date +%s) + ${{{{ inputs.wait_minutes }}}} * 60 ))
+          until python -m pip install --no-cache-dir "$SPEC"; do
+            if [ "$(date +%s)" -ge "$DEADLINE" ]; then
+              echo "::error::$SPEC still not installable after ${{{{ inputs.wait_minutes }}}} minutes"
+              exit 1
+            fi
+            echo "not on the index yet; retrying in 30s"
+            sleep 30
+          done
+
+          python -c "import ghc_compiler_python as g; print('distribution', g.__version__); print('compiler', g.__ghc_version__)"
+
+      - name: Report The Compiler, Not The Package
+        shell: bash
+        run: |
+          # These are two axes and this asserts the one that matters to a user
+          # writing Haskell. The distribution version moved to 9.4.9 to ship a
+          # packaging fix; the compiler is still GHC {GHC_VERSION} and has to say so.
+          REPORTED=$(ghc-wrapper --numeric-version)
+          echo "ghc-wrapper --numeric-version -> $REPORTED"
+          if [ "$REPORTED" != "{GHC_VERSION}" ]; then
+            echo "::error::expected GHC {GHC_VERSION}, got '$REPORTED'"
+            exit 1
+          fi
+
+      - name: Compile And Run Haskell
+        shell: bash
+        run: |
+          cat > FromPyPI.hs <<'HASKELL'
+          import Data.List (sort)
+
+          main :: IO ()
+          main = putStrLn ("Installed From PyPI: " ++ show (sort [3, 1, 2 :: Int]))
+          HASKELL
+
+          ghc-wrapper FromPyPI.hs -o frompypi
+
+          if [ -f ./frompypi.exe ]; then OUT=$(./frompypi.exe); else OUT=$(./frompypi); fi
+          echo "program output: $OUT"
+
+          EXPECTED='Installed From PyPI: [1,2,3]'
+          if [ "$OUT" != "$EXPECTED" ]; then
+            echo "::error::expected '$EXPECTED', got '$OUT'"
+            exit 1
+          fi
+          echo "pip install -> download -> verify -> extract -> compile -> run: proven on $RUNNER_OS"
+"""
+
+
 def generate_yaml():
     header = f"""# AUTO-GENERATED BY scripts/generate_workflow.py
 # 🐍 Ouroboros Transmutation: Python Pipeline Generator
@@ -603,6 +908,7 @@ jobs:"""
 
     lines.append(generate_thin_wheel_job(needs_list))
     lines.append(generate_release_job())
+    lines.append(generate_delivery_proof_job())
     lines.append(generate_publish_job())
 
     return "\n".join(lines) + "\n"
@@ -693,14 +999,53 @@ jobs:
             exit 1
           fi
           echo "zero sorry confirmed"
+
+      - name: Assert No native_decide
+        working-directory: lean
+        run: |
+          # `native_decide` closes a goal by trusting the compiled binary
+          # instead of the kernel. It is not a proof of the same kind as
+          # everything else in this directory, so it may not appear silently.
+          if grep -rn --include="*.lean" 'native_decide' Proofs/; then
+            echo "::error::native_decide bypasses the kernel -- these are not kernel-checked proofs"
+            exit 1
+          fi
+          echo "no native_decide confirmed"
+
+      - name: Cross-check The Proofs Against The Shipped Code
+        working-directory: lean
+        run: |
+          # A proof about a model proves nothing about a program unless
+          # something binds the two. This emits the corpus and the model's
+          # verdicts from Lean, materialises each modelled toolchain root on
+          # disk, runs the REAL wrapper._bundled_c_linker over them, and diffs.
+          # It also reads the _execute_tool ordering out of the source, which
+          # is the second half of the defect Linker.lean proves.
+          #
+          # Verified red against four deliberate mutations of wrapper.py:
+          # catalogue entry removed, ordering reverted, _validate_c_linker
+          # losing its root parameter, and _bundled_c_linker never finding
+          # anything. A cross-check nobody has broken on purpose is decoration.
+          lake env lean crosscheck/Corpus.lean > verdicts.txt
+          python3 crosscheck/crosscheck.py .. verdicts.txt
 """
 
 
 if __name__ == "__main__":
+    # Written with an explicit newline so a Windows checkout does not silently
+    # rewrite every line ending in a generated file, and reported without
+    # non-ASCII: a bare `print("<checkmark>")` raised UnicodeEncodeError on a
+    # cp1252 console *after* both files were already written, so the generator
+    # exited 1 having fully succeeded. An exit code that lies about success is
+    # worse than no exit code, because the next person learns to ignore it.
     build_path = Path(".github/workflows/build.yml")
-    build_path.write_text(generate_yaml(), encoding="utf-8")
-    print(f"✅ Generated {build_path} successfully.")
+    build_path.write_text(generate_yaml(), encoding="utf-8", newline="\n")
+    print(f"OK: generated {build_path}")
 
     ci_path = Path(".github/workflows/ci.yml")
-    ci_path.write_text(generate_ci_yaml(), encoding="utf-8")
-    print(f"✅ Generated {ci_path} successfully.")
+    ci_path.write_text(generate_ci_yaml(), encoding="utf-8", newline="\n")
+    print(f"OK: generated {ci_path}")
+
+    pypi_path = Path(".github/workflows/verify-pypi.yml")
+    pypi_path.write_text(generate_verify_pypi_yaml(), encoding="utf-8", newline="\n")
+    print(f"OK: generated {pypi_path}")
