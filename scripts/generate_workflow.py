@@ -66,6 +66,61 @@ GHC_VERSION = "9.4.8"
 RELEASE_VERSION = "9.4.9"
 
 
+# Removes every system C compiler from PATH for the remainder of ONE step.
+#
+# windows-latest installs mingw via chocolatey, so `gcc` is always on PATH
+# there and is never on PATH for a real user. The 9.4.8 wheel shipped green
+# through three Windows jobs and could not compile on a stock Windows machine,
+# because the runner had a compiler the user did not. A runner better equipped
+# than the machine it certifies is a rehearsal, not a test.
+#
+# Deliberately NOT written to $GITHUB_ENV. Under `shell: bash` on Windows,
+# $PATH is a POSIX-style, colon-separated string; $GITHUB_ENV sets a *Windows*
+# environment variable, so persisting it hands later steps a PATH the OS cannot
+# resolve -- and the first casualty would be `python`, in the job that gates
+# publishing. Scoping the export to the step that needs it removes that failure
+# mode entirely rather than relying on how MSYS happens to convert the value.
+#
+# Linux and macOS are left alone on purpose: GHC genuinely uses the system cc
+# there and the payload ships none. The goal is to match each platform's real
+# user, not to strip uniformly.
+def indent_block(text, spaces):
+    """Indent a snippet for embedding inside a YAML block scalar.
+
+    Blank lines are left empty rather than filled with trailing whitespace,
+    which some YAML linters reject.
+    """
+    pad = " " * spaces
+    return "\n".join(pad + line if line.strip() else "" for line in text.split("\n"))
+
+
+SCRUB_SYSTEM_COMPILERS = """
+if [ "$RUNNER_OS" = "Windows" ]; then
+  KEEP=""
+  IFS=':' read -ra PARTS <<< "$PATH"
+  for d in "${PARTS[@]}"; do
+    if [ -x "$d/gcc.exe" ] || [ -x "$d/clang.exe" ] || [ -x "$d/gcc" ] || [ -x "$d/clang" ]; then
+      echo "dropping from PATH: $d"
+      continue
+    fi
+    KEEP="${KEEP:+$KEEP:}$d"
+  done
+  export PATH="$KEEP"
+
+  # Assert the scrub worked rather than trusting it. If a system compiler
+  # survives, this step silently reverts to the rehearsal it was.
+  if command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1; then
+    echo "::error::a system C compiler is still on PATH -- this would not test a user's machine"
+    exit 1
+  fi
+  echo "no system gcc/clang on PATH: only the payload's own toolchain is available"
+
+  # And the scrub must not have taken the interpreter with it.
+  command -v python >/dev/null 2>&1 || { echo "::error::python lost from PATH by the scrub"; exit 1; }
+fi
+""".strip()
+
+
 class Step:
     def __init__(self, name=None, uses=None, run=None, shell=None, with_args=None, env=None, if_cond=None):
         self.name = name
@@ -531,6 +586,7 @@ def generate_delivery_proof_job():
 
     Builds != installs != compiles != delivered. This is the delivered link.
     """
+    scrub = indent_block(SCRUB_SYSTEM_COMPILERS, 10)
     return f"""
   verify-delivered-install:
     name: Verify Delivered Install on ${{{{ matrix.os }}}}
@@ -564,53 +620,6 @@ def generate_delivery_proof_job():
           echo "installed size on disk:"
           python -c "import ghc_compiler_python, pathlib, sys; p=pathlib.Path(ghc_compiler_python.__file__).parent; print(sum(f.stat().st_size for f in p.rglob('*') if f.is_file()), 'bytes')"
 
-      - name: Make The Runner Look Like A User Machine
-        shell: bash
-        run: |
-          # windows-latest ships mingw via chocolatey, so `gcc` is always on
-          # PATH here and was never on PATH for a real user. That single
-          # difference let 9.4.8 ship a wrapper which aborted with
-          #
-          #   FATAL ERROR: The GHC compiler requires a host C-linker
-          #
-          # before it ever touched the mingw the payload had just downloaded.
-          # Three green Windows jobs certified a wheel that could not compile
-          # on any stock Windows box. A runner that is better equipped than the
-          # machine it certifies is not a test, it is a rehearsal.
-          #
-          # So the system compilers are removed from PATH for the rest of this
-          # job. On Linux and macOS GHC genuinely needs the system cc and the
-          # payload ships none, so they are left alone -- the point is to match
-          # each platform's real user, not to strip uniformly.
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            KEEP=""
-            IFS=':' read -ra PARTS <<< "$PATH"
-            for d in "${{PARTS[@]}}"; do
-              if [ -x "$d/gcc.exe" ] || [ -x "$d/clang.exe" ] || [ -x "$d/gcc" ] || [ -x "$d/clang" ]; then
-                echo "dropping from PATH: $d"
-                continue
-              fi
-              KEEP="${{KEEP:+$KEEP:}}$d"
-            done
-            echo "PATH=$KEEP" >> "$GITHUB_ENV"
-            export PATH="$KEEP"
-          fi
-
-          # Assert the scrub worked rather than trusting it. If a system
-          # compiler survives, this job silently reverts to the rehearsal it
-          # was, so failing here is the honest outcome.
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            if command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1; then
-              echo "::error::a system C compiler is still on PATH -- this job would not test the user's machine"
-              command -v gcc || true
-              command -v clang || true
-              exit 1
-            fi
-            echo "no system gcc/clang on PATH: the payload's own toolchain is the only one available"
-          else
-            echo "$RUNNER_OS uses the system cc by design; PATH left untouched"
-          fi
-
       - name: Fetch The Payload From This Release
         shell: bash
         env:
@@ -621,6 +630,7 @@ def generate_delivery_proof_job():
           # than in a user's terminal.
           PYTHONUNBUFFERED: '1'
         run: |
+{scrub}
           REPORTED=$(ghc-wrapper --numeric-version)
           echo "ghc-wrapper --numeric-version -> $REPORTED"
           if [ "$REPORTED" != "{GHC_VERSION}" ]; then
@@ -631,6 +641,7 @@ def generate_delivery_proof_job():
       - name: Compile And Run Haskell Through The Downloaded Toolchain
         shell: bash
         run: |
+{scrub}
           cat > Delivered.hs <<'HASKELL'
           import Data.List (sort)
 
@@ -741,6 +752,7 @@ def generate_verify_pypi_yaml():
     a wheel that worked at publication can still be broken later by a release
     asset being deleted, renamed, or replaced.
     """
+    scrub = indent_block(SCRUB_SYSTEM_COMPILERS, 10)
     return f"""# AUTO-GENERATED BY scripts/generate_workflow.py
 # Do not edit this file manually. Run scripts/generate_workflow.py instead.
 name: Verify Published Install From PyPI
@@ -774,32 +786,6 @@ jobs:
         with:
           python-version: '{PYTHON_VERSION}'
 
-      - name: Make The Runner Look Like A User Machine
-        shell: bash
-        run: |
-          # See verify-delivered-install for why. windows-latest ships mingw
-          # via chocolatey; a real Windows user has no gcc on PATH, and the
-          # payload carries its own. Testing with the runner's compiler tests
-          # the runner.
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            KEEP=""
-            IFS=':' read -ra PARTS <<< "$PATH"
-            for d in "${{PARTS[@]}}"; do
-              if [ -x "$d/gcc.exe" ] || [ -x "$d/clang.exe" ] || [ -x "$d/gcc" ] || [ -x "$d/clang" ]; then
-                echo "dropping from PATH: $d"
-                continue
-              fi
-              KEEP="${{KEEP:+$KEEP:}}$d"
-            done
-            echo "PATH=$KEEP" >> "$GITHUB_ENV"
-            export PATH="$KEEP"
-            if command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1; then
-              echo "::error::a system C compiler survived the scrub -- this run would not test a user's machine"
-              exit 1
-            fi
-            echo "no system gcc/clang on PATH"
-          fi
-
       - name: Install From The Real Index
         shell: bash
         run: |
@@ -832,6 +818,7 @@ jobs:
           # These are two axes and this asserts the one that matters to a user
           # writing Haskell. The distribution version moved to 9.4.9 to ship a
           # packaging fix; the compiler is still GHC {GHC_VERSION} and has to say so.
+{scrub}
           REPORTED=$(ghc-wrapper --numeric-version)
           echo "ghc-wrapper --numeric-version -> $REPORTED"
           if [ "$REPORTED" != "{GHC_VERSION}" ]; then
@@ -842,6 +829,7 @@ jobs:
       - name: Compile And Run Haskell
         shell: bash
         run: |
+{scrub}
           cat > FromPyPI.hs <<'HASKELL'
           import Data.List (sort)
 
